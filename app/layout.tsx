@@ -1,4 +1,5 @@
 import "./styles.css";
+import { StatusRefresh } from "./status-refresh";
 
 export const metadata = {
   title: "TerraScale Status",
@@ -9,7 +10,7 @@ export const metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body><StatusRefresh />{children}</body>
     </html>
   );
 }
