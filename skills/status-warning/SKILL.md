@@ -1,29 +1,27 @@
 # TerraScale status warnings
 
-Use this repo skill when the human asks to publish, update, or resolve a TerraScale status warning. Warnings are operator changes and must be made only by the human or an explicitly delegated AI agent through the authenticated status API. Do not add a warning form, public write route, client-side token, or scheduled automatic warning source.
+Use this repo skill when the human asks Codex to publish or resolve a TerraScale status warning. Warnings are database records managed only by the human through Codex or an explicitly delegated AI agent. The Worker has no warning write endpoint: never add one, call `POST /api/status`, or put a token in a client.
 
 ## Publish a warning
 
-Set `STATUS_ADMIN_TOKEN` in the invoking environment and run:
+Ask the human for the warning title and customer-facing message if they have not supplied both. Validate that the message is factual and specific, then insert it directly into the production D1 database with Wrangler. Keep the generated id so it can be resolved later.
 
 ```sh
-curl --fail-with-body -X POST https://ts-status.mariogk01-6cd.workers.dev/api/status \
-  -H "Authorization: Bearer $STATUS_ADMIN_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"action":"warning","title":"Short title","message":"What customers should know."}'
+warning_id=$(openssl rand -hex 16)
+now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+npm exec -- wrangler d1 execute ts-status-db --remote --command \
+  "INSERT INTO incidents (id, kind, title, status, impact, message, created_at, updated_at) VALUES ('$warning_id', 'warning', 'TITLE', 'monitoring', 'minor', 'MESSAGE', '$now', '$now'); INSERT INTO status_events (id, service_id, status, label, created_at) VALUES ('$(openssl rand -hex 16)', NULL, 'degraded', 'TITLE', '$now');"
 ```
 
-The warning is stored in D1 as a minor-impact monitoring event and is visible in Active incidents. Never print or commit the token.
+Replace `TITLE` and `MESSAGE` only after shell-quoting them safely; never interpolate untrusted text into SQL. Prefer a temporary SQL file and `--file` for quotes or newlines. Never print or commit credentials. Verify with `GET https://status.terrascale.tech/api/status` after the command.
 
 ## Resolve a warning
 
-Use the returned incident id:
+Only when the human asks to resolve it, update the record directly:
 
 ```sh
-curl --fail-with-body -X POST https://ts-status.mariogk01-6cd.workers.dev/api/status \
-  -H "Authorization: Bearer $STATUS_ADMIN_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"action":"resolve","id":"INCIDENT_ID"}'
+npm exec -- wrangler d1 execute ts-status-db --remote --command \
+  "UPDATE incidents SET status = 'resolved', resolved_at = datetime('now'), updated_at = datetime('now') WHERE id = 'INCIDENT_ID'; INSERT INTO status_events (id, service_id, status, label) VALUES ('EVENT_ID', NULL, 'operational', 'Incident resolved');"
 ```
 
-Always verify the response and fetch `GET /api/status` after a change. Do not publish speculative warnings; the human must provide the message and authorize the action.
+Verify the response and the public API. Do not publish speculative warnings, and do not expose a database credential in output.

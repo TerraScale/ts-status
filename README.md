@@ -14,14 +14,8 @@ The local D1 database is stored under `.wrangler/state`. Set `STATUS_ADMIN_TOKEN
 
 ## API
 
-`GET /api/status` returns current service statuses and the latest incidents. `POST /api/status` is an operator endpoint. Use `action: "warning"` with a title and message to publish an operator warning, or `action: "resolve"` with an incident id to resolve it. The page refreshes while visible every two minutes and includes a 24-hour event timeline. Send `Authorization: Bearer <STATUS_ADMIN_TOKEN>` and one of:
+`GET /api/status` returns current services, incidents, and the 30-day event timeline. The Worker intentionally has no public write endpoint. Warnings and incident changes are inserted directly into D1 by Codex using [`skills/status-warning/SKILL.md`](skills/status-warning/SKILL.md).
 
-```json
-{"action":"service","id":"api","status":"degraded"}
-{"action":"incident","title":"API latency","message":"Requests are slower than usual.","impact":"minor","status":"investigating"}
-```
-
-Accepted service states are `operational`, `degraded`, `partial_outage`, `major_outage`, and `maintenance`. Incidents use `investigating`, `identified`, `monitoring`, or `resolved`.
 
 ## Deploy
 

@@ -5,6 +5,7 @@
   "compatibility_date": "2026-09-13",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
+  "routes": [{ "pattern": "status.terrascale.tech", "custom_domain": true }],
   "assets": {
     "directory": "dist/client",
     "binding": "ASSETS",

@@ -15,3 +15,36 @@
 .timeline-partial_outage { background: #fb923c; box-shadow: 0 0 8px rgba(251,146,60,.25); }
 .timeline-major_outage { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,.25); }
 .timeline-axis { display: flex; justify-content: space-between; margin-top: 9px; color: #64748b; font-family: 'JetBrains Mono', monospace; font-size: .62rem; }
+/* Fixed status wall: every surface fits the viewport, with no page scrolling. */
+html, body { height: 100%; overflow: hidden; }
+.shell { height: 100vh; max-width: 1120px; padding: 18px 28px 20px; overflow: hidden; display: flex; flex-direction: column; }
+.header { flex: 0 0 54px; height: 54px; margin-bottom: 18px; }
+.hero { flex: 0 0 auto; padding: 18px 24px; min-height: 104px; backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
+.section { margin-top: 20px; }
+.section h2 { margin-bottom: 10px; font-size: .82rem; }
+.services { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; overflow: visible; border: 0; background: transparent; }
+.service { min-height: 116px; flex-direction: column; align-items: stretch; justify-content: space-between; gap: 12px; padding: 15px 17px; border: 1px solid var(--divider); border-radius: 10px; background: rgba(11,11,20,.62); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+.service-copy { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.service-graph { display: grid; grid-template-columns: repeat(12, 1fr); align-items: end; gap: 3px; height: 22px; }
+.service-graph .timeline-bar { min-height: 8px; height: 100%; opacity: .9; }
+.timeline { margin-top: 20px; }
+.timeline-card { padding: 13px 17px; }
+.timeline-bars { height: 30px; gap: 3px; }
+.timeline-bar { min-height: 10px; }
+.history { display: none; }
+.incident { padding: 9px 0; }
+footer { margin-top: auto; padding-top: 12px; }
+@media (max-width: 600px) { .shell { padding: 14px 14px 12px; } .header { margin-bottom: 12px; } .brand img { width: 140px; } .updated { font-size: .6rem; } .hero { padding: 14px 16px; min-height: 82px; gap: 12px; } .status-icon { width: 36px; height: 36px; font-size: 1.1rem; } .hero-copy { display: none; } .services { grid-template-columns: 1fr 1fr; gap: 7px; } .service { min-height: 94px; padding: 11px; gap: 8px; } .service p { display: none; } .service-status { font-size: .58rem; } .section { margin-top: 14px; } .timeline { margin-top: 14px; } footer { font-size: .58rem; } }
+.footer-links { display: flex; gap: 16px; }
+.back-link { color: var(--primary-light); font-family: 'JetBrains Mono', monospace; font-size: .68rem; text-decoration: none; }
+.history-page { overflow: hidden; }
+.history-heading { flex: 0 0 auto; margin-bottom: 18px; }
+.history-heading h1 { margin: 4px 0 7px; }
+.history-heading > p:last-child { margin: 0; color: var(--muted); font-family: system-ui, sans-serif; font-size: .85rem; }
+.history-list { min-height: 0; overflow: auto; padding-right: 5px; scrollbar-width: none; }
+.history-list::-webkit-scrollbar { display: none; }
+.history-card { display: flex; gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--divider); }
+.history-content { flex: 1; }
+.history-content h2 { margin: 0; font-size: .9rem; text-transform: none; }
+.pill-resolved { color: #34d399; border-color: rgba(52,211,153,.3); }
+.empty-history { color: var(--muted); font-family: system-ui, sans-serif; }
