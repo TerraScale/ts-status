@@ -30,6 +30,13 @@ export async function POST(request: Request): Promise<Response> {
     await env.STATUS_DB.prepare("UPDATE services SET status = ?, updated_at = datetime('now') WHERE id = ?").bind(status, id).run();
     return Response.json({ ok: true });
   }
+  if (action === "resolve") {
+    const id = typeof input.id === "string" ? input.id.trim() : "";
+    if (!id) return Response.json({ error: "id is required" }, { status: 400 });
+    const result = await env.STATUS_DB.prepare("UPDATE incidents SET status = 'resolved', resolved_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").bind(id).run();
+    if (!result.meta.changes) return Response.json({ error: "Incident not found" }, { status: 404 });
+    return Response.json({ ok: true });
+  }
   if (action === "incident") {
     const id = crypto.randomUUID();
     const title = typeof input.title === "string" ? input.title.trim() : "";
@@ -40,5 +47,5 @@ export async function POST(request: Request): Promise<Response> {
     await env.STATUS_DB.prepare("INSERT INTO incidents (id, title, status, impact, message, resolved_at) VALUES (?, ?, ?, ?, ?, CASE WHEN ? = 'resolved' THEN datetime('now') ELSE NULL END)").bind(id, title, incidentStatus, impact, message, incidentStatus).run();
     return Response.json({ id, ok: true }, { status: 201 });
   }
-  return Response.json({ error: "action must be service or incident" }, { status: 400 });
+  return Response.json({ error: "action must be service, incident or resolve" }, { status: 400 });
 }
