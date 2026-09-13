@@ -25,7 +25,7 @@ export default async function StatusPage() {
   return (
     <main className="shell">
       <header className="header">
-        <a className="brand" href="/" aria-label="TerraScale home"><span className="brand-mark">T</span><span>TerraScale</span></a>
+        <a className="brand" href="/" aria-label="TerraScale home"><img src="/logo-principal.svg" alt="TerraScale" width="178" height="43" /></a>
         <span className="updated">Updated just now</span>
       </header>
       <section className={`hero hero-${status}`}>
