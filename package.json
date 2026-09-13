@@ -1,0 +1,39 @@
+{
+  "name": "ts-status",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vinext dev",
+    "build": "vinext build",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "deploy": "npm run build && wrangler d1 migrations apply ts-status-db --remote && wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply ts-status-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply ts-status-db --remote"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.54.7",
+    "@cloudflare/workers-types": "^5.20260911.1",
+    "@types/node": "^26.4.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-rsc": "^0.5.34",
+    "react-server-dom-webpack": "^19.3.0",
+    "typescript": "^7.0.2",
+    "vinext": "1.0.0-beta.9",
+    "vite-plus": "0.3.0",
+    "vitest": "4.1.11",
+    "wrangler": "4.131.0"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=11.0.0"
+  },
+  "packageManager": "npm@12.0.2"
+}
