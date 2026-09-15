@@ -43,17 +43,18 @@ jobs:
           nice -n 10 node node_modules/esbuild/install.js
           nice -n 10 node node_modules/workerd/install.js
 
+      # Tasks run through the vite-plus runner (vpr) instead of npm scripts.
       - name: Type-check the application
         shell: bash
-        run: nice -n 10 npm run check
+        run: nice -n 10 vpr check
 
       - name: Run the unit tests
         shell: bash
-        run: nice -n 10 npm test
+        run: nice -n 10 vpr test
 
       - name: Build the Worker bundle
         shell: bash
-        run: nice -n 10 npm run build
+        run: nice -n 10 vpr build
 
       # This validates the generated deployment plan only. It never applies D1
       # migrations and never publishes to Cloudflare.
