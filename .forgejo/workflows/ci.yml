@@ -1,0 +1,62 @@
+name: ts-status CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Verify ts-status
+    runs-on: terrascale-builder
+    timeout-minutes: 30
+    env:
+      CI: "true"
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          github-server-url: "https://git.terrascale.tech"
+          ref: ${{ forgejo.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select the pinned Node toolchain
+        uses: https://data.forgejo.org/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24.20.0"
+          check-latest: false
+
+      # npm 11 blocks dependency install scripts unless a project allowScripts
+      # policy names each native helper. Keep installation deterministic and
+      # prepare only the two native helpers used by this lockfile explicitly.
+      - name: Install locked dependencies
+        shell: bash
+        run: nice -n 10 npm ci --ignore-scripts
+
+      - name: Prepare the locked native helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          nice -n 10 node node_modules/esbuild/install.js
+          nice -n 10 node node_modules/workerd/install.js
+
+      - name: Type-check the application
+        shell: bash
+        run: nice -n 10 npm run check
+
+      - name: Run the unit tests
+        shell: bash
+        run: nice -n 10 npm test
+
+      - name: Build the Worker bundle
+        shell: bash
+        run: nice -n 10 npm run build
+
+      # This validates the generated deployment plan only. It never applies D1
+      # migrations and never publishes to Cloudflare.
+      - name: Validate the Wrangler deployment plan
+        shell: bash
+        run: nice -n 10 npm exec -- wrangler deploy --config dist/server/wrangler.json --dry-run
