@@ -4,9 +4,9 @@ AI IS NOT ALLOWED TO EDIT THIS FILE ONLY HUMANS CAN!
 
 ## Stack
 - Vite
-- Svelte
+- vinext
 - Tailwind
-- Cloudflare Pages
+- Cloudflare Workers
 
 ## Develop
 - Always create a feature called feat/{feature_name} fix/{fix_name} and then we create a PR into main when the work is ready to be merged when pushing and creating the pull request make sure that the linter has no errors and that all tests passes, when creating pull request send the link of that PR to the user.
