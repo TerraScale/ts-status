@@ -34,30 +34,30 @@ jobs:
       # prepare only the two native helpers used by this lockfile explicitly.
       - name: Install locked dependencies
         shell: bash
-        run: nice -n 10 npm ci --ignore-scripts
+        run: npm ci --ignore-scripts
 
       - name: Prepare the locked native helpers
         shell: bash
         run: |
           set -euo pipefail
-          nice -n 10 node node_modules/esbuild/install.js
-          nice -n 10 node node_modules/workerd/install.js
+          node node_modules/esbuild/install.js
+          node node_modules/workerd/install.js
 
       # Tasks run through the vite-plus runner (vpr) instead of npm scripts.
       - name: Type-check the application
         shell: bash
-        run: nice -n 10 vpr check
+        run: vpr check
 
       - name: Run the unit tests
         shell: bash
-        run: nice -n 10 vpr test
+        run: vpr test
 
       - name: Build the Worker bundle
         shell: bash
-        run: nice -n 10 vpr build
+        run: vpr build
 
       # This validates the generated deployment plan only. It never applies D1
       # migrations and never publishes to Cloudflare.
       - name: Validate the Wrangler deployment plan
         shell: bash
-        run: nice -n 10 npm exec -- wrangler deploy --config dist/server/wrangler.json --dry-run
+        run: npm exec -- wrangler deploy --config dist/server/wrangler.json --dry-run
