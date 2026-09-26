@@ -4,6 +4,7 @@
    endpoint and reads only that endpoint's rows. */
 
 import { sqlTime } from "../db/reads";
+import { MIN_VANTAGES } from "../domain/consensus";
 import { histogramSql, mergedHistogramSql } from "../domain/histogram";
 import type { Env } from "../env";
 import { DAY, HOUR, startOfDay, startOfHour } from "../format";
@@ -18,8 +19,9 @@ const SETTLE_MS = 3 * 60_000;
 /** Days are refreshed every this many minutes while they are open. */
 const DAY_EVERY_MINUTES = 10;
 
-// A round is judged with two answers or more, and down when most failed.
-const JUDGED = "total >= 2";
+// The rule of isDown in domain/consensus: a round is judged with enough
+// answers, and down when most of them failed.
+const JUDGED = `total >= ${MIN_VANTAGES}`;
 const DOWN = "(total - ok) * 2 > total";
 
 const ROLL_ALL = `INSERT OR REPLACE INTO probe_hours

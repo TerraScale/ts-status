@@ -1,3 +1,5 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { defineConfig } from "vite-plus";
 import { VANTAGES, vantageWorkerName } from "./src/probe/vantages";
@@ -8,6 +10,7 @@ const vantages = VANTAGES.map((vantage) => ({
   config: {
     name: vantageWorkerName(vantage),
     main: "./src/vantage/worker.ts",
+    // Keep in sync with the status Worker's compatibility_date in wrangler.jsonc.
     compatibility_date: "2026-09-13",
     workers_dev: false,
     preview_urls: false,
@@ -25,7 +28,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
-    alias: { "cloudflare:workers": new URL("./src/testing/cloudflare-workers.ts", import.meta.url).pathname },
+    alias: { "cloudflare:workers": join(dirname(fileURLToPath(import.meta.url)), "src/testing/cloudflare-workers.ts") },
   },
   fmt: {
     printWidth: 120,

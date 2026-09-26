@@ -139,6 +139,11 @@ export function homePage(view: Overview): Page {
   const headline = HEADLINES[view.status];
   const title = view.status === "operational" ? "TerraScale Status" : `${headline} · TerraScale Status`;
 
+  const delayMessage =
+    view.monitoring.lastRoundAt === null
+      ? "Health checks have not reported yet, so component states are unknown."
+      : html`Health checks last reported ${time(view.monitoring.lastRoundAt, "seconds")}; states below may be out of date.`;
+
   const body = html`<main id="main" class="ts-page" data-live data-title="${title}">
   <section class="st-hero" data-state="${view.status}" aria-labelledby="st-headline">
     <span class="st-hero-mark" aria-hidden="true"><span class="ts-dot"></span></span>
@@ -153,11 +158,7 @@ export function homePage(view: Overview): Page {
     view.monitoring.delayed
       ? html`<article class="ts-alert" data-state="degraded" role="status">
     <h2 class="ts-alert-title">Monitoring delayed</h2>
-    <p class="ts-alert-body">${
-      view.monitoring.lastRoundAt === null
-        ? "Health checks have not reported yet, so component states are unknown."
-        : html`Health checks last reported ${time(view.monitoring.lastRoundAt, "seconds")}; states below may be out of date.`
-    }</p>
+    <p class="ts-alert-body">${delayMessage}</p>
   </article>`
       : ""
   }

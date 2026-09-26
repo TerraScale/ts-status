@@ -63,6 +63,6 @@ jobs:
         shell: bash
         run: |
           wrangler deploy --dry-run
-          for vantage in sfo gru fra nrt; do
-            wrangler deploy --dry-run -c "dist/ts_status_vantage_$vantage/wrangler.json"
+          for config in dist/ts_status_vantage_*/wrangler.json; do
+            wrangler deploy --dry-run -c "$config"
           done

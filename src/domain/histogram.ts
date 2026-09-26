@@ -41,14 +41,18 @@ export function percentile(hist: Histogram, p: number): number | null {
       continue;
     }
     const lower = index === 0 ? 0 : (BOUNDS[index - 1] ?? 0);
-    const upper = BOUNDS[index] ?? lower * 2;
+    // The last bucket has no measured upper bound, so it reports the top
+    // bound instead of inventing one.
+    const upper = BOUNDS[index] ?? lower;
     return Math.round(lower + ((target - seen) / inBucket) * (upper - lower));
   }
   return BOUNDS.at(-1) ?? null;
 }
 
 /** A SQL expression building the histogram of `latency` over rows where
-    `when` holds, as a JSON array. */
+    `when` holds, as a JSON array. Both arguments are spliced into the SQL
+    text, so they must be trusted SQL fragments defined in code, never
+    values taken from a request. */
 export function histogramSql(latency: string, when: string): string {
   const buckets = BOUNDS.map(
     (bound, index) =>

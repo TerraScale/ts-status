@@ -55,8 +55,11 @@ export function consensus(results: readonly VantageResult[]): Consensus {
 }
 
 /** Applies hysteresis: the first down round shows as degraded, so a single
-    blip never reports an outage. Returns the state and the new down streak. */
+    blip never reports an outage. Returns the state and the new down streak.
+    An unknown round carries no evidence either way and keeps the streak, so
+    gaps between down rounds cannot mask a sustained outage. */
 export function settle(round: TimelineState, streak: number): { state: TimelineState; streak: number } {
+  if (round === "none") return { state: round, streak };
   if (round !== "major_outage") return { state: round, streak: 0 };
   const next = streak + 1;
   return { state: next >= CONFIRM_DOWN ? "major_outage" : "degraded", streak: next };

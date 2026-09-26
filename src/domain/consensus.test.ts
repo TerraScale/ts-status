@@ -38,6 +38,11 @@ describe("settle", () => {
     expect(settle("major_outage", 1)).toEqual({ state: "major_outage", streak: 2 });
     expect(settle("operational", 5)).toEqual({ state: "operational", streak: 0 });
   });
+
+  it("keeps the down streak through unknown rounds", () => {
+    expect(settle("none", 1)).toEqual({ state: "none", streak: 1 });
+    expect(settle("major_outage", 1)).toEqual({ state: "major_outage", streak: 2 });
+  });
 });
 
 describe("median", () => {

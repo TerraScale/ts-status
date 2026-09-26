@@ -20,6 +20,10 @@ describe("percentile", () => {
     expect(percentile(hist, 1)).toBe(600);
   });
 
+  it("reports the top bound for samples above it", () => {
+    expect(percentile(histogramOf([9_000, 12_000]), 0.5)).toBe(BOUNDS.at(-1));
+  });
+
   it("returns null without samples", () => {
     expect(percentile(emptyHistogram(), 0.5)).toBeNull();
   });
