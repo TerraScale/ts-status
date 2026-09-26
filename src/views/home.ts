@@ -1,6 +1,6 @@
-/* The status page: headline, stats, active incidents, services and regions
-   with hourly bars, the 30-day platform history, and recently resolved
-   incidents. */
+/* The status page: headline, stats, active incidents, components by group
+   and regions with hourly bars, the 30-day platform history, and recently
+   resolved incidents. */
 
 import regionMap from "../assets/region-map.svg?raw";
 import { formatDay, formatUptime } from "../format";
@@ -10,11 +10,12 @@ import {
   RESOLVED_DAYS,
   SERVICE_HOURS,
   type ClusterOverview,
+  type ComponentOverview,
+  type GroupOverview,
   type Overview,
   type RegionOverview,
-  type ServiceOverview,
 } from "../overview";
-import { SERVICE_STATES, STATE_LABELS, type ServiceStatus, type TimelineState } from "../status";
+import { STATES, STATE_LABELS, type Status, type TimelineState } from "../domain/status";
 import {
   card,
   dayBars,
@@ -30,7 +31,7 @@ import {
 } from "./components";
 import type { Page } from "./layout";
 
-const HEADLINES: Record<ServiceStatus, string> = {
+const HEADLINES: Record<Status, string> = {
   operational: "All systems operational",
   maintenance: "Scheduled maintenance in progress",
   degraded: "Some systems are degraded",
@@ -45,17 +46,26 @@ const PROVIDERS: Record<ClusterOverview["provider"], string> = {
   other: "Self-hosted",
 };
 
-const LEGEND: TimelineState[] = [...SERVICE_STATES, "none"];
+const LEGEND: TimelineState[] = [...STATES, "none"];
 
 const ms = (value: number | null): string => (value === null ? "—" : `${value} ms`);
 
 const lower = (state: TimelineState): string => STATE_LABELS[state].toLowerCase();
 
-function service(entry: ServiceOverview) {
+function component(entry: ComponentOverview) {
+  if (entry.lifecycle === "planned") {
+    return html`<li class="ts-list-item st-service" data-lifecycle="planned">
+  <div class="ts-list-main">
+    <h4 class="ts-strong">${entry.name}</h4>
+    <p class="ts-meta">${entry.description}</p>
+  </div>
+  <div class="st-service-state">${statusBadge("none", "Planned")}</div>
+</li>`;
+  }
   const summary = `${entry.name}: ${formatUptime(entry.uptime24h)} uptime over the last ${SERVICE_HOURS} hours, currently ${lower(entry.status)}`;
   return html`<li class="ts-list-item st-service">
   <div class="ts-list-main">
-    <h3 class="ts-strong">${entry.name}</h3>
+    <h4 class="ts-strong">${entry.name}</h4>
     <p class="ts-meta">${entry.description}</p>
   </div>
   <div class="st-service-state">
@@ -66,11 +76,18 @@ function service(entry: ServiceOverview) {
 </li>`;
 }
 
+function group(entry: GroupOverview) {
+  return html`<section class="st-group" aria-labelledby="group-${entry.id}">
+  <h3 id="group-${entry.id}" class="st-group-title">${entry.name}</h3>
+  <ul class="ts-list">${entry.components.map(component)}</ul>
+</section>`;
+}
+
 function cluster(entry: ClusterOverview) {
-  const summary = `${entry.serviceName} on ${entry.cluster}: ${formatUptime(entry.uptime24h)} of health checks passed over the last ${SERVICE_HOURS} hours, currently ${lower(entry.status)}`;
+  const summary = `${entry.componentName} on ${entry.cluster}: ${formatUptime(entry.uptime24h)} of health checks passed over the last ${SERVICE_HOURS} hours, currently ${lower(entry.status)}`;
   return html`<li class="ts-list-item st-service">
   <div class="ts-list-main">
-    <h4 class="ts-strong">${entry.serviceName}</h4>
+    <h4 class="ts-strong">${entry.componentName}</h4>
     <p class="ts-meta">${PROVIDERS[entry.provider]} · ${entry.cluster}</p>
   </div>
   <div class="st-service-state">
@@ -113,7 +130,11 @@ function map(list: readonly RegionOverview[]) {
 }
 
 export function homePage(view: Overview): Page {
-  const operational = view.services.filter((entry) => entry.status === "operational").length;
+  const active = view.groups.flatMap((entry) => entry.components).filter((entry) => entry.lifecycle === "active");
+  // Components without fresh data are neither up nor down, so they count on
+  // neither side of the stat.
+  const measured = active.filter((entry) => entry.status !== "none");
+  const operational = measured.filter((entry) => entry.status === "operational").length;
   const live = view.regions.filter((entry) => entry.clusters.length > 0).length;
   const headline = HEADLINES[view.status];
   const title = view.status === "operational" ? "TerraScale Status" : `${headline} · TerraScale Status`;
@@ -129,7 +150,7 @@ export function homePage(view: Overview): Page {
   </section>
 
   <dl class="ts-stats" aria-label="Platform summary">
-    ${stat("Services", `${operational}/${view.services.length}`, "operational now")}
+    ${stat("Components", `${operational}/${measured.length}`, "operational now")}
     ${stat("Regions", `${live}/${view.regions.length}`, live === view.regions.length ? "all live" : `${view.regions.length - live} planned`)}
     ${stat("Uptime", formatUptime(view.uptime30d), `last ${PLATFORM_DAYS} days`)}
     ${stat("Active incidents", String(view.activeIncidents.length), view.activeIncidents.length === 0 ? "nothing to report" : "see below")}
@@ -150,14 +171,14 @@ export function homePage(view: Overview): Page {
 
   ${card(
     {
-      id: "services",
-      title: "Services",
-      description: html`Hourly status over the last ${SERVICE_HOURS} hours, in ${zone}.`,
+      id: "components",
+      title: "Components",
+      description: html`Hourly status over the last ${SERVICE_HOURS} hours, in ${zone}, measured by health checks.`,
     },
-    view.services.length === 0
-      ? empty("No services published", "Service status will appear here once services are registered.")
-      : html`<ul class="ts-list">${view.services.map(service)}</ul>
-  <div class="st-axis" aria-hidden="true"><span>${SERVICE_HOURS}h ago</span><span>Now</span></div>`,
+    view.groups.length === 0
+      ? empty("No components published", "Component status will appear here once components are registered.")
+      : html`${view.groups.map(group)}
+  ${active.length > 0 ? html`<div class="st-axis" aria-hidden="true"><span>${SERVICE_HOURS}h ago</span><span>Now</span></div>` : ""}`,
   )}
 
   ${card(
@@ -177,7 +198,7 @@ export function homePage(view: Overview): Page {
     {
       id: "history",
       title: `Last ${PLATFORM_DAYS} days`,
-      description: "Daily platform status in UTC days: the worst state of any service that day.",
+      description: "Daily platform status in UTC days, from health checks and incidents.",
     },
     html`${dayBars(view.days, `Platform: ${formatUptime(view.uptime30d)} uptime over the last ${PLATFORM_DAYS} days`)}
   <div class="st-axis" aria-hidden="true"><span>${formatDay(view.days[0]?.start ?? view.generatedAt)}</span><span>Today</span></div>

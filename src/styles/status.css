@@ -120,7 +120,21 @@
   gap: var(--ts-s1);
 }
 
-/* Services: name and state, then the hourly bars. */
+/* Component groups: a small heading over their divided rows. */
+.st-group {
+  display: grid;
+  gap: var(--ts-s1);
+}
+
+.st-group-title {
+  color: var(--ts-ink-3);
+  font-size: var(--ts-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Components and clusters: name and state, then the hourly bars. */
 .st-service {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

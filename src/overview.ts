@@ -1,47 +1,53 @@
 /* The status overview shared by the page and the JSON API: the headline,
-   hourly bars per service, and daily platform bars with uptime. */
+   hourly bars per component and cluster, and daily platform bars with
+   uptime, all measured by the health probes. */
 
-import type { Snapshot, SnapshotWindow } from "./data";
+import type { Snapshot, SnapshotWindow } from "./db/reads";
 import { DAY, HOUR, startOfDay, startOfHour } from "./format";
 import {
-  buckets,
-  combine,
+  aggregate,
   endpointStatus,
+  incidentWindows,
   isActive,
   meanLatency,
   overallStatus,
-  platformChanges,
-  probeHourState,
+  probeState,
   probeUptime,
-  regionStatus,
-  segments,
-  serviceChanges,
-  uptime,
+  spans,
+  sumCounts,
+  worst,
+  worstDuring,
   type Bucket,
+  type Component,
+  type ComponentGroup,
   type Endpoint,
   type Incident,
-  type ProbeHour,
+  type ProbeCounts,
   type Provider,
   type Region,
-  type Service,
-  type ServiceStatus,
+  type Status,
   type TimelineState,
-} from "./status";
+} from "./domain/status";
 
 export const SERVICE_HOURS = 24;
 export const PLATFORM_DAYS = 30;
 export const RESOLVED_DAYS = 7;
 
-export interface ServiceOverview extends Service {
+export interface ComponentOverview extends Component {
+  status: TimelineState;
   hours: Bucket[];
   uptime24h: number | null;
   uptime30d: number | null;
 }
 
+export interface GroupOverview extends ComponentGroup {
+  components: ComponentOverview[];
+}
+
 export interface ClusterOverview {
   id: string;
-  serviceId: string;
-  serviceName: string;
+  componentId: string;
+  componentName: string;
   cluster: string;
   provider: Provider;
   status: TimelineState;
@@ -61,8 +67,8 @@ export interface RegionOverview extends Region {
 
 export interface Overview {
   generatedAt: number;
-  status: ServiceStatus;
-  services: ServiceOverview[];
+  status: Status;
+  groups: GroupOverview[];
   regions: RegionOverview[];
   activeIncidents: Incident[];
   resolvedIncidents: Incident[];
@@ -78,52 +84,88 @@ export const hourlyStart = (now: number): number => startOfHour(now) - (SERVICE_
 
 /** The data window behind an overview at `now`. */
 export function snapshotWindow(now: number): SnapshotWindow {
-  return { eventsFrom: platformStart(now), resolvedFrom: now - RESOLVED_DAYS * DAY, probesFrom: hourlyStart(now) };
+  const from = platformStart(now);
+  return { incidentsFrom: from, probesFrom: from };
+}
+
+/** Every endpoint's hourly probe counts, keyed by the hour's start. */
+type Counts = Map<string, Map<number, ProbeCounts>>;
+
+function countsByEndpoint(snapshot: Snapshot): Counts {
+  const counts: Counts = new Map();
+  for (const hour of snapshot.probeHours) {
+    const list = counts.get(hour.endpointId) ?? new Map<number, ProbeCounts>();
+    list.set(Date.parse(hour.hour), hour);
+    counts.set(hour.endpointId, list);
+  }
+  return counts;
+}
+
+/** An endpoint's summed probe counts over the whole hours in [from, to). */
+function during(counts: Counts, endpointId: string, from: number, to: number): ProbeCounts {
+  const hours = counts.get(endpointId);
+  const list: ProbeCounts[] = [];
+  for (let at = from; at < to; at += HOUR) {
+    const hour = hours?.get(at);
+    if (hour) list.push(hour);
+  }
+  return sumCounts(list);
+}
+
+/** Every component's enabled endpoints, in catalog order. */
+function endpointsByComponent(endpoints: readonly Endpoint[]): Map<string, Endpoint[]> {
+  const byComponent = new Map<string, Endpoint[]>();
+  for (const endpoint of endpoints) {
+    byComponent.set(endpoint.componentId, [...(byComponent.get(endpoint.componentId) ?? []), endpoint]);
+  }
+  return byComponent;
+}
+
+/** Bars for a set of endpoints: every bucket shows their combined state. */
+function bars(counts: Counts, endpoints: readonly Endpoint[], start: number, count: number, size: number): Bucket[] {
+  return spans(start, start + count * size, count).map((span) => ({
+    ...span,
+    state: aggregate(endpoints.map((endpoint) => probeState(during(counts, endpoint.id, span.start, span.end)))),
+  }));
+}
+
+/** Summed probe counts of a set of endpoints over [from, to). */
+function total(counts: Counts, endpoints: readonly Endpoint[], from: number, to: number): ProbeCounts {
+  return sumCounts(endpoints.map((endpoint) => during(counts, endpoint.id, from, to)));
 }
 
 function cluster(
   endpoint: Endpoint,
-  service: Service | undefined,
-  hours: ProbeHour[],
+  components: ReadonlyMap<string, Component>,
+  counts: Counts,
   hourStart: number,
   now: number,
 ): ClusterOverview {
-  const byHour = new Map(hours.map((hour) => [Date.parse(hour.hour), hour]));
+  const day = total(counts, [endpoint], hourStart, now);
   return {
     id: endpoint.id,
-    serviceId: endpoint.serviceId,
-    serviceName: service?.name ?? endpoint.serviceId,
+    componentId: endpoint.componentId,
+    componentName: components.get(endpoint.componentId)?.name ?? endpoint.componentId,
     cluster: endpoint.cluster,
     provider: endpoint.provider,
     status: endpointStatus(endpoint, now),
     pingMs: endpoint.lastOk === 1 ? endpoint.lastLatencyMs : null,
-    meanLatency24h: meanLatency(hours),
-    uptime24h: probeUptime(hours),
-    hours: Array.from({ length: SERVICE_HOURS }, (_, index) => {
-      const start = hourStart + index * HOUR;
-      return { start, end: start + HOUR, state: probeHourState(byHour.get(start)) };
-    }),
+    meanLatency24h: meanLatency(day),
+    uptime24h: probeUptime(day),
+    hours: bars(counts, [endpoint], hourStart, SERVICE_HOURS, HOUR),
   };
 }
 
-function regions(snapshot: Snapshot, hourStart: number, now: number): RegionOverview[] {
-  const services = new Map(snapshot.services.map((service) => [service.id, service]));
+function regions(snapshot: Snapshot, counts: Counts, hourStart: number, now: number): RegionOverview[] {
+  const components = new Map(snapshot.components.map((component) => [component.id, component]));
   return snapshot.regions.map((region) => {
     const clusters = snapshot.endpoints
       .filter((endpoint) => endpoint.regionCode === region.code)
-      .map((endpoint) =>
-        cluster(
-          endpoint,
-          services.get(endpoint.serviceId),
-          snapshot.probeHours.filter((hour) => hour.endpointId === endpoint.id),
-          hourStart,
-          now,
-        ),
-      );
+      .map((endpoint) => cluster(endpoint, components, counts, hourStart, now));
     const pings = clusters.flatMap((entry) => (entry.pingMs === null ? [] : [entry.pingMs]));
     return {
       ...region,
-      status: regionStatus(clusters.map((entry) => entry.status)),
+      status: aggregate(clusters.map((entry) => entry.status)),
       pingMs: pings.length === 0 ? null : Math.round(pings.reduce((sum, ping) => sum + ping, 0) / pings.length),
       clusters,
     };
@@ -133,34 +175,48 @@ function regions(snapshot: Snapshot, hourStart: number, now: number): RegionOver
 export function overview(snapshot: Snapshot, now: number): Overview {
   const dayStart = platformStart(now);
   const hourStart = hourlyStart(now);
-  const regionList = regions(snapshot, hourStart, now);
+  const counts = countsByEndpoint(snapshot);
+  const byComponent = endpointsByComponent(snapshot.endpoints);
 
-  const services = snapshot.services.map((service) => {
-    const changes = serviceChanges(service, snapshot.events);
-    return { service, month: segments(changes, dayStart, now), day: segments(changes, hourStart, now) };
+  const components = snapshot.components.map((component): ComponentOverview => {
+    const endpoints = component.lifecycle === "planned" ? [] : (byComponent.get(component.id) ?? []);
+    return {
+      ...component,
+      status: aggregate(endpoints.map((endpoint) => endpointStatus(endpoint, now))),
+      hours: bars(counts, endpoints, hourStart, SERVICE_HOURS, HOUR),
+      uptime24h: probeUptime(total(counts, endpoints, hourStart, now)),
+      uptime30d: probeUptime(total(counts, endpoints, dayStart, now)),
+    };
   });
-  const platform = combine(
-    [...services.map((entry) => entry.month), segments(platformChanges(snapshot.events), dayStart, now)],
-    dayStart,
-    now,
-  );
+  const active = snapshot.components.filter((component) => component.lifecycle === "active").map((c) => c.id);
+  const measured = active.flatMap((id) => byComponent.get(id) ?? []);
+  const windows = incidentWindows(snapshot.incidents, now);
 
+  const days = spans(dayStart, dayStart + PLATFORM_DAYS * DAY, PLATFORM_DAYS).map((span) => {
+    const states = active.map((id) =>
+      aggregate(
+        (byComponent.get(id) ?? []).map((endpoint) => probeState(during(counts, endpoint.id, span.start, span.end))),
+      ),
+    );
+    return { ...span, state: worst(aggregate(states), worstDuring(windows, span.start, span.end)) };
+  });
+
+  const resolvedFrom = now - RESOLVED_DAYS * DAY;
   return {
     generatedAt: now,
-    // One region down is a partial platform outage; only all of them is major.
-    status: overallStatus(snapshot.services, snapshot.incidents, [
-      regionStatus(regionList.map((region) => region.status)),
-    ]),
-    services: services.map(({ service, month, day }) => ({
-      ...service,
-      hours: buckets(day, hourStart, hourStart + SERVICE_HOURS * HOUR, SERVICE_HOURS),
-      uptime24h: uptime(day),
-      uptime30d: uptime(month),
-    })),
-    regions: regionList,
+    status: overallStatus(
+      components.filter((component) => component.lifecycle === "active").map((component) => component.status),
+      snapshot.incidents,
+    ),
+    groups: snapshot.groups
+      .map((group) => ({ ...group, components: components.filter((component) => component.groupId === group.id) }))
+      .filter((group) => group.components.length > 0),
+    regions: regions(snapshot, counts, hourStart, now),
     activeIncidents: snapshot.incidents.filter(isActive),
-    resolvedIncidents: snapshot.incidents.filter((incident) => !isActive(incident)),
-    days: buckets(platform, dayStart, dayStart + PLATFORM_DAYS * DAY, PLATFORM_DAYS),
-    uptime30d: uptime(platform),
+    resolvedIncidents: snapshot.incidents.filter(
+      (incident) => !isActive(incident) && Date.parse(incident.resolvedAt ?? incident.updatedAt) >= resolvedFrom,
+    ),
+    days,
+    uptime30d: probeUptime(total(counts, measured, dayStart, now)),
   };
 }

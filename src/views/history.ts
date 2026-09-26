@@ -2,7 +2,7 @@
 
 import { formatMonth } from "../format";
 import { html } from "../html";
-import type { Incident } from "../status";
+import type { Incident } from "../domain/status";
 import { card, empty, incidentItem } from "./components";
 import type { Page } from "./layout";
 

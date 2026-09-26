@@ -3,7 +3,7 @@
 
 import { html, type Html } from "../html";
 import { formatClock, formatClockSeconds, formatDateTime, formatDay, formatDuration } from "../format";
-import { IMPACT_STATUS, STATE_LABELS, type Bucket, type Incident, type TimelineState } from "../status";
+import { IMPACT_STATUS, STATE_LABELS, type Bucket, type Incident, type TimelineState } from "../domain/status";
 
 export interface CardProps {
   id: string;
