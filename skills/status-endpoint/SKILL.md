@@ -1,6 +1,6 @@
 # TerraScale status catalog: components, regions and clusters
 
-Use this repo skill when the human asks to add, launch, move, pause, or remove a component, region, or cluster on the status page. The catalog lives in D1; the Worker's cron trigger probes every enabled endpoint every 30 seconds, so changes apply within a minute without a deploy.
+Use this repo skill when the human asks to add, launch, move, pause, or remove a component, region, or cluster on the status page. The catalog lives in D1; the probe coordinator probes every enabled endpoint every 30 seconds, so changes apply within a minute without a deploy.
 
 ## Model
 
