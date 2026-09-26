@@ -717,8 +717,12 @@
   font-weight: 600;
 }
 
-/* Tables that may scroll sideways on small screens. */
+/* Tables that may scroll sideways on small screens: the wrapper always
+   fills its container and never grows past it, even inside grids that size
+   children to their content. */
 .st-table-wrap {
+  justify-self: stretch;
+  max-width: 100%;
   overflow-x: auto;
 }
 
@@ -801,6 +805,11 @@
   display: grid;
   justify-items: start;
   gap: var(--ts-s3);
+}
+
+/* Target names are long; let them wrap rather than widen the table. */
+.st-ping-browser tbody th {
+  white-space: normal;
 }
 
 .st-ping-browser td {
