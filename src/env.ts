@@ -9,4 +9,6 @@ export interface Env {
   VANTAGE_GRU: Fetcher;
   VANTAGE_FRA: Fetcher;
   VANTAGE_NRT: Fetcher;
+  /** Bearer token of the operator API (a Worker secret). */
+  OPERATOR_TOKEN?: string;
 }

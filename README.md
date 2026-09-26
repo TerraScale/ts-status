@@ -55,6 +55,21 @@ Pages: `/` (status, `?range=24h|7d|30d|90d`), `/history` (filters by component, 
 
 `GET /api/status` returns the overall status, component groups with each component's 24 hourly states and uptime, regions with their clusters' ping, uptime and hourly states, and current incidents. Operators publish incidents with the [`status-warning`](skills/status-warning/SKILL.md) skill.
 
+The operator API under `/api/operator` needs the `OPERATOR_TOKEN` bearer token (`wrangler secret put OPERATOR_TOKEN`; locally in `.dev.vars`):
+
+| Method and path                            | Does                                                             |
+| ------------------------------------------ | ---------------------------------------------------------------- |
+| `POST /api/operator/incidents`             | Publishes an incident, warning or maintenance window             |
+| `GET /api/operator/incidents/:id`          | Reads a record with its updates and components                   |
+| `PATCH /api/operator/incidents/:id`        | Edits title, impact, components or schedule                      |
+| `DELETE /api/operator/incidents/:id`       | Removes a record published by mistake                            |
+| `POST /api/operator/incidents/:id/updates` | Posts an update, changing status (and impact)                    |
+| `POST /api/operator/deploys`               | Records a deploy marker for an endpoint                          |
+| `PATCH /api/operator/components/:id`       | Launches (`active`) or plans a component, enabling its endpoints |
+| `PATCH /api/operator/endpoints/:id`        | Enables or pauses one endpoint                                   |
+
+Editing an automatic incident takes it over from the probe coordinator. Pausing a component, or its last enabled endpoint, answers `409` while an automatic incident is open for it: resolve the incident first.
+
 ## Deploy
 
 The production D1 database is `ts-status-db` (`8a72dd69-2136-4398-8d70-92c0c2dade5a`). Build, apply migrations, deploy the four vantage Workers, then the status Worker with:
