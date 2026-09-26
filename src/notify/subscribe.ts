@@ -17,11 +17,30 @@ import {
   unavailablePage,
   unsubscribedPage,
 } from "../views/subscribe";
-import { links, smtpConfig } from "./outbox";
+import { links, MAX_ATTEMPTS, smtpConfig } from "./outbox";
 import { verify } from "./tokens";
 import { isEmail, webhookFlavor } from "./webhooks";
 
-export type Answer = { page: Page; status: number } | Response;
+/** A page to render, and the subscriber whose confirmation to send now. */
+export type Answer = { page: Page; status: number; deliver?: string } | Response;
+
+/** A new confirmation for the same target waits this long after the last. */
+const CONFIRM_COOLDOWN_MS = 60 * 60_000;
+
+/** Confirmations sent to one unconfirmed target at most. */
+const MAX_CONFIRMATIONS = 3;
+
+/** The rate limit key: the client address, or its /64 for IPv6, where one
+    client often holds the whole prefix. */
+function clientKey(request: Request): string {
+  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+  if (!ip.includes(":")) return ip;
+  const [head = "", tail = ""] = ip.split("::");
+  const groups = head.split(":").filter(Boolean);
+  const rest = tail.split(":").filter(Boolean);
+  while (groups.length + rest.length < 8) groups.push("0");
+  return `${[...groups, ...rest].slice(0, 4).join(":")}::/64`;
+}
 
 const COMPONENTS = "SELECT id, group_id AS groupId, name, description, lifecycle FROM components ORDER BY position, id";
 
@@ -51,10 +70,12 @@ async function subscribe(env: Env, request: Request, now: number): Promise<Answe
     status,
   });
 
+  // Every accepted request answers the same, so nobody can tell whether a
+  // target is already subscribed.
+  const sent: Answer = { page: sentPage(channel), status: 202 };
   // Bots fill every field; people never see this one.
-  if (form.get("website")) return { page: sentPage(channel), status: 200 };
-  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
-  if (env.SUBSCRIBE_LIMITER && !(await env.SUBSCRIBE_LIMITER.limit({ key: ip })).success) {
+  if (form.get("website")) return sent;
+  if (env.SUBSCRIBE_LIMITER && !(await env.SUBSCRIBE_LIMITER.limit({ key: clientKey(request) })).success) {
     return retry("Too many attempts. Wait a minute and try again.", 429);
   }
 
@@ -75,22 +96,27 @@ async function subscribe(env: Env, request: Request, now: number): Promise<Answe
   )
     .bind(channel, normalized)
     .first<{ id: string; confirmedAt: string | null }>();
-  if (existing?.confirmedAt) return { page: sentPage(channel), status: 200 };
+  if (existing?.confirmedAt) return sent;
 
   const id = existing?.id ?? crypto.randomUUID();
-  await env.STATUS_DB.batch([
+  const [, queued] = await env.STATUS_DB.batch([
+    // Asking again restarts the unconfirmed subscriber's week to confirm.
     env.STATUS_DB.prepare(
       `INSERT INTO subscribers (id, channel, target, flavor, components, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-        ON CONFLICT (channel, target) DO UPDATE SET components = excluded.components`,
+        ON CONFLICT (channel, target) DO UPDATE SET components = excluded.components,
+          created_at = CASE WHEN confirmed_at IS NULL THEN excluded.created_at ELSE created_at END`,
     ).bind(id, channel, normalized, flavor, JSON.stringify(chosen), time),
-    // One pending confirmation at a time.
+    // One pending confirmation at a time, at most one an hour, and only a
+    // few in all, so the form cannot be used to flood someone else.
     env.STATUS_DB.prepare(
       `INSERT INTO outbox (id, subscriber_id, kind, next_attempt_at, created_at)
-        SELECT ?1, ?2, 'confirm', ?3, ?3 WHERE NOT EXISTS
-          (SELECT 1 FROM outbox WHERE subscriber_id = ?2 AND kind = 'confirm' AND sent_at IS NULL)`,
-    ).bind(crypto.randomUUID(), id, time),
+        SELECT ?1, ?2, 'confirm', ?3, ?3
+        WHERE NOT EXISTS (SELECT 1 FROM outbox WHERE subscriber_id = ?2 AND kind = 'confirm'
+            AND ((sent_at IS NULL AND attempts < ?4) OR created_at >= ?5))
+          AND (SELECT count(*) FROM outbox WHERE subscriber_id = ?2 AND kind = 'confirm') < ?6`,
+    ).bind(crypto.randomUUID(), id, time, MAX_ATTEMPTS, sqlTime(now - CONFIRM_COOLDOWN_MS), MAX_CONFIRMATIONS),
   ]);
-  return { page: sentPage(channel), status: 202 };
+  return (queued?.meta.changes ?? 0) > 0 ? { ...sent, deliver: id } : sent;
 }
 
 interface Subscriber {

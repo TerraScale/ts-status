@@ -105,11 +105,10 @@ export function email(notice: Notice, from: string, to: string, now: number): st
   ].join("\r\n");
 }
 
-/** A webhook request body and headers for the subscriber's flavor. */
-export async function webhook(
-  notice: Notice,
-  secret: string,
-): Promise<{ body: string; headers: Record<string, string> }> {
+/** A webhook request body and headers for the subscriber's flavor. Generic
+    webhooks are signed with the subscriber's own key, which their
+    confirmation request carries so the receiver can verify what follows. */
+export async function webhook(notice: Notice, key: string): Promise<{ body: string; headers: Record<string, string> }> {
   const title = notice.incident?.title ?? "TerraScale status subscription";
   const text = lines(notice).join("\n");
   let payload: unknown;
@@ -140,7 +139,12 @@ export async function webhook(
     default:
       payload =
         notice.kind === "confirm"
-          ? { type: "subscription.confirm", confirmUrl: notice.links.confirm, manageUrl: notice.links.manage }
+          ? {
+              type: "subscription.confirm",
+              confirmUrl: notice.links.confirm,
+              manageUrl: notice.links.manage,
+              signingKey: key,
+            }
           : {
               type: "incident.update",
               incident: notice.incident,
@@ -151,6 +155,6 @@ export async function webhook(
   }
   const body = JSON.stringify(payload);
   return notice.flavor === "generic"
-    ? { body, headers: { "x-terrascale-signature": `sha256=${await hmacHex(secret, body)}` } }
+    ? { body, headers: { "x-terrascale-signature": `sha256=${await hmacHex(key, body)}` } }
     : { body, headers: {} };
 }

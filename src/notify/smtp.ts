@@ -28,6 +28,9 @@ export interface Mail {
 
 export class SmtpError extends Error {}
 
+/** A whole exchange that takes longer than this is abandoned. */
+export const SMTP_TIMEOUT_MS = 30_000;
+
 /** Reads SMTP replies line by line across chunk boundaries. */
 class Replies {
   private buffer = "";
@@ -85,7 +88,7 @@ export async function send(
   let writer = socket.writable.getWriter();
   const encoder = new TextEncoder();
   const say = (line: string) => writer.write(encoder.encode(`${line}\r\n`));
-  try {
+  const exchange = async () => {
     await replies.expect(220);
     await say(`EHLO ${hello}`);
     await replies.expect(250);
@@ -111,7 +114,18 @@ export async function send(
     await replies.expect(250);
     await say("QUIT");
     await replies.expect(221).catch(() => "");
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new SmtpError("SMTP timed out")), SMTP_TIMEOUT_MS);
+  });
+  const running = exchange();
+  // Closing the socket on a timeout fails the exchange too; that is expected.
+  running.catch(() => {});
+  try {
+    await Promise.race([running, timeout]);
   } finally {
+    clearTimeout(timer);
     await socket.close().catch(() => {});
   }
 }

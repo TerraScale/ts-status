@@ -55,7 +55,7 @@ export function subscribeForm(form: SubscribeForm): Page {
     </fieldset>
     <label class="st-honeypot" aria-hidden="true">Leave this empty <input name="website" tabindex="-1" autocomplete="off"></label>
     <button class="ts-button" type="submit">Subscribe</button>
-    <p class="ts-meta">You will get one message asking you to confirm. Every message has an unsubscribe link. Generic webhooks are signed with an <code>x-terrascale-signature</code> HMAC-SHA256 header.</p>
+    <p class="ts-meta">You will get one message asking you to confirm. Every message has an unsubscribe link. Generic webhooks are signed with an <code>x-terrascale-signature</code> HMAC-SHA256 header, keyed by the <code>signingKey</code> in their confirmation request.</p>
   </form>`,
   )}`,
   );
@@ -76,10 +76,19 @@ function action(path: string, id: string, token: string, label: string, detail: 
 </form>`;
 }
 
+/** How a target is shown. A webhook URL is itself a credential that lets
+    anyone post to the channel, and these pages are reachable by whoever
+    sees the channel's messages, so only its host and last characters show. */
+export function shownTarget(target: string): string {
+  if (!target.startsWith("https://")) return target;
+  const url = new URL(target);
+  return `${url.host}/…${target.slice(-4)}`;
+}
+
 export function confirmPage(id: string, token: string, target: string): Page {
   return shell(
     "Confirm subscription",
-    html`${head("Subscriptions", "Confirm your subscription", html`Updates will go to <strong>${target}</strong>.`)}
+    html`${head("Subscriptions", "Confirm your subscription", html`Updates will go to <strong>${shownTarget(target)}</strong>.`)}
   ${action("/subscribe/confirm", id, token, "Confirm subscription", "One click and you are subscribed.")}`,
   );
 }
@@ -103,7 +112,7 @@ export function managePage(
     components.length === 0 ? "every component" : components.map((entry) => names.get(entry) ?? entry).join(", ");
   return shell(
     "Manage subscription",
-    html`${head("Subscriptions", "Your subscription", html`Updates about ${following} go to <strong>${target}</strong>.`)}
+    html`${head("Subscriptions", "Your subscription", html`Updates about ${following} go to <strong>${shownTarget(target)}</strong>.`)}
   ${action("/subscribe/unsubscribe", id, token, "Unsubscribe", "Stop all updates. You can subscribe again at any time.")}`,
   );
 }

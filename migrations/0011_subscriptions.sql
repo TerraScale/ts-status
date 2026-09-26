@@ -23,6 +23,9 @@ CREATE TABLE outbox (
   attempts INTEGER NOT NULL DEFAULT 0,
   next_attempt_at TEXT NOT NULL DEFAULT (datetime('now')),
   sent_at TEXT,
+  -- The delivery run holding the message while it sends, so overlapping
+  -- runs never send it twice.
+  claim TEXT,
   last_error TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (subscriber_id, update_id)

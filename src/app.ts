@@ -9,7 +9,7 @@
 
 import { operator } from "./api/operator";
 import { connect } from "./notify/connect";
-import { runOutbox } from "./notify/outbox";
+import { deliverDue, runOutbox } from "./notify/outbox";
 import { subscriptions } from "./notify/subscribe";
 import { statuspage, type StatuspageDocument } from "./api/statuspage";
 import { incidentsDocument, latencyDocument, regionsDocument, statusDocument } from "./api/v1";
@@ -300,8 +300,8 @@ export default {
     if (url.pathname === "/subscribe" || url.pathname.startsWith("/subscribe/")) {
       const answer = await subscriptions(env, request, now);
       if (answer instanceof Response) return secure(answer, false);
-      // Send the confirmation right away instead of on the next cron run.
-      if (request.method === "POST" && answer.status === 202) ctx.waitUntil(runOutbox(env, now, { connect }));
+      // Send a new confirmation right away instead of on the next cron run.
+      if (answer.deliver) ctx.waitUntil(deliverDue(env, now, { connect }, answer.deliver));
       const context = {
         now,
         origin: url.origin,

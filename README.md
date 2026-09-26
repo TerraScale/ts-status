@@ -100,7 +100,7 @@ Editing an automatic incident takes it over from the probe coordinator. Pausing 
 
 ## Subscriptions
 
-Visitors subscribe on `/subscribe` by email or webhook (Discord, Slack, or any public HTTPS URL), optionally to some components only, and confirm by double opt-in. Confirm and unsubscribe links are HMAC-signed with `SUBSCRIPTION_SECRET` and act only through POST forms, so link scanners cannot trigger them; emails carry RFC 8058 one-click unsubscribe, and generic webhooks an `x-terrascale-signature: sha256=…` HMAC of the body. Requests are rate limited per IP and a honeypot field drops bots.
+Visitors subscribe on `/subscribe` by email or webhook (Discord, Slack, or any public HTTPS URL), optionally to some components only, and confirm by double opt-in. Confirm and unsubscribe links are HMAC-signed with `SUBSCRIPTION_SECRET` and act only through POST forms, so link scanners cannot trigger them; emails carry RFC 8058 one-click unsubscribe, and generic webhooks an `x-terrascale-signature: sha256=…` HMAC of the body, keyed by the `signingKey` their confirmation request carries. Requests are rate limited per IP (per /64 for IPv6), a target gets at most one confirmation an hour and three in all, and a honeypot field drops bots. Delivery runs claim their messages first, so overlapping runs never send one twice.
 
 The minute cron enqueues every eligible update into the D1 `outbox` and delivers what is due, retrying failures with exponential backoff (8 attempts). Automatic incidents notify only once they have lasted five minutes; one resolved sooner notifies nobody. Email goes through OCI Email Delivery's SMTP relay (STARTTLS on 587, over Cloudflare TCP sockets) with the credentials ts-auth uses.
 

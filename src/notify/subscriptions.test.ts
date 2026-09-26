@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import app from "../app";
 import type { Env } from "../env";
 import { testD1, type TestD1 } from "../testing/d1";
 import { runOutbox } from "./outbox";
+import { sign } from "./tokens";
 import type { Socket } from "./smtp";
 
-const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
 // Subscribing stamps rows with the real clock; the hold test uses fixed times.
 const BASE = Date.parse("2026-09-26T10:00:00Z");
 const DISCORD = "https://discord.com/api/webhooks/123/abc";
@@ -23,10 +23,18 @@ function setup(extra: Partial<Env> = {}) {
     posted.push({ url, body: JSON.parse(String(init.body)), headers: new Headers(init.headers) });
     return new Response(null, { status: failing ? 500 : 204 });
   }) as typeof fetch;
+  // A subscription sends its confirmation in the background; the form helper
+  // waits for it, and webhooks it posts land in `posted`.
+  vi.stubGlobal("fetch", fetcher);
+  const background: Promise<unknown>[] = [];
+  const ctx = {
+    waitUntil: (promise: Promise<unknown>) => background.push(promise),
+    passThroughOnException: () => {},
+  } as unknown as ExecutionContext;
   const form = async (path: string, fields: Record<string, string | string[]>) => {
     const body = new URLSearchParams();
     for (const [name, value] of Object.entries(fields)) for (const item of [value].flat()) body.append(name, item);
-    return app.fetch(
+    const response = await app.fetch(
       new Request(`https://status.test${path}`, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded", "cf-connecting-ip": "203.0.113.9" },
@@ -35,6 +43,8 @@ function setup(extra: Partial<Env> = {}) {
       env,
       ctx,
     );
+    await Promise.all(background.splice(0));
+    return response;
   };
   const get = (path: string) =>
     app.fetch(new Request(`https://status.test${path}`) as Request<unknown, IncomingRequestCfProperties>, env, ctx);
@@ -61,6 +71,8 @@ async function confirm(t: ReturnType<typeof setup>, content: string) {
 }
 
 describe("subscriptions", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it("confirms a Discord webhook by double opt-in, then delivers updates of the components it follows", async () => {
     const t = setup();
     expect(
@@ -105,13 +117,44 @@ describe("subscriptions", () => {
 
   it("retries failed deliveries with backoff", async () => {
     const t = setup();
-    await t.form("/subscribe", { channel: "webhook", target: "https://example.com/hook" });
     t.fail(true);
-    expect(await t.outbox(Date.now())).toEqual({ sent: 0, failed: 1 });
+    await t.form("/subscribe", { channel: "webhook", target: "https://example.com/hook" });
+    expect(t.posted).toHaveLength(1);
     expect(await t.outbox(Date.now() + 30_000)).toEqual({ sent: 0, failed: 0 });
     t.fail(false);
     expect(await t.outbox(Date.now() + 61_000)).toEqual({ sent: 1, failed: 0 });
-    expect(t.posted[1]?.headers.get("x-terrascale-signature")).toMatch(/^sha256=[0-9a-f]{64}$/);
+    const confirmation = t.posted[1];
+    const key = String(confirmation?.body.signingKey);
+    const { hmacHex } = await import("./webhooks");
+    expect(confirmation?.headers.get("x-terrascale-signature")).toBe(
+      `sha256=${await hmacHex(key, JSON.stringify(confirmation?.body))}`,
+    );
+    expect(key).not.toBe("test-secret");
+  });
+
+  it("never sends a message twice from overlapping runs", async () => {
+    const t = setup();
+    t.fail(true);
+    await t.form("/subscribe", { channel: "webhook", target: "https://example.com/hook" });
+    t.fail(false);
+    const later = Date.now() + 61_000;
+    const runs = await Promise.all([t.outbox(later), t.outbox(later), t.outbox(later)]);
+    expect(runs.reduce((sum, run) => sum + run.sent, 0)).toBe(1);
+    expect(t.posted).toHaveLength(2);
+  });
+
+  it("sends a target few confirmations, however often it is submitted", async () => {
+    const t = setup();
+    for (let index = 0; index < 4; index++) {
+      expect((await t.form("/subscribe", { channel: "webhook", target: DISCORD })).status).toBe(202);
+    }
+    expect(t.posted).toHaveLength(1);
+    // After the hour's cooldown another goes out, up to three in all.
+    for (const expected of [2, 3, 3]) {
+      t.sql.exec("UPDATE outbox SET created_at = datetime(created_at, '-2 hours')");
+      await t.form("/subscribe", { channel: "webhook", target: DISCORD });
+      expect(t.posted).toHaveLength(expected);
+    }
   });
 
   it("unsubscribes with one click and rejects forged links", async () => {
@@ -121,6 +164,13 @@ describe("subscriptions", () => {
     await confirm(t, String(t.posted[0]?.body.content));
     const id = String(t.sql.prepare("SELECT id FROM subscribers").get()?.id);
     expect((await t.get(`/subscribe/manage?id=${id}&token=forged`)).status).toBe(404);
+    // Well-formed tokens for another purpose or another subscriber fail too.
+    expect((await t.get(`/subscribe/manage?id=${id}&token=${await sign("test-secret", "confirm", id)}`)).status).toBe(
+      404,
+    );
+    expect(
+      (await t.get(`/subscribe/manage?id=${id}&token=${await sign("test-secret", "manage", "other")}`)).status,
+    ).toBe(404);
     const manage = /https:\/\/status\.test\/subscribe\/manage\?\S+/.exec(
       await (await t.form("/subscribe/confirm", {})).text(),
     );
@@ -140,7 +190,7 @@ describe("subscriptions", () => {
     expect(await (await t.form("/subscribe", { channel: "webhook", target: "http://10.0.0.1/x" })).text()).toContain(
       "Enter an HTTPS webhook URL",
     );
-    expect((await t.form("/subscribe", { channel: "webhook", target: DISCORD, website: "spam" })).status).toBe(200);
+    expect((await t.form("/subscribe", { channel: "webhook", target: DISCORD, website: "spam" })).status).toBe(202);
     expect(t.sql.prepare("SELECT count(*) AS n FROM subscribers").get()).toEqual({ n: 0 });
     // Without SMTP, email is not offered and falls back to webhook validation.
     expect(await (await t.form("/subscribe", { channel: "email", target: "a@example.com" })).text()).toContain(
@@ -149,7 +199,7 @@ describe("subscriptions", () => {
     t.sql.exec(
       `INSERT INTO subscribers (id, channel, target, flavor, confirmed_at) VALUES ('s', 'webhook', '${DISCORD}', 'discord', datetime('now'))`,
     );
-    expect((await t.form("/subscribe", { channel: "webhook", target: DISCORD })).status).toBe(200);
+    expect((await t.form("/subscribe", { channel: "webhook", target: DISCORD })).status).toBe(202);
     const slow = setup({ SUBSCRIBE_LIMITER: limited });
     expect((await slow.form("/subscribe", { channel: "webhook", target: DISCORD })).status).toBe(429);
     const off = setup({ SUBSCRIPTION_SECRET: undefined });
@@ -216,7 +266,8 @@ describe("subscriptions", () => {
         close: async () => {},
       };
     };
-    expect(await runOutbox(t.env, Date.now(), { connect: socket })).toEqual({ sent: 1, failed: 0 });
+    // The immediate attempt had no relay in tests; the retry a minute on sends it.
+    expect(await runOutbox(t.env, Date.now() + 61_000, { connect: socket })).toEqual({ sent: 1, failed: 0 });
     expect(sent[0]).toContain("Subject: Confirm your TerraScale status subscription");
     expect(sent[0]).toContain("To: <ops@example.com>");
   });

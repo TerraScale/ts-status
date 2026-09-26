@@ -1,6 +1,9 @@
 /* The outbox. The minute cron enqueues every eligible incident update for
    every confirmed subscriber that follows its components, then delivers
-   what is due, retrying failures with exponential backoff.
+   what is due, retrying failures with exponential backoff. Each run first
+   claims the messages it sends, counting the attempt and leasing them, so
+   overlapping runs never send one twice and a run that dies leaves them to
+   be retried once the lease ends.
 
    Updates of automatic incidents wait five minutes, and an automatic
    incident resolved within five minutes notifies nobody: a blip should
@@ -11,7 +14,7 @@ import type { IncidentImpact, IncidentKind, IncidentStatus } from "../domain/sta
 import type { Env } from "../env";
 import { email, webhook, type Notice } from "./messages";
 import { send, type Connect, type SmtpConfig } from "./smtp";
-import { sign } from "./tokens";
+import { sign, webhookKey } from "./tokens";
 import { post } from "./webhooks";
 
 /** Automatic incidents notify once they have lasted this long. */
@@ -26,6 +29,9 @@ export const MAX_ATTEMPTS = 8;
 /** Messages delivered per cron run. */
 const BATCH = 20;
 
+/** How long a claimed message stays with its run before it is due again. */
+const LEASE_MS = 10 * 60_000;
+
 const ENQUEUE = `INSERT OR IGNORE INTO outbox (id, subscriber_id, kind, update_id, next_attempt_at, created_at)
   SELECT lower(hex(randomblob(16))), s.id, 'update', u.id, ?1, ?1
   FROM incident_updates u
@@ -39,14 +45,22 @@ const ENQUEUE = `INSERT OR IGNORE INTO outbox (id, subscriber_id, kind, update_i
       OR EXISTS (SELECT 1 FROM incident_components c, json_each(s.components) j
         WHERE c.incident_id = i.id AND c.component_id = j.value))`;
 
-const DUE = `SELECT o.id, o.kind, o.attempts, s.id AS subscriberId, s.channel, s.target, s.flavor,
+// Claims up to a batch of due messages for run ?4, or only the pending
+// confirmation of subscriber ?5 when it is set.
+const CLAIM = `UPDATE outbox SET claim = ?4, attempts = attempts + 1, next_attempt_at = ?6
+  WHERE id IN (SELECT id FROM outbox
+    WHERE sent_at IS NULL AND next_attempt_at <= ?1 AND attempts < ?2
+      AND (?5 IS NULL OR (subscriber_id = ?5 AND kind = 'confirm'))
+    ORDER BY created_at LIMIT ?3)`;
+
+const CLAIMED = `SELECT o.id, o.kind, o.attempts, s.id AS subscriberId, s.channel, s.target, s.flavor,
     u.status, u.body, ${iso("u.created_at")} AS updateAt,
     i.id AS incidentId, i.kind AS incidentKind, i.title, i.impact, i.source
   FROM outbox o JOIN subscribers s ON s.id = o.subscriber_id
   LEFT JOIN incident_updates u ON u.id = o.update_id
   LEFT JOIN incidents i ON i.id = u.incident_id
-  WHERE o.sent_at IS NULL AND o.next_attempt_at <= ?1 AND o.attempts < ?2
-  ORDER BY o.created_at LIMIT ?3`;
+  WHERE o.claim = ?1 AND o.sent_at IS NULL
+  ORDER BY o.created_at`;
 
 interface Due {
   id: string;
@@ -71,12 +85,18 @@ export interface Delivery {
   fetcher?: typeof fetch;
 }
 
-/** The SMTP relay, when configured. */
+/** The SMTP relay, when configured. The client speaks STARTTLS only, so a
+    port expecting TLS from the first byte (465) leaves email off. */
 export function smtpConfig(env: Env): (SmtpConfig & { from: string }) | null {
   if (!env.SMTP_HOST || !env.SMTP_USERNAME || !env.SMTP_PASSWORD || !env.SMTP_FROM) return null;
+  const port = Number(env.SMTP_PORT ?? 587);
+  if (port === 465) {
+    console.error("SMTP_PORT 465 needs implicit TLS; use a STARTTLS port such as 587");
+    return null;
+  }
   return {
     host: env.SMTP_HOST,
-    port: Number(env.SMTP_PORT ?? 587),
+    port,
     username: env.SMTP_USERNAME,
     password: env.SMTP_PASSWORD,
     from: env.SMTP_FROM,
@@ -128,50 +148,69 @@ async function deliver(
       data: email(notice, config.from, row.target, now),
     });
   } else {
-    const request = await webhook(notice, env.SUBSCRIPTION_SECRET);
+    const request = await webhook(notice, await webhookKey(env.SUBSCRIPTION_SECRET, row.subscriberId));
     await post(row.target, request.body, request.headers, delivery.fetcher);
   }
 }
 
-/** Enqueues eligible updates, then delivers up to a batch of due messages.
-    Returns how many were sent and how many failed. */
-export async function runOutbox(env: Env, now: number, delivery: Delivery): Promise<{ sent: number; failed: number }> {
+/** Claims due messages and delivers them, recording each result as soon as
+    it is known. Returns how many were sent and how many failed. */
+export async function deliverDue(
+  env: Env,
+  now: number,
+  delivery: Delivery,
+  only: string | null = null,
+): Promise<{ sent: number; failed: number }> {
   const secret = env.SUBSCRIPTION_SECRET;
   if (!secret) return { sent: 0, failed: 0 };
   const signed = { ...env, SUBSCRIPTION_SECRET: secret };
-  const time = sqlTime(now);
-  const [, due] = await env.STATUS_DB.batch([
-    env.STATUS_DB.prepare(ENQUEUE).bind(time, sqlTime(now - LOOKBACK_MS), sqlTime(now - AUTO_HOLD_MS)),
-    env.STATUS_DB.prepare(DUE).bind(time, MAX_ATTEMPTS, BATCH),
+  const run = crypto.randomUUID();
+  const [, claimed] = await env.STATUS_DB.batch([
+    env.STATUS_DB.prepare(CLAIM).bind(sqlTime(now), MAX_ATTEMPTS, BATCH, run, only, sqlTime(now + LEASE_MS)),
+    env.STATUS_DB.prepare(CLAIMED).bind(run),
   ]);
-  const rows = (due?.results ?? []) as Due[];
-  let failed = 0;
-  const statements = await Promise.all(
+  const rows = (claimed?.results ?? []) as Due[];
+  const results = await Promise.all(
     rows.map(async (row) => {
       try {
         await deliver(signed, row, delivery, now);
-        return env.STATUS_DB.prepare(
-          "UPDATE outbox SET sent_at = ?2, attempts = attempts + 1, last_error = NULL WHERE id = ?1",
-        ).bind(row.id, time);
+        await env.STATUS_DB.prepare("UPDATE outbox SET sent_at = ?2, claim = NULL, last_error = NULL WHERE id = ?1")
+          .bind(row.id, sqlTime(now))
+          .run();
+        return true;
       } catch (error) {
-        failed += 1;
-        const retry = sqlTime(now + Math.min(2 ** row.attempts, 360) * 60_000);
+        // Attempts were counted when claimed: back off 1, 2, 4… minutes, up to six hours.
+        const retry = sqlTime(now + Math.min(2 ** (row.attempts - 1), 360) * 60_000);
         const message = error instanceof Error ? error.message.slice(0, 300) : "Delivery failed";
-        return env.STATUS_DB.prepare(
-          "UPDATE outbox SET attempts = attempts + 1, next_attempt_at = ?2, last_error = ?3 WHERE id = ?1",
-        ).bind(row.id, retry, message);
+        await env.STATUS_DB.prepare(
+          "UPDATE outbox SET next_attempt_at = ?2, claim = NULL, last_error = ?3 WHERE id = ?1",
+        )
+          .bind(row.id, retry, message)
+          .run();
+        return false;
       }
     }),
   );
+  const sent = results.filter(Boolean).length;
+  return { sent, failed: results.length - sent };
+}
+
+/** Enqueues eligible updates, delivers up to a batch of due messages, and
+    prunes old ones. Returns how many were sent and how many failed. */
+export async function runOutbox(env: Env, now: number, delivery: Delivery): Promise<{ sent: number; failed: number }> {
+  if (!env.SUBSCRIPTION_SECRET) return { sent: 0, failed: 0 };
+  await env.STATUS_DB.prepare(ENQUEUE)
+    .bind(sqlTime(now), sqlTime(now - LOOKBACK_MS), sqlTime(now - AUTO_HOLD_MS))
+    .run();
+  const result = await deliverDue(env, now, delivery);
   // Retention: delivered messages for 30 days, unconfirmed subscribers for 7.
-  statements.push(
+  await env.STATUS_DB.batch([
     env.STATUS_DB.prepare("DELETE FROM outbox WHERE sent_at IS NOT NULL AND sent_at < ?1").bind(
       sqlTime(now - 30 * 86_400_000),
     ),
     env.STATUS_DB.prepare("DELETE FROM subscribers WHERE confirmed_at IS NULL AND created_at < ?1").bind(
       sqlTime(now - 7 * 86_400_000),
     ),
-  );
-  await env.STATUS_DB.batch(statements);
-  return { sent: rows.length - failed, failed };
+  ]);
+  return result;
 }

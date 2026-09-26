@@ -17,7 +17,8 @@ export function webhookFlavor(text: string): Flavor | null {
     return null;
   }
   if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
-  const host = url.hostname.toLowerCase();
+  // "localhost." and "localhost" are the same host.
+  const host = url.hostname.toLowerCase().replace(/\.+$/, "");
   if (
     host === "localhost" ||
     host.endsWith(".localhost") ||

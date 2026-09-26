@@ -47,6 +47,8 @@ describe("webhooks", () => {
   it("accepts Discord, Slack and public HTTPS targets only", () => {
     expect(webhookFlavor("https://discord.com/api/webhooks/123/abc-DEF_9")).toBe("discord");
     expect(webhookFlavor("https://discord.com/channels/1")).toBeNull();
+    expect(webhookFlavor("https://localhost./hook")).toBeNull();
+    expect(webhookFlavor("https://status.terrascale.tech./hook")).toBeNull();
     expect(webhookFlavor("https://hooks.slack.com/services/T0/B0/xyz")).toBe("slack");
     expect(webhookFlavor("https://example.com/hook")).toBe("generic");
     for (const bad of [
