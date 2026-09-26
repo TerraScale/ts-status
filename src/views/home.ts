@@ -23,13 +23,15 @@ import {
   bars,
   card,
   clusterRow,
-  rangeSwitch,
+  componentHref,
   empty,
   incidentAlert,
   incidentItem,
   legend,
   ms,
   probeRows,
+  rangeSwitch,
+  regionHref,
   stat,
   statusBadge,
   time,
@@ -68,7 +70,7 @@ function component(entry: ComponentOverview, view: Overview) {
   const summary = `${entry.name}: ${formatUptime(entry.uptime)} uptime over the last ${range}, currently ${lower(entry.status)}`;
   return html`<li class="ts-list-item st-service">
   <div class="ts-list-main">
-    <h4 class="ts-strong"><a class="st-incident-link" href="/components/${entry.id}">${entry.name}</a></h4>
+    <h4 class="ts-strong"><a class="st-incident-link" href="${componentHref(entry.id)}">${entry.name}</a></h4>
     <p class="ts-meta">${entry.description}</p>
   </div>
   <div class="st-service-state">
@@ -93,7 +95,7 @@ function region(entry: RegionOverview, view: Overview) {
   <header class="ts-row-between">
     <div class="ts-row">
       <span class="st-region-code">${entry.code}</span>
-      <h3 id="region-${entry.code}" class="ts-strong"><a class="st-incident-link" href="/regions/${entry.code}">${entry.name}</a></h3>
+      <h3 id="region-${entry.code}" class="ts-strong"><a class="st-incident-link" href="${regionHref(entry.code)}">${entry.name}</a></h3>
       <span class="ts-meta">${entry.country}</span>
     </div>
     <div class="ts-row">

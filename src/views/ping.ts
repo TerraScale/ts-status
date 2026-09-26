@@ -5,13 +5,14 @@
 
 import type { Details } from "../db/details";
 import { percentile } from "../domain/histogram";
+import { bucketStarts } from "../domain/range";
 import { HOUR } from "../format";
 import { html, type Html } from "../html";
 import { Measurements } from "../measure";
 import type { Overview } from "../overview";
 import { VANTAGES } from "../probe/vantages";
 import { sparkline } from "./charts/sparkline";
-import { card, empty, ms, statusBadge } from "./components";
+import { card, componentHref, empty, ms, regionHref, statusBadge } from "./components";
 import type { Page } from "./layout";
 
 /** Hourly buckets behind the sparklines. */
@@ -25,17 +26,17 @@ function cell(
   now: number,
 ): Html {
   const start = now - (now % HOUR) - (HOURS - 1) * HOUR;
-  const starts = Array.from({ length: HOURS }, (_, index) => start + index * HOUR);
+  const starts = bucketStarts(start, HOURS, HOUR);
   const day = measurements.counts(ids, vantage, start, start + HOURS * HOUR, HOUR);
   const p95 = percentile(day.hist, 0.95);
-  const card = JSON.stringify({
+  const cardData = JSON.stringify({
     rows: [
       ["Latest", ms(latest)],
       ["Median, 24h", ms(percentile(day.hist, 0.5))],
       ["p95, 24h", ms(p95)],
     ],
   });
-  return html`<td class="st-ping-cell" data-title="${VANTAGES.find((entry) => entry.code === vantage)?.name ?? vantage}" data-card="${card}">
+  return html`<td class="st-ping-cell" tabindex="0" data-title="${VANTAGES.find((entry) => entry.code === vantage)?.name ?? vantage}" data-card="${cardData}">
   <span class="st-ping-value ts-num">${ms(latest)}</span>
   <span class="ts-meta ts-num">p95 ${ms(p95)}</span>
   ${sparkline(measurements.series(ids, vantage, starts, HOUR, HOUR, 0.5))}
@@ -44,7 +45,6 @@ function cell(
 
 export function pingPage(view: Overview, details: Details, now: number): Page {
   const measurements = new Measurements(details.periods);
-  const live = view.regions.filter((region) => region.clusters.length > 0);
   const components = view.groups.flatMap((group) => group.components).filter((entry) => entry.clusters.length > 0);
 
   const header = html`<tr><th scope="col">From</th>${VANTAGES.map((vantage) => html`<th scope="col">${vantage.name}</th>`)}</tr>`;
@@ -52,7 +52,7 @@ export function pingPage(view: Overview, details: Details, now: number): Page {
   <thead>${header}</thead>
   <tbody>${view.regions.map((region) => {
     const ids = region.clusters.map((cluster) => cluster.id);
-    return html`<tr><th scope="row"><a class="st-incident-link" href="/regions/${region.code}">${region.code} · ${region.name}</a> ${
+    return html`<tr><th scope="row"><a class="st-incident-link" href="${regionHref(region.code)}">${region.code} · ${region.name}</a> ${
       ids.length === 0 ? statusBadge("none", "Planned") : ""
     }</th>${
       ids.length === 0
@@ -68,19 +68,18 @@ export function pingPage(view: Overview, details: Details, now: number): Page {
   <thead>${header}</thead>
   <tbody>${components.map((component) => {
     const ids = component.clusters.map((cluster) => cluster.id);
-    return html`<tr><th scope="row"><a class="st-incident-link" href="/components/${component.id}">${component.name}</a></th>${VANTAGES.map(
+    return html`<tr><th scope="row"><a class="st-incident-link" href="${componentHref(component.id)}">${component.name}</a></th>${VANTAGES.map(
       (vantage) => cell(measurements, ids, vantage.code, component.vantagePings[vantage.code] ?? null, now),
     )}</tr>`;
   })}</tbody>
 </table></div>`;
 
   const targets = [
-    { name: "Nearest Cloudflare data center", detail: "this page's edge", url: "/api/ping", code: "EDGE" },
+    { name: "Nearest Cloudflare data center", detail: "this page's edge", url: "/api/ping" },
     ...view.regions.map((region) => ({
       name: `${region.code} · ${region.name}`,
       detail: region.pingLabel ?? "",
       url: region.pingUrl,
-      code: region.code,
     })),
   ];
   const browser = html`<div class="st-ping-test">
@@ -112,9 +111,7 @@ export function pingPage(view: Overview, details: Details, now: number): Page {
       title: "Regions from each vantage point",
       description: "The latest median response of each region's clusters, the 24-hour p95, and the last 24 hours.",
     },
-    live.length === 0 && view.regions.length === 0
-      ? empty("No regions", "Regions will appear once they are registered.")
-      : regionMatrix,
+    view.regions.length === 0 ? empty("No regions", "Regions will appear once they are registered.") : regionMatrix,
   )}
 
   ${card(

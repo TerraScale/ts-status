@@ -2,7 +2,7 @@
    the consensus with deploy markers, and the median seen from each vantage. */
 
 import type { Deploy } from "../db/details";
-import { byHour, RANGES, rangeStart, type RangeKey } from "../domain/range";
+import { bucketStarts, byHour, RANGES, rangeStart, type RangeKey } from "../domain/range";
 import { DAY, formatClock, formatDay, HOUR } from "../format";
 import { html, type Html } from "../html";
 import type { Measurements } from "../measure";
@@ -21,14 +21,11 @@ interface Axis {
 function axis(range: RangeKey, now: number): Axis {
   const { count, size } = RANGES[range];
   const start = rangeStart(range, now);
-  const starts = Array.from({ length: count }, (_, index) => start + index * size);
-  const hourly = size < DAY;
+  const starts = bucketStarts(start, count, size);
+  const hourly = byHour(range);
   const name = (at: number) => (hourly ? `${formatDay(at)} ${formatClock(at)} UTC` : formatDay(at));
-  const ticks = [0, 1, 2, 3, 4].map((step) => {
-    const at = starts[Math.round((step * (starts.length - 1)) / 4)] ?? start;
-    return hourly ? `${formatDay(at)} ${formatClock(at)}` : formatDay(at);
-  });
-  return { starts, size, period: byHour(range) ? HOUR : DAY, points: starts.map(name), ticks };
+  const ticks = [0, 1, 2, 3, 4].map((step) => name(starts[Math.round((step * (starts.length - 1)) / 4)] ?? start));
+  return { starts, size, period: hourly ? HOUR : DAY, points: starts.map(name), ticks };
 }
 
 const format = (value: number) => `${Math.round(value)} ms`;
@@ -66,8 +63,10 @@ export function latencyCharts(
     perVantage,
   );
 
+  // Both charts show data only once the consensus has any, so they agree.
+  if (!p50.some((value) => value !== null)) return { summary: none, vantages: none };
   return {
-    summary: summaryChart.value === "" ? none : html`${summaryChart}${chartLegend(["Median", "p95"])}`,
+    summary: html`${summaryChart}${chartLegend(["Median", "p95"])}`,
     vantages:
       vantageChart.value === "" ? none : html`${vantageChart}${chartLegend(perVantage.map((entry) => entry.name))}`,
   };

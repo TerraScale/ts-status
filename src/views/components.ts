@@ -222,6 +222,12 @@ export function incidentItem(incident: Incident, now: number, names: ReadonlyMap
 </li>`;
 }
 
+/** A component's page. */
+export const componentHref = (id: string): string => `/components/${id}`;
+
+/** A region's page. */
+export const regionHref = (code: string): string => `/regions/${code}`;
+
 const rangeHref = (base: string, range: RangeKey): string =>
   range === DEFAULT_RANGE ? base : `${base}?range=${range}`;
 
@@ -250,7 +256,7 @@ export function clusterRow(
   const where = `${PROVIDERS[entry.provider]} · ${entry.cluster}${entry.regionCode ? ` · ${entry.regionCode}` : " · global"}`;
   return html`<li class="ts-list-item st-service">
   <div class="ts-list-main">
-    <h4 class="ts-strong">${title === "component" ? html`<a class="st-incident-link" href="/components/${entry.componentId}">${entry.componentName}</a>` : entry.cluster}</h4>
+    <h4 class="ts-strong">${title === "component" ? html`<a class="st-incident-link" href="${componentHref(entry.componentId)}">${entry.componentName}</a>` : entry.cluster}</h4>
     <p class="ts-meta">${where}</p>
   </div>
   <div class="st-service-state">

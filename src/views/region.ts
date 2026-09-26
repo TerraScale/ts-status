@@ -8,7 +8,7 @@ import { html } from "../html";
 import { Measurements } from "../measure";
 import type { Overview, RegionOverview } from "../overview";
 import { VANTAGES } from "../probe/vantages";
-import { card, clusterRow, empty, incidentItem, ms, rangeSwitch, stat, statusBadge } from "./components";
+import { card, clusterRow, empty, incidentItem, ms, rangeSwitch, regionHref, stat, statusBadge } from "./components";
 import { latencyCharts } from "./latency";
 import type { Page } from "./layout";
 
@@ -50,7 +50,7 @@ export function regionPage(view: Overview, entry: RegionOverview, details: Detai
       id: "clusters",
       title: "Clusters",
       description: `Status over the last ${range}.`,
-      actions: rangeSwitch(view.range, `/regions/${entry.code}`),
+      actions: rangeSwitch(view.range, regionHref(entry.code)),
     },
     html`<ul class="ts-list">${entry.clusters.map((cluster) => clusterRow(cluster, view.range))}</ul>`,
   )}

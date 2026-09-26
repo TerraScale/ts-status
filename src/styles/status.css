@@ -747,6 +747,11 @@
   text-align: right;
 }
 
+/* Month headers line up with the right-aligned cells beneath them. */
+.st-sla thead th:not(:first-child) {
+  text-align: right;
+}
+
 .st-sla-cell[data-sla="met"] {
   color: var(--ts-success);
 }

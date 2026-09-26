@@ -4,12 +4,12 @@
 
 import type { VantagePeriod } from "../db/details";
 import { aggregate, probeState, probeUptime, sumCounts, type Bucket, type ProbeCounts } from "../domain/status";
-import { DAY, formatMonth, formatUptime } from "../format";
+import { DAY, formatMonthShort, formatUptime } from "../format";
 import { html, type Html } from "../html";
 import { Measurements } from "../measure";
 import type { Overview } from "../overview";
 import { heatmap, lastDays } from "./charts/heatmap";
-import { bars, card, empty, probeRows, stat, statusBadge } from "./components";
+import { bars, card, componentHref, empty, probeRows, stat, statusBadge } from "./components";
 import type { Page } from "./layout";
 
 /** The uptime every component aims for each month. */
@@ -20,7 +20,6 @@ export const YEAR_DAYS = 365;
 const MONTHS = 12;
 
 interface Month {
-  key: string;
   from: number;
   to: number;
 }
@@ -33,7 +32,7 @@ function months(now: number): Month[] {
     start.setUTCMonth(start.getUTCMonth() - index);
     const end = new Date(start);
     end.setUTCMonth(end.getUTCMonth() + 1);
-    return { key: start.toISOString().slice(0, 7), from: start.getTime(), to: Math.min(end.getTime(), now + DAY) };
+    return { from: start.getTime(), to: Math.min(end.getTime(), now + DAY) };
   });
 }
 
@@ -73,11 +72,11 @@ export function uptimePage(view: Overview, periods: readonly VantagePeriod[], no
 
   const table = html`<div class="st-table-wrap"><table class="st-sla">
   <caption class="ts-sr-only">Monthly uptime per component; the target is ${formatUptime(SLA_TARGET)}</caption>
-  <thead><tr><th scope="col">Component</th>${monthList.map((month) => html`<th scope="col">${formatMonth(month.from).replace(/ (\d{2})(\d{2})$/, " ’$2")}</th>`)}</tr></thead>
+  <thead><tr><th scope="col">Component</th>${monthList.map((month) => html`<th scope="col">${formatMonthShort(month.from)}</th>`)}</tr></thead>
   <tbody>
     ${components.map(
       (component) =>
-        html`<tr><th scope="row"><a class="st-incident-link" href="/components/${component.id}">${component.name}</a></th>${monthList.map(
+        html`<tr><th scope="row"><a class="st-incident-link" href="${componentHref(component.id)}">${component.name}</a></th>${monthList.map(
           (month) =>
             slaCell(measurements.counts(byComponent.get(component.id) ?? [], "all", month.from, month.to, DAY)),
         )}</tr>`,
@@ -126,7 +125,7 @@ export function uptimePage(view: Overview, periods: readonly VantagePeriod[], no
     { id: "components", title: "Last 90 days", description: "Daily status of every measured component." },
     html`<ul class="ts-list">${components.map(
       (component) => html`<li class="ts-list-item st-service">
-    <div class="ts-list-main"><h3 class="ts-strong"><a class="st-incident-link" href="/components/${component.id}">${component.name}</a></h3></div>
+    <div class="ts-list-main"><h3 class="ts-strong"><a class="st-incident-link" href="${componentHref(component.id)}">${component.name}</a></h3></div>
     <div class="st-service-state"><span class="ts-meta ts-num">${formatUptime(component.uptime)}</span>${statusBadge(component.status)}</div>
     ${bars(component.bars, { label: `${component.name}: ${formatUptime(component.uptime)} uptime over the last 90 days` })}
   </li>`,

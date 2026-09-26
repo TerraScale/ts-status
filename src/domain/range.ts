@@ -23,6 +23,10 @@ export const isRange = (value: string | undefined): value is RangeKey =>
 /** Hourly rollups back the ranges with sub-day buckets; the rest use days. */
 export const byHour = (range: RangeKey): boolean => RANGES[range].size < DAY;
 
+/** The starts of `count` consecutive buckets of `size`, from `start`. */
+export const bucketStarts = (start: number, count: number, size: number): number[] =>
+  Array.from({ length: count }, (_, index) => start + index * size);
+
 /** Where the range's first bucket starts. */
 export function rangeStart(range: RangeKey, now: number): number {
   const { count, size } = RANGES[range];

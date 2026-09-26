@@ -146,12 +146,21 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
 </g>`);
   }
 
-  const markers = (options.markers ?? [])
-    .filter((marker) => marker.index >= 0 && marker.index < count)
-    .map((marker) => {
-      const x = coordinate(xAt(marker.index));
-      return html`<g class="st-chart-marker"><line x1="${x}" y1="${TOP}" x2="${x}" y2="${bottom}"></line><text x="${x}" y="${TOP - 3}" text-anchor="middle">${marker.label}</text><title>${marker.label}</title></g>`;
-    });
+  // Markers sharing a sample merge into one; labels at the ends align inward.
+  const labels = new Map<number, string[]>();
+  for (const marker of options.markers ?? []) {
+    if (marker.index >= 0 && marker.index < count) {
+      labels.set(marker.index, [...(labels.get(marker.index) ?? []), marker.label]);
+    }
+  }
+  const markers = [...labels].map(([index, list]) => {
+    const x = coordinate(xAt(index));
+    const label = list.join(", ");
+    let anchor = "middle";
+    if (index === 0) anchor = "start";
+    else if (index === count - 1) anchor = "end";
+    return html`<g class="st-chart-marker"><line x1="${x}" y1="${TOP}" x2="${x}" y2="${bottom}"></line><text x="${x}" y="${TOP - 3}" text-anchor="${anchor}">${label}</text><title>${label}</title></g>`;
+  });
 
   return html`<svg class="ts-chart" viewBox="0 0 ${WIDTH} ${height}" role="group" aria-label="${options.label}">
   <defs><linearGradient id="${gradient}" x1="0" y1="0" x2="0" y2="1"><stop class="ts-chart-fill-start" offset="0"></stop><stop class="ts-chart-fill-end" offset="1"></stop></linearGradient></defs>

@@ -3,7 +3,8 @@
    arrow keys walk, each opening a hover card. */
 
 import { STATE_LABELS, type Bucket } from "../../domain/status";
-import { DAY, formatDay } from "../../format";
+import { bucketStarts } from "../../domain/range";
+import { DAY, formatDay, startOfDay } from "../../format";
 import { html, type Html } from "../../html";
 import type { CardContent } from "../components";
 
@@ -14,16 +15,19 @@ const TOP = 16;
 
 const month = new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" });
 
+/** Draws `days`, UTC day buckets in order; each lands in its date's slot, so
+    days left out simply leave gaps. */
 export function heatmap(days: readonly Bucket[], label: string, card: (day: Bucket) => CardContent): Html {
   const first = days[0];
   if (!first) return html``;
   // Columns are weeks starting on Sunday.
   const offset = new Date(first.start).getUTCDay();
-  const weeks = Math.ceil((offset + days.length) / 7);
+  const slotOf = (day: Bucket) => offset + Math.round((day.start - first.start) / DAY);
+  const weeks = Math.ceil((slotOf(days.at(-1) ?? first) + 1) / 7);
   const width = LEFT + weeks * (CELL + GAP);
   const height = TOP + 7 * (CELL + GAP);
-  const cells = days.map((day, index) => {
-    const slot = offset + index;
+  const cells = days.map((day) => {
+    const slot = slotOf(day);
     const x = LEFT + Math.floor(slot / 7) * (CELL + GAP);
     const y = TOP + (slot % 7) * (CELL + GAP);
     const state = STATE_LABELS[day.state];
@@ -34,7 +38,7 @@ export function heatmap(days: readonly Bucket[], label: string, card: (day: Buck
     // leaves room before the next label.
     const date = new Date(day.start).getUTCDate();
     if (date !== 1 && (index !== 0 || date > 14)) return [];
-    const x = LEFT + Math.floor((offset + index) / 7) * (CELL + GAP);
+    const x = LEFT + Math.floor(slotOf(day) / 7) * (CELL + GAP);
     return [html`<text class="st-heat-label" x="${x}" y="${TOP - 5}">${month.format(day.start)}</text>`];
   });
   const weekdays = [
@@ -53,4 +57,4 @@ export function heatmap(days: readonly Bucket[], label: string, card: (day: Buck
 
 /** The UTC day starts of the `count` days ending today. */
 export const lastDays = (now: number, count: number): number[] =>
-  Array.from({ length: count }, (_, index) => now - (now % DAY) - (count - 1 - index) * DAY);
+  bucketStarts(startOfDay(now) - (count - 1) * DAY, count, DAY);

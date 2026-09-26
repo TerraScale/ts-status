@@ -11,6 +11,7 @@ const clock = new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit"
 const clockSeconds = new Intl.DateTimeFormat("en", { timeStyle: "medium", hourCycle: "h23", timeZone: "UTC" });
 const day = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" });
 const month = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" });
+const monthName = new Intl.DateTimeFormat("en", { month: "long", timeZone: "UTC" });
 
 export const HOUR = 3_600_000;
 export const DAY = 24 * HOUR;
@@ -29,6 +30,12 @@ export const formatDay = (at: number): string => day.format(at);
 
 /** "September 2026" */
 export const formatMonth = (at: number | string): string => month.format(new Date(at));
+
+/** "September ’26" */
+export const formatMonthShort = (at: number | string): string => {
+  const date = new Date(at);
+  return `${monthName.format(date)} ’${String(date.getUTCFullYear()).slice(-2)}`;
+};
 
 /** "99.98%", keeping precision where it matters and never rounding to 100. */
 export function formatUptime(value: number | null): string {

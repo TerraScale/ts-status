@@ -224,7 +224,9 @@ export const CLIENT_SCRIPT = `(() => {
   addEventListener("resize", place);
 
   // The ping page's browser test: a warm-up request to open the connection,
-  // then five timed ones; opaque (no-cors) responses still time the trip.
+  // then timed ones; opaque (no-cors) responses still time the trip. A
+  // request that never answers fails after a timeout.
+  const samples = 5;
   const start = document.querySelector("[data-ping-start]");
   if (start) {
     start.disabled = false;
@@ -235,6 +237,7 @@ export const CLIENT_SCRIPT = `(() => {
         mode: same ? "same-origin" : "no-cors",
         cache: "no-store",
         credentials: "omit",
+        signal: AbortSignal.timeout(10000),
       });
       const elapsed = performance.now() - began;
       return { elapsed, response: same ? response : null };
@@ -242,34 +245,37 @@ export const CLIENT_SCRIPT = `(() => {
     start.addEventListener("click", async () => {
       start.disabled = true;
       start.textContent = "Testing…";
-      for (const row of document.querySelectorAll("[data-ping-url]")) {
-        const result = row.querySelector("[data-ping-result]");
-        const fastest = row.querySelector("[data-ping-min]");
-        result.textContent = "…";
-        try {
-          await once(row.dataset.pingUrl);
-          const times = [];
-          let last = null;
-          for (let index = 0; index < 5; index++) {
-            const { elapsed, response } = await once(row.dataset.pingUrl);
-            times.push(elapsed);
-            last = response;
+      try {
+        for (const row of document.querySelectorAll("[data-ping-url]")) {
+          const result = row.querySelector("[data-ping-result]");
+          const fastest = row.querySelector("[data-ping-min]");
+          result.textContent = "…";
+          try {
+            await once(row.dataset.pingUrl);
+            const times = [];
+            let last = null;
+            for (let index = 0; index < samples; index++) {
+              const { elapsed, response } = await once(row.dataset.pingUrl);
+              times.push(elapsed);
+              last = response;
+            }
+            times.sort((a, b) => a - b);
+            result.textContent = Math.round(times[Math.floor(times.length / 2)]) + " ms";
+            fastest.textContent = Math.round(times[0]) + " ms";
+            if (last) {
+              const data = await last.json().catch(() => null);
+              const colo = row.querySelector("[data-ping-colo]");
+              if (data && data.colo && colo) colo.textContent = " · " + data.colo;
+            }
+          } catch {
+            result.textContent = "Unreachable";
+            fastest.textContent = "—";
           }
-          times.sort((a, b) => a - b);
-          result.textContent = Math.round(times[2]) + " ms";
-          fastest.textContent = Math.round(times[0]) + " ms";
-          if (last) {
-            const data = await last.json().catch(() => null);
-            const colo = row.querySelector("[data-ping-colo]");
-            if (data && data.colo && colo) colo.textContent = " · " + data.colo;
-          }
-        } catch {
-          result.textContent = "Unreachable";
-          fastest.textContent = "—";
         }
+      } finally {
+        start.disabled = false;
+        start.textContent = "Test again";
       }
-      start.disabled = false;
-      start.textContent = "Test again";
     });
   }
 

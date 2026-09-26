@@ -2,7 +2,7 @@
    markers, latency from each vantage, its clusters, deploys and incidents. */
 
 import type { Details } from "../db/details";
-import { RANGES, type RangeKey } from "../domain/range";
+import { RANGES } from "../domain/range";
 import { percentile } from "../domain/histogram";
 import { probeUptime, sumCounts } from "../domain/status";
 import { formatUptime } from "../format";
@@ -13,6 +13,7 @@ import {
   bars,
   card,
   clusterRow,
+  componentHref,
   empty,
   incidentItem,
   ms,
@@ -33,7 +34,7 @@ export function componentPage(view: Overview, entry: ComponentOverview, details:
   const group = view.groups.find((item) => item.id === entry.groupId);
   const names = new Map(view.groups.flatMap((item) => item.components).map((item) => [item.id, item.name]));
   const range = RANGES[view.range].label;
-  const base = `/components/${entry.id}`;
+  const base = componentHref(entry.id);
   const planned = entry.lifecycle === "planned";
 
   const body = html`<main id="main" class="ts-page" data-live data-title="${entry.name} · TerraScale Status">
@@ -61,7 +62,7 @@ export function componentPage(view: Overview, entry: ComponentOverview, details:
       id: "status",
       title: "Status",
       description: html`Over the last ${range}, in ${zone}.`,
-      actions: rangeSwitch(view.range as RangeKey, base),
+      actions: rangeSwitch(view.range, base),
     },
     html`${bars(entry.bars, { label: `${entry.name}: ${formatUptime(entry.uptime)} uptime over the last ${range}` })}
   <div class="st-axis" aria-hidden="true"><span>${range} ago</span><span>Now</span></div>`,
