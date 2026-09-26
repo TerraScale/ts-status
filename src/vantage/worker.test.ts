@@ -3,7 +3,7 @@ import type { ProbeResponse } from "../probe/protocol";
 import worker from "./worker";
 
 const env = { VANTAGE: "GRU" };
-const target = { key: "dash", url: "https://dash.test/health/ready", headers: "{}" };
+const target = { key: "dash", url: "https://dash.test/health/ready", headers: "{}", body: false };
 
 function probe(init: RequestInit & { cf?: { colo: string } } = {}): Promise<Response> {
   const request = new Request("https://vantage.test/", { method: "POST", ...init });
@@ -32,7 +32,7 @@ describe("vantage worker", () => {
       cf: { colo: "EWR" },
     });
     const body = (await response.json()) as ProbeResponse;
-    expect(body).toMatchObject({ vantage: "GRU", colo: "GRU", results: [{ key: "dash", ok: true, error: null }] });
+    expect(body).toMatchObject({ vantage: "GRU", colo: "GRU", results: [{ key: "dash", status: 200, error: null }] });
   });
 
   it("falls back to the data center that served the request", async () => {

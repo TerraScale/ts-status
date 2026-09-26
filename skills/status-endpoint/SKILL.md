@@ -9,6 +9,14 @@ Use this repo skill when the human asks to add, launch, move, pause, or remove a
 - `regions`: one row per region (`code` such as `GRU`, `name`, `country`, and `map_x`/`map_y`, the hub position on the 136×80 region map viewBox). Regions without enabled endpoints show as "Planned".
 - `endpoints`: one health check per cluster of a component. `region_code` names the region, or is null for global services such as edge Workers; `url` answers 2xx when healthy; `headers` is a JSON object sent with every probe; `provider` is `fly`, `oci`, `cloudflare`, or `other`.
 
+Every endpoint also carries a check:
+
+- `expect_status`: `2xx` by default, or codes such as `200,204`.
+- `keyword`: text the body must contain.
+- `assertions`: a JSON array of `{"path", "op", "value"}` on the JSON body; `op` is `eq`, `ne`, `lt`, `gt`, `exists` or `contains`, and paths are dotted keys with array selectors, e.g. `status` or `regions[code=GRU].available`.
+- `extract`: a JSON object of named paths recorded with every sample. A `version` that changes is recorded as a deploy in `deploys`; TerraBase cells extract `lag_ms`.
+- `indirect`: `1` when the URL reports on the component instead of serving it (TerraBase cells are judged from atlas's region catalog). If it cannot be fetched, the component is unknown, not down.
+
 A component's status is measured from four vantage points: a cluster is degraded when some vantages fail or it answers slower than 1.5 s, and down once most vantages fail two rounds in a row. A component or region is down only when all of its clusters are, and partially down when some are.
 
 ## Launch a planned component
@@ -32,6 +40,13 @@ npm exec -- wrangler d1 execute ts-status-db --remote --command \
 ```
 
 Fly.io apps share one anycast hostname. Send `{"fly-prefer-region": "gru"}` in `headers` to prefer a region's Machines; Fly falls back to the nearest region when that one has none running, so only register Fly regions that have Machines.
+
+Check a TerraBase cell through atlas:
+
+```sh
+npm exec -- wrangler d1 execute ts-status-db --remote --command \
+  "UPDATE endpoints SET assertions = '[{\"path\":\"regions[code=NRT].available\",\"op\":\"eq\",\"value\":true}]', extract = '{\"lag_ms\":\"regions[code=NRT].lag_ms\"}', indirect = 1 WHERE id = 'data-api-oci-nrt';"
+```
 
 ## Add a component or region
 

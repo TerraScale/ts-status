@@ -5,15 +5,11 @@
 
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env";
-import { ROUND_MS, roundOf, runRound } from "./round";
+import { ROUND_MS, roundOf, runRound, type RoundState } from "./round";
 
-interface State {
+interface State extends Partial<RoundState> {
   /** The last round stored. */
   round?: number;
-  /** Consecutive down rounds per endpoint. */
-  streaks?: Record<string, number>;
-  /** Where each vantage last ran. */
-  colos?: Record<string, string | null>;
 }
 
 export class Coordinator extends DurableObject<Env> {
@@ -31,7 +27,11 @@ export class Coordinator extends DurableObject<Env> {
     const state = (await this.ctx.storage.get<State>("state")) ?? {};
     if (state.round !== undefined && state.round >= at) return;
     try {
-      const result = await runRound(this.env, at, state.streaks ?? {}, state.colos ?? {});
+      const result = await runRound(this.env, at, {
+        streaks: state.streaks ?? {},
+        colos: state.colos ?? {},
+        versions: state.versions ?? {},
+      });
       await this.ctx.storage.put<State>("state", { round: at, ...result });
     } catch (error) {
       // The next round runs in 30 seconds; retrying this one would only

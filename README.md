@@ -14,6 +14,7 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 - **Four vantage points.** Small Workers placed near `aws:us-west-1`, `aws:sa-east-1`, `aws:eu-central-1` and `aws:ap-northeast-1` probe every endpoint; each reports the data center it ran in.
 - **30-second rounds.** A single coordinator Durable Object, next to the D1 primary, runs a round on every half minute through the vantages' service bindings and stores one sample per endpoint.
 - **Consensus.** A round needs two answering vantages; an endpoint is down only when most of them fail, degraded when some do or it is slower than 1.5 s, and shown down only after two down rounds in a row. A vantage that does not answer is left out, never counted as a failure.
+- **Deep checks.** Besides answering, an endpoint can be required to return an expected status, contain a keyword, or satisfy JSON assertions such as `regions[code=GRU].available eq true`; extracted values (a version, replication lag) are stored with each sample, and a new version becomes a deploy marker. TerraBase cells are judged from atlas's region catalog; when atlas itself cannot be reached, they are unknown rather than down.
 - **Rollups.** The minute cron rebuilds hourly rollups (per vantage and for the consensus, with latency histograms) from the samples and daily rollups from the hours. Samples are kept 48 hours, hours 90 days and days 400 days.
 
 ## Layout

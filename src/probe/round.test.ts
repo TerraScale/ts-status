@@ -1,29 +1,48 @@
 import { describe, expect, it } from "vitest";
+import type { CheckSpec } from "../domain/assertions";
 import type { Env } from "../env";
 import { testD1 } from "../testing/d1";
 import type { ProbeRequest, ProbeResponse } from "./protocol";
-import { evaluate, roundOf, runRound, targets } from "./round";
+import { evaluate, roundOf, runRound, targets, type RoundEndpoint } from "./round";
 
-const endpoints = [
-  { id: "a", url: "https://x.test/health", headers: "{}" },
-  { id: "b", url: "https://x.test/health", headers: "{}" },
-  { id: "c", url: "https://y.test/health", headers: "{}" },
+const plain: CheckSpec = { expectStatus: "2xx", keyword: null, assertions: [], extract: {}, indirect: false };
+const atlas = (code: string): CheckSpec => ({
+  ...plain,
+  assertions: [{ path: `regions[code=${code}].available`, op: "eq", value: true }],
+  extract: { lag_ms: `regions[code=${code}].lag_ms` },
+  indirect: true,
+});
+
+const endpoints: RoundEndpoint[] = [
+  { id: "gru", url: "https://atlas.test/regions", headers: "{}", spec: atlas("GRU") },
+  { id: "sfo", url: "https://atlas.test/regions", headers: "{}", spec: atlas("SFO") },
+  { id: "web", url: "https://web.test/", headers: "{}", spec: plain },
 ];
 
-const answer = (vantage: string, colo: string, ok: (url: string) => boolean) => ({
+const catalog = JSON.stringify({
+  regions: [
+    { code: "GRU", available: true, lag_ms: 9 },
+    { code: "SFO", available: false },
+  ],
+});
+
+/** A vantage's answer: atlas answering with `atlasStatus`, the website with `webStatus`. */
+const answer = (vantage: string, atlasStatus: number, webStatus = 200): ProbeResponse => ({
   vantage,
-  colo,
-  results: targets(endpoints).map((target) => ({
-    key: target.key,
-    ok: ok(target.url),
-    latencyMs: 50,
-    error: ok(target.url) ? null : "HTTP 503",
-  })),
+  colo: vantage.toUpperCase(),
+  results: targets(endpoints).map((target) =>
+    target.url.includes("atlas")
+      ? { key: target.key, status: atlasStatus, latencyMs: 50, error: null, body: catalog }
+      : { key: target.key, status: webStatus, latencyMs: 30, error: null },
+  ),
 });
 
 describe("targets", () => {
-  it("probes a shared URL once", () => {
-    expect(targets(endpoints).map((target) => target.url)).toEqual(["https://x.test/health", "https://y.test/health"]);
+  it("probes a shared URL once, with its body when any endpoint needs it", () => {
+    expect(targets(endpoints).map((target) => [target.url, target.body])).toEqual([
+      ["https://atlas.test/regions", true],
+      ["https://web.test/", false],
+    ]);
   });
 });
 
@@ -34,71 +53,98 @@ describe("roundOf", () => {
 });
 
 describe("evaluate", () => {
-  const down = (url: string) => !url.includes("y.test");
-
-  it("judges each endpoint across the answering vantages", () => {
-    const responses = [answer("sfo", "SJC", down), answer("fra", "FRA", down), null];
-    const { samples, streaks } = evaluate(endpoints, responses, {});
+  it("judges each endpoint on the shared observation", () => {
+    const { samples, streaks } = evaluate(endpoints, [answer("sfo", 200), answer("fra", 200), null], {});
     expect(samples.map((sample) => [sample.endpointId, sample.state, sample.ok, sample.total])).toEqual([
-      ["a", "operational", 2, 2],
-      ["b", "operational", 2, 2],
-      ["c", "degraded", 0, 2],
+      ["gru", "operational", 2, 2],
+      ["sfo", "degraded", 0, 2],
+      ["web", "operational", 2, 2],
     ]);
-    expect(samples[2]?.results).toEqual([
-      { v: "sfo", ok: 0, ms: 50, e: "HTTP 503" },
-      { v: "fra", ok: 0, ms: 50, e: "HTTP 503" },
-    ]);
+    expect(samples[0]?.values).toEqual({ lag_ms: 9 });
+    expect(samples[1]?.results[0]).toEqual({
+      v: "sfo",
+      ok: 0,
+      ms: null,
+      e: "Expected regions[code=SFO].available eq true",
+    });
     // The first down round is a streak of one; the second confirms it.
-    expect(streaks).toEqual({ c: 1 });
-    expect(evaluate(endpoints, responses, streaks).samples[2]?.state).toBe("major_outage");
+    expect(streaks).toEqual({ sfo: 1 });
+    expect(evaluate(endpoints, [answer("sfo", 200), answer("fra", 200)], streaks).samples[1]?.state).toBe(
+      "major_outage",
+    );
+  });
+
+  it("leaves unknown results out: a failing indirect source never marks its cells down", () => {
+    const { samples } = evaluate(endpoints, [answer("sfo", 503, 503), answer("fra", 503, 503)], {});
+    expect(samples.map((sample) => sample.state)).toEqual(["none", "none", "degraded"]);
+    expect(samples[0]?.results).toEqual([
+      { v: "sfo", ok: null, ms: null, e: "HTTP 503" },
+      { v: "fra", ok: null, ms: null, e: "HTTP 503" },
+    ]);
   });
 
   it("cannot judge when only one vantage answered", () => {
-    const { samples } = evaluate(endpoints, [answer("sfo", "SJC", () => false), null, null, null], {});
+    const { samples } = evaluate(endpoints, [answer("sfo", 200, 503), null, null, null], {});
     expect(samples.every((sample) => sample.state === "none")).toBe(true);
   });
 });
 
 describe("runRound", () => {
-  it("stores one sample per endpoint and each vantage's location once", async () => {
+  it("stores one sample per endpoint, each vantage's location once, and new versions as deploys", async () => {
     const db = testD1();
+    let version = "1.0.0";
     const asked: string[] = [];
-    const vantage = (code: string, colo: string) => ({
+    const vantage = (code: string) => ({
       fetch: async (_url: string, init: RequestInit) => {
         const body = JSON.parse(String(init.body)) as ProbeRequest;
-        asked.push(`${code}:${body.targets.length}`);
+        asked.push(code);
         return Response.json({
           vantage: code,
-          colo,
-          results: body.targets.map((target) => ({ key: target.key, ok: true, latencyMs: 40, error: null })),
+          colo: code.toUpperCase(),
+          results: body.targets.map((target) => ({
+            key: target.key,
+            status: 200,
+            latencyMs: 40,
+            error: null,
+            body: target.body
+              ? JSON.stringify({ status: target.url.includes("git") ? "pass" : "ok", version, regions: [] })
+              : undefined,
+          })),
         } satisfies ProbeResponse);
       },
     });
     const env = {
       STATUS_DB: db,
-      VANTAGE_SFO: vantage("sfo", "SJC"),
-      VANTAGE_GRU: vantage("gru", "GRU"),
-      VANTAGE_FRA: vantage("fra", "FRA"),
+      VANTAGE_SFO: vantage("sfo"),
+      VANTAGE_GRU: vantage("gru"),
+      VANTAGE_FRA: vantage("fra"),
       VANTAGE_NRT: { fetch: async () => new Response("boom", { status: 500 }) },
     } as unknown as Env;
-
+    // The website must mention TerraScale; this stand-in answers JSON, so it fails.
     const at = Date.parse("2026-09-26T10:00:30Z");
-    const first = await runRound(env, at, {}, {});
+    const first = await runRound(env, at, { streaks: {}, colos: {}, versions: {} });
     // Retrying the same round stores nothing new.
-    const second = await runRound(env, at, first.streaks, first.colos);
+    const again = await runRound(env, at, first);
+    version = "1.1.0";
+    await runRound(env, at + 30_000, again);
 
-    expect(asked).toHaveLength(6);
-    expect(first.colos).toEqual({ sfo: "SJC", gru: "GRU", fra: "FRA" });
-    expect(second.colos).toEqual(first.colos);
+    expect(asked).toHaveLength(9);
+    expect(first.colos).toEqual({ sfo: "SFO", gru: "GRU", fra: "FRA" });
+    expect(first.versions).toEqual({ "dashboard-fly-gru": "1.0.0" });
     const samples = db.sqlite
-      .prepare("SELECT endpoint_id, state, ok, total FROM probe_samples ORDER BY endpoint_id")
+      .prepare(
+        `SELECT endpoint_id, state, ok, total, "values" FROM probe_samples WHERE at = '2026-09-26 10:00:30' ORDER BY endpoint_id`,
+      )
       .all();
     expect(samples).toEqual([
-      { endpoint_id: "atlas-workers", state: "operational", ok: 3, total: 3 },
-      { endpoint_id: "dashboard-fly-gru", state: "operational", ok: 3, total: 3 },
-      { endpoint_id: "git-forgejo", state: "operational", ok: 3, total: 3 },
-      { endpoint_id: "website-pages", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "atlas-workers", state: "operational", ok: 3, total: 3, values: null },
+      { endpoint_id: "dashboard-fly-gru", state: "operational", ok: 3, total: 3, values: '{"version":"1.0.0"}' },
+      { endpoint_id: "git-forgejo", state: "operational", ok: 3, total: 3, values: null },
+      { endpoint_id: "website-pages", state: "degraded", ok: 0, total: 3, values: null },
     ]);
-    expect(db.sqlite.prepare("SELECT code, colo FROM vantages ORDER BY code").all()).toHaveLength(3);
+    expect(db.sqlite.prepare("SELECT endpoint_id, version FROM deploys").all()).toEqual([
+      { endpoint_id: "dashboard-fly-gru", version: "1.1.0" },
+    ]);
+    expect(db.sqlite.prepare("SELECT code FROM vantages").all()).toHaveLength(3);
   });
 });

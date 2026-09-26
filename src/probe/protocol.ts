@@ -1,4 +1,5 @@
-/* What the coordinator asks a vantage Worker, and what it answers. */
+/* What the coordinator asks a vantage Worker, and what it answers. Vantages
+   only observe; the coordinator judges every endpoint's observations. */
 
 /** One URL to probe; endpoints sharing a URL and headers share a target. */
 export interface Target {
@@ -6,6 +7,8 @@ export interface Target {
   url: string;
   /** JSON object of request headers. */
   headers: string;
+  /** Return the start of the body, for keyword and JSON checks. */
+  body: boolean;
 }
 
 export interface ProbeRequest {
@@ -14,9 +17,12 @@ export interface ProbeRequest {
 
 export interface TargetResult {
   key: string;
-  ok: boolean;
+  /** The response status, or null when no response arrived. */
+  status: number | null;
   latencyMs: number;
+  /** Why no response arrived. */
   error: string | null;
+  body?: string;
 }
 
 export interface ProbeResponse {
