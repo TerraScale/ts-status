@@ -135,8 +135,8 @@ export function spans(start: number, end: number, count: number): { start: numbe
   });
 }
 
-/* Regions and health probes. Every cluster in a region is an endpoint that
-   the Worker probes each minute; results roll up into hourly counts. */
+/* Regions and health probes. Every cluster is an endpoint probed from
+   every vantage each round; rounds roll up into hourly and daily counts. */
 
 export interface Region {
   code: string;
@@ -152,72 +152,81 @@ export interface Endpoint {
   regionCode: string | null;
   cluster: string;
   provider: Provider;
-  lastCheckedAt: string | null;
-  lastOk: number | null;
-  lastLatencyMs: number | null;
-  consecutiveFailures: number;
 }
 
-/** Probe counts for one UTC hour, or any sum of hours. */
+/** An endpoint's latest probe round. */
+export interface LatestSample {
+  endpointId: string;
+  at: string;
+  state: TimelineState;
+  /** Vantages that passed, out of those that answered. */
+  ok: number;
+  total: number;
+  latencyMs: number | null;
+}
+
+/** Probe counts over any stretch of time. `checks` counts judged rounds,
+    `failures` the down ones; latency covers the rest. */
 export interface ProbeCounts {
   checks: number;
   failures: number;
+  degraded: number;
   latencySum: number;
 }
 
-/** One endpoint's probe counts for one UTC hour. */
-export interface ProbeHour extends ProbeCounts {
+/** One endpoint's consensus counts for one UTC hour or day. */
+export interface ProbePeriod extends ProbeCounts {
   endpointId: string;
-  hour: string;
+  start: string;
 }
 
 /** Probes older than this no longer describe the present. */
-export const PROBE_STALE_MS = 5 * 60_000;
+export const PROBE_STALE_MS = 2 * 60_000;
 
 /** A healthy response slower than this counts as degraded. */
 export const SLOW_MS = 1_500;
 
-/** Consecutive failed probes before a cluster counts as down. */
-export const DOWN_AFTER = 3;
-
-/** The current state of one endpoint from its latest probes. */
-export function endpointStatus(endpoint: Endpoint, now: number): TimelineState {
-  if (!endpoint.lastCheckedAt || now - Date.parse(endpoint.lastCheckedAt) > PROBE_STALE_MS) return "none";
-  if (endpoint.consecutiveFailures >= DOWN_AFTER) return "major_outage";
-  if (endpoint.consecutiveFailures > 0) return "degraded";
-  if ((endpoint.lastLatencyMs ?? 0) > SLOW_MS) return "degraded";
-  return "operational";
+/** The current state of one endpoint from its latest round. */
+export function endpointStatus(latest: LatestSample | undefined, now: number): TimelineState {
+  if (!latest || now - Date.parse(latest.at) > PROBE_STALE_MS) return "none";
+  return latest.state;
 }
 
 /** The sum of several probe counts. */
 export function sumCounts(list: readonly ProbeCounts[]): ProbeCounts {
   return list.reduce(
-    (sum, hour) => ({
-      checks: sum.checks + hour.checks,
-      failures: sum.failures + hour.failures,
-      latencySum: sum.latencySum + hour.latencySum,
+    (sum, entry) => ({
+      checks: sum.checks + entry.checks,
+      failures: sum.failures + entry.failures,
+      degraded: sum.degraded + entry.degraded,
+      latencySum: sum.latencySum + entry.latencySum,
     }),
-    { checks: 0, failures: 0, latencySum: 0 },
+    { checks: 0, failures: 0, degraded: 0, latencySum: 0 },
   );
 }
 
-/** The state of a stretch of time from its failure ratio. */
-export function probeState(counts: Pick<ProbeCounts, "checks" | "failures"> | undefined): TimelineState {
+/** Fewer rounds than this cannot make a stretch of time an outage. */
+export const MIN_OUTAGE_ROUNDS = 3;
+
+/** The state of a stretch of time: down or partially down by its share of
+    failed rounds, degraded by any failure or a tenth of degraded rounds. */
+export function probeState(counts: Pick<ProbeCounts, "checks" | "failures" | "degraded"> | undefined): TimelineState {
   if (!counts || counts.checks === 0) return "none";
-  if (counts.failures === 0) return "operational";
-  // Too few probes to call an outage, like a single blip early in an hour.
-  if (counts.checks < DOWN_AFTER) return "degraded";
+  // Too few rounds to call an outage, like a single failed round early in an hour.
+  if (counts.failures > 0 && counts.checks < MIN_OUTAGE_ROUNDS) return "degraded";
   if (counts.failures === counts.checks) return "major_outage";
-  return counts.failures / counts.checks < 0.1 ? "degraded" : "partial_outage";
+  if (counts.failures / counts.checks >= 0.1) return "partial_outage";
+  if (counts.failures > 0 || counts.degraded * 10 >= counts.checks) return "degraded";
+  return "operational";
 }
 
-/** Share of successful probes, or null without probes. */
+/** Share of rounds that were not down, or null without rounds. */
 export function probeUptime(counts: Pick<ProbeCounts, "checks" | "failures">): number | null {
   return counts.checks === 0 ? null : 1 - counts.failures / counts.checks;
 }
 
-/** Mean latency of successful probes, or null without any. */
-export function meanLatency(counts: ProbeCounts): number | null {
+/** Mean latency of the rounds that were not down, or null without any. */
+export function meanLatency(counts: Pick<ProbeCounts, "checks" | "failures" | "latencySum">): number | null {
   const ok = counts.checks - counts.failures;
   return ok === 0 ? null : Math.round(counts.latencySum / ok);
 }

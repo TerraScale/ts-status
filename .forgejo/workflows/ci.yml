@@ -56,8 +56,13 @@ jobs:
         shell: bash
         run: vpr build
 
-      # This validates the generated deployment plan only. It never applies D1
-      # migrations and never publishes to Cloudflare.
-      - name: Validate the Wrangler deployment plan
+      # This validates the generated deployment plans of the status Worker
+      # and its vantage Workers only. It never applies D1 migrations and
+      # never publishes to Cloudflare.
+      - name: Validate the Wrangler deployment plans
         shell: bash
-        run: npm exec -- wrangler deploy --dry-run
+        run: |
+          wrangler deploy --dry-run
+          for vantage in sfo gru fra nrt; do
+            wrangler deploy --dry-run -c "dist/ts_status_vantage_$vantage/wrangler.json"
+          done

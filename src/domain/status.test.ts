@@ -79,46 +79,43 @@ describe("spans", () => {
 
 describe("probes", () => {
   const now = Date.parse("2026-09-26T10:15:00Z");
-  const endpoint = {
-    id: "e",
-    componentId: "dashboard",
-    regionCode: "GRU",
-    cluster: "c",
-    provider: "fly" as const,
-    lastCheckedAt: "2026-09-26T10:14:00Z",
-    lastOk: 1,
-    lastLatencyMs: 40,
-    consecutiveFailures: 0,
+  const latest = {
+    endpointId: "e",
+    at: "2026-09-26T10:14:30Z",
+    state: "degraded" as const,
+    ok: 3,
+    total: 4,
+    latencyMs: 40,
   };
 
-  it("derives an endpoint state from its latest probes", () => {
-    expect(endpointStatus(endpoint, now)).toBe("operational");
-    expect(endpointStatus({ ...endpoint, lastLatencyMs: 4_000 }, now)).toBe("degraded");
-    expect(endpointStatus({ ...endpoint, consecutiveFailures: 1 }, now)).toBe("degraded");
-    expect(endpointStatus({ ...endpoint, consecutiveFailures: 3 }, now)).toBe("major_outage");
-    expect(endpointStatus({ ...endpoint, lastCheckedAt: "2026-09-26T09:00:00Z" }, now)).toBe("none");
+  it("takes an endpoint state from its latest round while it is fresh", () => {
+    expect(endpointStatus(latest, now)).toBe("degraded");
+    expect(endpointStatus({ ...latest, at: "2026-09-26T10:10:00Z" }, now)).toBe("none");
+    expect(endpointStatus(undefined, now)).toBe("none");
   });
 
-  it("rates a stretch of time by its failed probes", () => {
+  it("rates a stretch of time by its failed and degraded rounds", () => {
     expect(probeState(undefined)).toBe("none");
-    expect(probeState({ checks: 60, failures: 0 })).toBe("operational");
-    expect(probeState({ checks: 60, failures: 2 })).toBe("degraded");
-    expect(probeState({ checks: 60, failures: 30 })).toBe("partial_outage");
-    expect(probeState({ checks: 60, failures: 60 })).toBe("major_outage");
+    expect(probeState({ checks: 120, failures: 0, degraded: 0 })).toBe("operational");
+    expect(probeState({ checks: 120, failures: 0, degraded: 2 })).toBe("operational");
+    expect(probeState({ checks: 120, failures: 0, degraded: 12 })).toBe("degraded");
+    expect(probeState({ checks: 120, failures: 2, degraded: 0 })).toBe("degraded");
+    expect(probeState({ checks: 120, failures: 30, degraded: 0 })).toBe("partial_outage");
+    expect(probeState({ checks: 120, failures: 120, degraded: 0 })).toBe("major_outage");
   });
 
-  it("calls too few failed probes degraded, not an outage", () => {
-    expect(probeState({ checks: 1, failures: 1 })).toBe("degraded");
-    expect(probeState({ checks: 2, failures: 2 })).toBe("degraded");
-    expect(probeState({ checks: 3, failures: 3 })).toBe("major_outage");
+  it("calls too few failed rounds degraded, not an outage", () => {
+    expect(probeState({ checks: 1, failures: 1, degraded: 0 })).toBe("degraded");
+    expect(probeState({ checks: 2, failures: 2, degraded: 0 })).toBe("degraded");
+    expect(probeState({ checks: 3, failures: 3, degraded: 0 })).toBe("major_outage");
   });
 
-  it("sums counts and averages latency over successful probes only", () => {
+  it("sums counts and averages latency over rounds that were not down", () => {
     const counts = sumCounts([
-      { checks: 2, failures: 1, latencySum: 60 },
-      { checks: 2, failures: 1, latencySum: 40 },
+      { checks: 2, failures: 1, degraded: 0, latencySum: 60 },
+      { checks: 2, failures: 1, degraded: 1, latencySum: 40 },
     ]);
-    expect(counts).toEqual({ checks: 4, failures: 2, latencySum: 100 });
+    expect(counts).toEqual({ checks: 4, failures: 2, degraded: 1, latencySum: 100 });
     expect(meanLatency(counts)).toBe(50);
     expect(meanLatency({ checks: 2, failures: 2, latencySum: 0 })).toBeNull();
     expect(probeUptime({ checks: 4, failures: 1 })).toBe(0.75);

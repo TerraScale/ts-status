@@ -9,7 +9,8 @@
     "check": "tsc --noEmit",
     "lint": "vp lint && vp fmt --check",
     "test": "vitest run",
-    "deploy": "npm run build && wrangler d1 migrations apply ts-status-db --remote && wrangler deploy",
+    "deploy": "npm run build && npm run db:migrate:remote && npm run deploy:vantages && wrangler deploy",
+    "deploy:vantages": "for vantage in sfo gru fra nrt; do wrangler deploy -c dist/ts_status_vantage_$vantage/wrangler.json || exit 1; done",
     "db:migrate:local": "wrangler d1 migrations apply ts-status-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply ts-status-db --remote"
   },

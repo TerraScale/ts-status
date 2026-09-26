@@ -149,6 +149,19 @@ export function homePage(view: Overview): Page {
     </div>
   </section>
 
+  ${
+    view.monitoring.delayed
+      ? html`<article class="ts-alert" data-state="degraded" role="status">
+    <h2 class="ts-alert-title">Monitoring delayed</h2>
+    <p class="ts-alert-body">${
+      view.monitoring.lastRoundAt === null
+        ? "Health checks have not reported yet, so component states are unknown."
+        : html`Health checks last reported ${time(view.monitoring.lastRoundAt, "seconds")}; states below may be out of date.`
+    }</p>
+  </article>`
+      : ""
+  }
+
   <dl class="ts-stats" aria-label="Platform summary">
     ${stat("Components", `${operational}/${measured.length}`, "operational now")}
     ${stat("Regions", `${live}/${view.regions.length}`, live === view.regions.length ? "all live" : `${view.regions.length - live} planned`)}
@@ -186,7 +199,7 @@ export function homePage(view: Overview): Page {
       id: "regions",
       title: "Regions",
       description:
-        "Every cluster is health checked each minute from Cloudflare's network. Ping is the latest check's round trip, then the 24-hour mean.",
+        "Every cluster is health checked every 30 seconds from four vantage points on Cloudflare's network. Ping is the median of the latest round, then the 24-hour mean.",
     },
     view.regions.length === 0
       ? empty("No regions published", "Regions will appear here once they are registered.")
