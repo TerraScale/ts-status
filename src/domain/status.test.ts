@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { emptyHistogram } from "./histogram";
 import {
   aggregate,
   endpointStatus,
@@ -9,6 +10,7 @@ import {
   probeUptime,
   spans,
   sumCounts,
+  typicalLatency,
   worstDuring,
   type Incident,
 } from "./status";
@@ -86,6 +88,7 @@ describe("probes", () => {
     ok: 3,
     total: 4,
     latencyMs: 40,
+    results: [],
   };
 
   it("takes an endpoint state from its latest round while it is fresh", () => {
@@ -111,12 +114,21 @@ describe("probes", () => {
   });
 
   it("sums counts and averages latency over rounds that were not down", () => {
+    const hist = (first: number) => [first, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     const counts = sumCounts([
-      { checks: 2, failures: 1, degraded: 0, latencySum: 60 },
-      { checks: 2, failures: 1, degraded: 1, latencySum: 40 },
+      { checks: 2, failures: 1, degraded: 0, latencySum: 60, hist: hist(0) },
+      { checks: 2, failures: 1, degraded: 1, latencySum: 40, hist: hist(1) },
     ]);
-    expect(counts).toEqual({ checks: 4, failures: 2, degraded: 1, latencySum: 100 });
+    expect(counts).toEqual({
+      checks: 4,
+      failures: 2,
+      degraded: 1,
+      latencySum: 100,
+      hist: [1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    });
     expect(meanLatency(counts)).toBe(50);
+    expect(typicalLatency(counts)).toBe(63);
+    expect(typicalLatency({ ...counts, hist: emptyHistogram() })).toBe(50);
     expect(meanLatency({ checks: 2, failures: 2, latencySum: 0 })).toBeNull();
     expect(probeUptime({ checks: 4, failures: 1 })).toBe(0.75);
     expect(probeUptime({ checks: 0, failures: 0 })).toBeNull();

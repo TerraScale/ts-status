@@ -7,7 +7,8 @@
 
 import { loadHistory, loadSnapshot } from "./db/reads";
 import type { Env } from "./env";
-import { cacheKey, readQuery, type QuerySpec } from "./http/cache";
+import { DEFAULT_RANGE, isRange, RANGE_KEYS, type RangeKey } from "./domain/range";
+import { cacheKey, oneOf, readQuery, type QuerySpec } from "./http/cache";
 import { contentSecurityPolicy, type PolicyOptions } from "./http/csp";
 import { secure } from "./http/security";
 import { overview, snapshotWindow } from "./overview";
@@ -38,35 +39,48 @@ interface Route {
   policy?: PolicyOptions;
 }
 
+const rangeQuery: QuerySpec = { range: oneOf(...RANGE_KEYS) };
+
+const rangeOf = (query: Record<string, string>): RangeKey => (isRange(query.range) ? query.range : DEFAULT_RANGE);
+
+async function loadOverview(env: Env, now: number, range: RangeKey) {
+  return overview(await loadSnapshot(env, snapshotWindow(now, range)), now, range);
+}
+
 const route = createRouter<Route>({
   "/": {
-    render: async (env, context) => {
-      const snapshot = await loadSnapshot(env, snapshotWindow(context.now));
-      return page(homePage(overview(snapshot, context.now)), context);
-    },
+    query: rangeQuery,
+    render: async (env, context) =>
+      page(homePage(await loadOverview(env, context.now, rangeOf(context.query))), context),
   },
   "/history": {
     render: async (env, context) => page(historyPage(await loadHistory(env)), context),
   },
   "/api/status": {
-    render: async (env, { now }) => {
-      const view = overview(await loadSnapshot(env, snapshotWindow(now)), now);
+    query: rangeQuery,
+    render: async (env, { now, query }) => {
+      const view = await loadOverview(env, now, rangeOf(query));
+      const states = (list: readonly { state: string }[]) => list.map((bucket) => bucket.state);
       return Response.json(
         {
           generatedAt: new Date(view.generatedAt).toISOString(),
+          range: view.range,
           status: view.status,
-          uptime30d: view.uptime30d,
+          uptime: view.uptime,
+          lastRoundAt:
+            view.monitoring.lastRoundAt === null ? null : new Date(view.monitoring.lastRoundAt).toISOString(),
           groups: view.groups.map(({ components, ...group }) => ({
             ...group,
-            components: components.map(({ hours, groupId: _group, ...component }) => ({
+            components: components.map(({ bars, groupId: _group, ...component }) => ({
               ...component,
-              hours: hours.map((bucket) => bucket.state),
+              bars: states(bars),
             })),
           })),
           regions: view.regions.map(({ mapX: _x, mapY: _y, clusters, ...region }) => ({
             ...region,
-            clusters: clusters.map(({ hours, ...entry }) => ({ ...entry, hours: hours.map((bucket) => bucket.state) })),
+            clusters: clusters.map(({ bars, ...entry }) => ({ ...entry, bars: states(bars) })),
           })),
+          days: states(view.days),
           incidents: [...view.activeIncidents, ...view.resolvedIncidents],
         },
         { headers: { "access-control-allow-origin": "*" } },

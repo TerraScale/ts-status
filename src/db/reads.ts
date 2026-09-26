@@ -11,7 +11,14 @@ import type {
   LatestSample,
   ProbePeriod,
   Region,
+  VantageSample,
 } from "../domain/status";
+
+/** Where a vantage last ran. */
+export interface VantageSeen {
+  code: string;
+  colo: string | null;
+}
 
 export interface Snapshot {
   groups: ComponentGroup[];
@@ -20,6 +27,7 @@ export interface Snapshot {
   regions: Region[];
   endpoints: Endpoint[];
   latest: LatestSample[];
+  vantages: VantageSeen[];
   /** Consensus counts per endpoint and hour, then per endpoint and day. */
   hours: ProbePeriod[];
   days: ProbePeriod[];
@@ -48,18 +56,29 @@ const ENDPOINTS = `SELECT id, component_id AS componentId, region_code AS region
 
 // Joined from the endpoints so every lookup is a primary key seek.
 const LATEST = `SELECT s.endpoint_id AS endpointId, ${iso("s.at")} AS at, s.state, s.ok, s.total,
-    s.latency_ms AS latencyMs
+    s.latency_ms AS latencyMs, s.results
   FROM endpoints e JOIN probe_samples s ON s.endpoint_id = e.id
     AND s.at = (SELECT max(at) FROM probe_samples WHERE endpoint_id = e.id)
   WHERE e.enabled = 1`;
 
 const periods = (table: "probe_hours" | "probe_days", column: "hour" | "day") =>
   `SELECT p.endpoint_id AS endpointId, ${iso(`p.${column}`)} AS start, p.checks, p.failures, p.degraded,
-    p.latency_sum AS latencySum
+    p.latency_sum AS latencySum, p.hist
   FROM endpoints e JOIN ${table} p ON p.endpoint_id = e.id AND p.${column} >= ?1 AND p.vantage = 'all'
   WHERE e.enabled = 1`;
 
+const VANTAGES = `SELECT code, colo FROM vantages`;
+
 const HISTORY = `SELECT ${INCIDENT_COLUMNS} FROM incidents ORDER BY created_at DESC LIMIT 100`;
+
+function parseResults(text: string): VantageSample[] {
+  try {
+    const value: unknown = JSON.parse(text);
+    return Array.isArray(value) ? (value as VantageSample[]) : [];
+  } catch {
+    return [];
+  }
+}
 
 /** SQLite datetime text for a moment, matching the stored format. */
 export function sqlTime(at: number): string {
@@ -82,7 +101,7 @@ export interface SnapshotWindow {
 /** Everything the status page and API show, in one batched round trip. */
 export async function loadSnapshot(env: Env, window: SnapshotWindow): Promise<Snapshot> {
   const db = session(env);
-  const [groups, components, incidents, regions, endpoints, latest, hours, days] = await db.batch([
+  const [groups, components, incidents, regions, endpoints, latest, hours, days, vantages] = await db.batch([
     db.prepare(GROUPS),
     db.prepare(COMPONENTS),
     db.prepare(CURRENT_INCIDENTS).bind(sqlTime(window.incidentsFrom)),
@@ -91,6 +110,7 @@ export async function loadSnapshot(env: Env, window: SnapshotWindow): Promise<Sn
     db.prepare(LATEST),
     db.prepare(periods("probe_hours", "hour")).bind(sqlTime(window.hoursFrom)),
     db.prepare(periods("probe_days", "day")).bind(sqlTime(window.daysFrom)),
+    db.prepare(VANTAGES),
   ]);
   return {
     groups: (groups?.results ?? []) as ComponentGroup[],
@@ -98,7 +118,11 @@ export async function loadSnapshot(env: Env, window: SnapshotWindow): Promise<Sn
     incidents: (incidents?.results ?? []) as Incident[],
     regions: (regions?.results ?? []) as Region[],
     endpoints: (endpoints?.results ?? []) as Endpoint[],
-    latest: (latest?.results ?? []) as LatestSample[],
+    latest: ((latest?.results ?? []) as (Omit<LatestSample, "results"> & { results: string })[]).map((sample) => ({
+      ...sample,
+      results: parseResults(sample.results),
+    })),
+    vantages: (vantages?.results ?? []) as VantageSeen[],
     hours: (hours?.results ?? []) as ProbePeriod[],
     days: (days?.results ?? []) as ProbePeriod[],
   };

@@ -2,8 +2,25 @@
    ui.StatusBadge, ui.Empty) plus the status bars. */
 
 import { html, type Html } from "../html";
-import { formatClock, formatClockSeconds, formatDateTime, formatDay, formatDuration } from "../format";
-import { IMPACT_STATUS, STATE_LABELS, type Bucket, type Incident, type TimelineState } from "../domain/status";
+import { percentile } from "../domain/histogram";
+import {
+  IMPACT_STATUS,
+  probeUptime,
+  STATE_LABELS,
+  type Bucket,
+  type Incident,
+  type ProbeCounts,
+  type TimelineState,
+} from "../domain/status";
+import {
+  DAY,
+  formatClock,
+  formatClockSeconds,
+  formatDateTime,
+  formatDay,
+  formatDuration,
+  formatUptime,
+} from "../format";
 
 export interface CardProps {
   id: string;
@@ -61,34 +78,51 @@ export function time(at: string | number, format: "datetime" | "seconds"): Html 
 /** The time zone times are shown in; the client script names the visitor's. */
 export const zone = html`<span data-zone>UTC</span>`;
 
-function strip(label: string, large: boolean, cells: Html[]): Html {
-  return html`<ol class="st-bars${large ? " st-bars-lg" : ""}" role="img" aria-label="${label}">${cells}</ol>`;
+/** A latency in milliseconds, or a dash. */
+export const ms = (value: number | null): string => (value === null ? "—" : `${value} ms`);
+
+/** What a hover card shows below its time and state. */
+export interface CardContent {
+  rows?: [string, string][];
+  notes?: string[];
 }
 
-/** Hourly status bars; each carries its hour so the tooltip can follow the
-    visitor's time zone. `label` summarizes the strip for assistive tech. */
-export function hourBars(list: readonly Bucket[], label: string): Html {
-  return strip(
-    label,
-    false,
-    list.map((bucket) => {
-      const state = STATE_LABELS[bucket.state];
-      const tip = `${formatClock(bucket.start)}–${formatClock(bucket.end)} UTC · ${state}`;
-      return html`<li data-state="${bucket.state}" data-from="${bucket.start}" data-to="${bucket.end}" data-label="${state}" data-tip="${tip}"></li>`;
-    }),
-  );
+/** The rows describing a stretch of probes. */
+export function probeRows(counts: ProbeCounts | undefined): [string, string][] {
+  if (!counts || counts.checks === 0) return [["Checks", "None in this period"]];
+  return [
+    ["Uptime", formatUptime(probeUptime(counts))],
+    ["Checks", `${(counts.checks - counts.failures).toLocaleString("en")} of ${counts.checks.toLocaleString("en")} up`],
+    ["Median", ms(percentile(counts.hist, 0.5))],
+    ["p95", ms(percentile(counts.hist, 0.95))],
+  ];
 }
 
-/** Daily status bars over UTC days. */
-export function dayBars(list: readonly Bucket[], label: string): Html {
-  return strip(
-    label,
-    true,
-    list.map(
-      (bucket) =>
-        html`<li data-state="${bucket.state}" data-tip="${formatDay(bucket.start)} · ${STATE_LABELS[bucket.state]}"></li>`,
-    ),
-  );
+export interface BarsOptions {
+  /** Summarizes the strip for assistive tech. */
+  label: string;
+  large?: boolean;
+  card?: (bucket: Bucket) => CardContent;
+}
+
+/** When a bar's time span was, in UTC; the client script re-renders spans
+    shorter than a day in the visitor's time zone. */
+function when(bucket: Bucket): string {
+  if (bucket.end - bucket.start >= DAY) return formatDay(bucket.start);
+  return `${formatDay(bucket.start)}, ${formatClock(bucket.start)}–${formatClock(bucket.end)} UTC`;
+}
+
+/** Status bars: one cell per bucket, colored by its worst state. The strip
+    is one focusable image; arrow keys move between cells, and every cell
+    opens a hover card with its details. */
+export function bars(list: readonly Bucket[], options: BarsOptions): Html {
+  const cells = list.map((bucket) => {
+    const state = STATE_LABELS[bucket.state];
+    const span = bucket.end - bucket.start >= DAY ? "day" : "hour";
+    const card = JSON.stringify(options.card?.(bucket) ?? { rows: probeRows(bucket.counts) });
+    return html`<li data-state="${bucket.state}" data-from="${bucket.start}" data-to="${bucket.end}" data-span="${span}" data-label="${state}" data-when="${when(bucket)}" data-tip="${when(bucket)} · ${state}" data-card="${card}"></li>`;
+  });
+  return html`<ol class="st-bars${options.large ? " st-bars-lg" : ""}" role="img" tabindex="0" aria-label="${options.label}">${cells}</ol>`;
 }
 
 export function legend(states: readonly TimelineState[]): Html {

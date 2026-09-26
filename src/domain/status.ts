@@ -1,6 +1,8 @@
 /* Status domain: states, the catalog, incidents, and the probe maths behind
    every status bar. Everything here is pure so it is unit tested. */
 
+import { merge, parseHistogram, percentile, type Histogram } from "./histogram";
+
 /** States, least to most severe. */
 export const STATES = ["operational", "maintenance", "degraded", "partial_outage", "major_outage"] as const;
 
@@ -50,11 +52,13 @@ export interface Segment {
   state: TimelineState;
 }
 
-/** A status bar: the worst state seen during [start, end). */
+/** A status bar: the worst state seen during [start, end), with the probe
+    counts behind it where it was measured. */
 export interface Bucket {
   start: number;
   end: number;
   state: TimelineState;
+  counts?: ProbeCounts;
 }
 
 export const STATE_LABELS: Record<TimelineState, string> = {
@@ -154,6 +158,14 @@ export interface Endpoint {
   provider: Provider;
 }
 
+/** One vantage's result in a sample; `ok` is null where it was unknown. */
+export interface VantageSample {
+  v: string;
+  ok: 0 | 1 | null;
+  ms: number;
+  e: string | null;
+}
+
 /** An endpoint's latest probe round. */
 export interface LatestSample {
   endpointId: string;
@@ -163,21 +175,24 @@ export interface LatestSample {
   ok: number;
   total: number;
   latencyMs: number | null;
+  results: VantageSample[];
 }
 
 /** Probe counts over any stretch of time. `checks` counts judged rounds,
-    `failures` the down ones; latency covers the rest. */
+    `failures` the down ones; latency and its histogram cover the rest. */
 export interface ProbeCounts {
   checks: number;
   failures: number;
   degraded: number;
   latencySum: number;
+  hist: Histogram;
 }
 
-/** One endpoint's consensus counts for one UTC hour or day. */
-export interface ProbePeriod extends ProbeCounts {
+/** One endpoint's consensus counts for one UTC hour or day, as stored. */
+export interface ProbePeriod extends Omit<ProbeCounts, "hist"> {
   endpointId: string;
   start: string;
+  hist: string;
 }
 
 /** Probes older than this no longer describe the present. */
@@ -194,15 +209,22 @@ export function endpointStatus(latest: LatestSample | undefined, now: number): T
 
 /** The sum of several probe counts. */
 export function sumCounts(list: readonly ProbeCounts[]): ProbeCounts {
-  return list.reduce(
-    (sum, entry) => ({
-      checks: sum.checks + entry.checks,
-      failures: sum.failures + entry.failures,
-      degraded: sum.degraded + entry.degraded,
-      latencySum: sum.latencySum + entry.latencySum,
-    }),
-    { checks: 0, failures: 0, degraded: 0, latencySum: 0 },
-  );
+  return {
+    checks: list.reduce((sum, entry) => sum + entry.checks, 0),
+    failures: list.reduce((sum, entry) => sum + entry.failures, 0),
+    degraded: list.reduce((sum, entry) => sum + entry.degraded, 0),
+    latencySum: list.reduce((sum, entry) => sum + entry.latencySum, 0),
+    hist: merge(list.map((entry) => entry.hist)),
+  };
+}
+
+/** Stored counts with their histogram parsed. */
+export const countsOf = (period: ProbePeriod): ProbeCounts => ({ ...period, hist: parseHistogram(period.hist) });
+
+/** The median latency: from the histogram, or the mean where rollups
+    predate histograms. */
+export function typicalLatency(counts: ProbeCounts): number | null {
+  return percentile(counts.hist, 0.5) ?? meanLatency(counts);
 }
 
 /** Fewer rounds than this cannot make a stretch of time an outage. */

@@ -6,6 +6,7 @@
   /* Canvas and surfaces, darkest to lightest. */
   --ts-canvas: #0a0c12;
   --ts-surface: #11141c;
+  --ts-surface-2: #161a24;
   --ts-surface-3: #1e2330;
   --ts-line: rgb(148 163 184 / 0.12);
   --ts-line-strong: rgb(148 163 184 / 0.22);
@@ -17,6 +18,7 @@
 
   /* Primary accent and status colors. */
   --ts-accent: #3b82f6;
+  --ts-accent-soft: rgb(59 130 246 / 0.14);
   --ts-link: #6ea8ff;
   --ts-success: #34d399;
   --ts-warning: #fbbf24;
@@ -24,8 +26,17 @@
   --ts-danger: #f87171;
   --ts-info: #60a5fa;
 
+  /* Chart series: the accent first, then the categorical palette. */
+  --ts-chart-1: #3b82f6;
+  --ts-cat-1: #3b82f6;
+  --ts-cat-2: #22d3ee;
+  --ts-cat-3: #a5b4fc;
+  --ts-cat-4: #f472b6;
+  --ts-cat-5: #facc15;
+
   /* Type. Oxanium carries the brand; body copy stays at a readable 14px. */
   --ts-font-sans: "Oxanium", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ts-font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --ts-fs-xs: 12px;
   --ts-fs-sm: 13px;
   --ts-fs-md: 14px;
@@ -56,6 +67,7 @@
 
   /* Layering. */
   --ts-z-tooltip: 60;
+  --ts-shadow-overlay: 0 12px 28px rgb(0 0 0 / 0.5), 0 0 0 1px var(--ts-line-strong);
 
   /* Page width. */
   --st-width: 60rem;

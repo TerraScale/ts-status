@@ -1,0 +1,162 @@
+/* SVG charts, ported from the ts-dashboard kit (web/assets/css/data.css):
+   dashed grid, monotone lines with a gradient area under a single series,
+   and hover columns revealing a guide, dots and an SVG tooltip. */
+
+.ts-chart {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.ts-chart-grid {
+  stroke: var(--ts-line);
+  stroke-dasharray: 3 4;
+}
+
+.ts-chart-baseline {
+  stroke: var(--ts-line-strong);
+  stroke-dasharray: none;
+}
+
+.ts-chart-axis {
+  fill: var(--ts-ink-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ts-chart-line {
+  fill: none;
+  stroke: var(--series, var(--ts-chart-1));
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ts-chart-fill-start {
+  stop-color: var(--ts-chart-1);
+  stop-opacity: 0.32;
+}
+
+.ts-chart-fill-end {
+  stop-color: var(--ts-chart-1);
+  stop-opacity: 0;
+}
+
+.ts-chart-column {
+  outline: none;
+}
+
+.ts-chart-hit {
+  fill: transparent;
+  transition: fill var(--ts-fast) var(--ts-ease);
+}
+
+.ts-chart-column:focus-visible .ts-chart-hit {
+  fill: var(--ts-accent-soft);
+}
+
+.ts-chart-guide {
+  stroke: var(--ts-line-strong);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ts-chart-dot {
+  fill: var(--ts-canvas);
+  stroke: var(--series, var(--ts-chart-1));
+  stroke-width: 2;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ts-chart-column:is(:hover, :focus-visible) :is(.ts-chart-guide, .ts-chart-dot, .ts-chart-tip),
+.ts-chart-column:last-of-type .ts-chart-dot {
+  opacity: 1;
+}
+
+.ts-chart-tip {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ts-fast) var(--ts-ease);
+}
+
+.ts-chart-tip-box {
+  fill: var(--ts-surface-2);
+  stroke: var(--ts-line-strong);
+}
+
+.ts-chart .ts-chart-tip text {
+  fill: var(--ts-ink-2);
+  font-family: var(--ts-font-mono);
+  font-size: 11px;
+}
+
+.ts-chart .ts-chart-tip .ts-chart-tip-label {
+  fill: var(--ts-ink-3);
+}
+
+.ts-chart .ts-chart-tip .ts-chart-tip-value {
+  fill: var(--ts-ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ts-chart-tip-swatch {
+  fill: var(--series, var(--ts-chart-1));
+}
+
+.ts-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ts-s2) var(--ts-s4);
+  color: var(--ts-ink-3);
+  font-size: var(--ts-fs-xs);
+}
+
+.ts-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ts-chart-swatch {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--series, var(--ts-chart-1));
+}
+
+.ts-cat-1 {
+  --series: var(--ts-cat-1);
+}
+.ts-cat-2 {
+  --series: var(--ts-cat-2);
+}
+.ts-cat-3 {
+  --series: var(--ts-cat-3);
+}
+.ts-cat-4 {
+  --series: var(--ts-cat-4);
+}
+.ts-cat-5 {
+  --series: var(--ts-cat-5);
+}
+
+/* Sparklines: a quiet trend beside a row's numbers. */
+.st-spark {
+  width: 96px;
+  height: 22px;
+  fill: none;
+  stroke: var(--ts-chart-1);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.st-spark path {
+  vector-effect: non-scaling-stroke;
+}
+
+.st-spark circle {
+  fill: var(--ts-chart-1);
+  stroke: none;
+}
