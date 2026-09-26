@@ -1,10 +1,4 @@
 node_modules/
 dist/
-.vinext/
 .wrangler/
 .dev.vars
-.env*
-!.env.example
-
-.next/
-next-env.d.ts

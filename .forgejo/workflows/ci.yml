@@ -11,7 +11,7 @@ jobs:
   verify:
     name: Verify ts-status
     runs-on: terrascale-builder
-    timeout-minutes: 30
+    timeout-minutes: 15
     env:
       CI: "true"
     steps:
@@ -20,27 +20,23 @@ jobs:
         with:
           github-server-url: "https://git.terrascale.tech"
           ref: ${{ forgejo.sha }}
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
-      # npm 11 blocks dependency install scripts unless a project allowScripts
-      # policy names each native helper. Keep installation deterministic and
-      # prepare only the two native helpers used by this lockfile explicitly.
+      # No dependency needs its install script: the Vite build, the tests and
+      # the Wrangler dry run all use prebuilt platform packages.
       - name: Install locked dependencies
         shell: bash
         run: npm ci --ignore-scripts
-
-      - name: Prepare the locked native helpers
-        shell: bash
-        run: |
-          set -euo pipefail
-          node node_modules/esbuild/install.js
-          node node_modules/workerd/install.js
 
       # Tasks run through the vite-plus runner (vpr) instead of npm scripts.
       - name: Type-check the application
         shell: bash
         run: vpr check
+
+      - name: Lint the sources
+        shell: bash
+        run: vpr lint
 
       - name: Run the unit tests
         shell: bash
@@ -54,4 +50,4 @@ jobs:
       # migrations and never publishes to Cloudflare.
       - name: Validate the Wrangler deployment plan
         shell: bash
-        run: npm exec -- wrangler deploy --config dist/server/wrangler.json --dry-run
+        run: npm exec -- wrangler deploy --dry-run

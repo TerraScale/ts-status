@@ -1,0 +1,351 @@
+/* Status page pieces: the top bar, the headline, status bars, and footer. */
+
+.st-frame {
+  width: 100%;
+  max-width: var(--st-width);
+  margin-inline: auto;
+  padding-inline: var(--ts-s10);
+}
+
+/* Top bar: brand on the left, page links on the right. */
+.st-top {
+  border-bottom: 1px solid var(--ts-line);
+}
+
+.st-top > .st-frame {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ts-s4);
+  height: 64px;
+}
+
+.st-brand {
+  color: var(--ts-ink);
+}
+
+.st-logo {
+  width: auto;
+  height: 22px;
+}
+
+.st-top-end {
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  gap: var(--ts-s6);
+}
+
+.st-nav {
+  display: flex;
+  align-self: stretch;
+  gap: var(--ts-s6);
+}
+
+.st-zone {
+  width: 13rem;
+}
+
+.st-zone[hidden] {
+  display: none;
+}
+
+.st-nav a {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  color: var(--ts-ink-3);
+  font-weight: 600;
+  transition: color var(--ts-fast) var(--ts-ease);
+}
+
+.st-nav a:hover {
+  color: var(--ts-ink);
+  text-decoration: none;
+}
+
+.st-nav a[aria-current="page"] {
+  color: var(--ts-ink);
+}
+
+.st-nav a[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--ts-accent);
+}
+
+/* Page headline: the overall state and when it was checked. */
+.st-hero {
+  display: flex;
+  align-items: center;
+  gap: var(--ts-s5);
+}
+
+.st-hero-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--state) 16%, transparent);
+  color: var(--state);
+}
+
+.st-hero-mark > .ts-dot {
+  width: 14px;
+  height: 14px;
+}
+
+.st-hero-copy {
+  display: grid;
+  gap: var(--ts-s1);
+  min-width: 0;
+}
+
+.st-hero-copy > .ts-eyebrow {
+  color: var(--state);
+}
+
+.st-title {
+  font-size: var(--ts-fs-3xl);
+}
+
+/* Heading block of pages without a status headline. */
+.st-page-head {
+  display: grid;
+  gap: var(--ts-s1);
+}
+
+/* Services: name and state, then the hourly bars. */
+.st-service {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--ts-s3) var(--ts-s4);
+  padding: var(--ts-s4) 0;
+}
+
+.st-service-state {
+  display: flex;
+  align-items: center;
+  gap: var(--ts-s3);
+}
+
+.st-service > .st-bars {
+  grid-column: 1 / -1;
+}
+
+/* Status bars: one cell per hour or day, colored by its worst state. The
+   whole strip is a labeled image; cells show a tooltip on hover. */
+.st-bars {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 3px;
+  height: 28px;
+}
+
+.st-bars-lg {
+  height: 40px;
+}
+
+.st-bars > li {
+  position: relative;
+  border-radius: 2px;
+  background: var(--state);
+}
+
+.st-bars > li[data-state="none"] {
+  background: var(--ts-surface-3);
+}
+
+.st-bars > li::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  z-index: var(--ts-z-tooltip);
+  padding: var(--ts-s1) var(--ts-s2);
+  border-radius: var(--ts-radius-sm);
+  background: var(--ts-surface-3);
+  color: var(--ts-ink);
+  font-size: var(--ts-fs-xs);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+  transition: opacity var(--ts-fast) var(--ts-ease);
+}
+
+/* Tooltips at the ends open inward so they never leave the page. */
+.st-bars > li:nth-child(-n + 4)::after {
+  left: 0;
+  transform: none;
+}
+
+.st-bars > li:nth-last-child(-n + 4)::after {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
+@media (hover: hover) {
+  .st-bars > li:hover {
+    opacity: 0.8;
+  }
+
+  .st-bars > li:hover::after {
+    opacity: 1;
+  }
+}
+
+.st-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ts-s3);
+  color: var(--ts-ink-3);
+  font-size: var(--ts-fs-xs);
+}
+
+.st-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ts-s2) var(--ts-s4);
+  color: var(--ts-ink-3);
+  font-size: var(--ts-fs-xs);
+}
+
+.st-legend > li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.st-legend .ts-dot {
+  color: var(--state);
+}
+
+.st-legend [data-state="none"] .ts-dot {
+  color: var(--ts-surface-3);
+}
+
+/* Region map: the dotted world with one hub per region. */
+.st-map {
+  width: 100%;
+  max-height: 22rem;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-radius-lg);
+  background: var(--ts-surface);
+}
+
+.st-hub {
+  color: var(--state);
+  fill: currentColor;
+}
+
+.st-hub[data-state="none"] {
+  color: var(--ts-ink-3);
+}
+
+.st-hub-ring {
+  fill: color-mix(in oklab, currentColor 22%, transparent);
+}
+
+.st-hub text {
+  fill: var(--ts-ink-2);
+  font-size: 2.6px;
+  font-weight: 600;
+}
+
+/* Regions side by side, each with its clusters. */
+.st-regions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: var(--ts-s6) var(--ts-s8);
+}
+
+.st-region {
+  display: grid;
+  align-content: start;
+  gap: var(--ts-s2);
+  min-width: 0;
+}
+
+.st-region > header {
+  padding-bottom: var(--ts-s2);
+  border-bottom: 1px solid var(--ts-line);
+}
+
+.st-region-code {
+  color: var(--ts-accent);
+  font-size: var(--ts-fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.st-region .st-service {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Incidents in lists. */
+.st-incident-title {
+  font-size: var(--ts-fs-md);
+}
+
+.st-incident-body {
+  color: var(--ts-ink-2);
+  white-space: pre-line;
+}
+
+.st-foot {
+  border-top: 1px solid var(--ts-line);
+}
+
+.st-foot > .st-frame {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--ts-s3);
+  padding-block: var(--ts-s5);
+  color: var(--ts-ink-3);
+  font-size: var(--ts-fs-sm);
+}
+
+.st-foot nav {
+  display: flex;
+  gap: var(--ts-s5);
+}
+
+@media (max-width: 47.99rem) {
+  .st-frame {
+    padding-inline: var(--ts-s4);
+  }
+
+  .st-logo {
+    height: 18px;
+  }
+
+  .st-top-end,
+  .st-nav {
+    gap: var(--ts-s4);
+  }
+
+  .st-zone {
+    width: 8.5rem;
+  }
+
+  .st-title {
+    font-size: var(--ts-fs-2xl);
+  }
+
+  .st-service {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .st-bars {
+    gap: 2px;
+  }
+}
