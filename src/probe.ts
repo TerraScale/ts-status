@@ -1,8 +1,8 @@
 /* Health probes, run by the cron trigger every minute. Each run checks every
    enabled endpoint in parallel and records the results in one D1 batch. */
 
-import type { Env } from "./data";
-import { sqlTime } from "./data";
+import type { Env } from "./env";
+import { sqlTime } from "./db/reads";
 import { DAY, startOfHour } from "./format";
 
 /** A probe slower than this fails. */

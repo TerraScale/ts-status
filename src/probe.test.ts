@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Env } from "./data";
+import type { Env } from "./env";
 import { probe, probeAll } from "./probe";
 
 const target = { id: "dash-gru", url: "https://dash.test/health/ready", headers: '{"fly-prefer-region":"gru"}' };

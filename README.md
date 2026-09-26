@@ -11,15 +11,22 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 
 ## Layout
 
-| Path              | Purpose                                                           |
-| ----------------- | ----------------------------------------------------------------- |
-| `src/worker.ts`   | Routing, edge cache, security headers, cron entry point           |
-| `src/data.ts`     | D1 queries                                                        |
-| `src/status.ts`   | Status domain: states, timelines, uptime, probe and region states |
-| `src/overview.ts` | The overview shared by the page and the JSON API                  |
-| `src/probe.ts`    | Minute-by-minute health probes of every cluster                   |
-| `src/views/`      | HTML views and the client script                                  |
-| `src/styles/`     | Design tokens and styles, bundled and minified by Lightning CSS   |
+| Path              | Purpose                                                         |
+| ----------------- | --------------------------------------------------------------- |
+| `src/worker.ts`   | Worker entry: re-exports the handler                            |
+| `src/app.ts`      | Routes, edge cache, cron entry point                            |
+| `src/router.ts`   | `/incidents/:id`-style path patterns                            |
+| `src/http/`       | Cache keys, content security policy, security headers           |
+| `src/db/`         | D1 queries                                                      |
+| `src/domain/`     | Status domain: states, catalog, incidents, probe maths          |
+| `src/overview.ts` | The overview shared by the page and the JSON API                |
+| `src/probe.ts`    | Minute-by-minute health probes of every endpoint                |
+| `src/views/`      | HTML views and the client script                                |
+| `src/styles/`     | Design tokens and styles, bundled and minified by Lightning CSS |
+
+## Catalog
+
+Status is measured, never hand-edited. Components (the dashboard, website, region discovery, authentication, the TerraBase Data API, …) sit in display groups; each is checked by one endpoint per cluster, regional or global. Planned components are listed without being measured until they launch. The [`status-endpoint`](skills/status-endpoint/SKILL.md) skill manages the catalog.
 
 ## Local development
 
@@ -33,7 +40,7 @@ The dev server listens on every interface (reachable over the tailnet) and reloa
 
 ## API
 
-`GET /api/status` returns the overall status, services with 24 hourly states and uptime, regions with their clusters' ping, uptime and hourly states, and current incidents. The Worker has no write endpoint: operators change D1 directly with the repo skills — [`status-warning`](skills/status-warning/SKILL.md) for incidents and warnings, [`status-endpoint`](skills/status-endpoint/SKILL.md) for regions and clusters.
+`GET /api/status` returns the overall status, component groups with each component's 24 hourly states and uptime, regions with their clusters' ping, uptime and hourly states, and current incidents. Operators publish incidents with the [`status-warning`](skills/status-warning/SKILL.md) skill.
 
 ## Deploy
 
