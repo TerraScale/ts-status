@@ -2,7 +2,8 @@
    bars per component and cluster over the chosen range, response times,
    and the daily platform history, all measured by the probe rounds. */
 
-import type { Snapshot, SnapshotWindow, VantageSeen } from "./db/reads";
+import type { Certificate, Snapshot, SnapshotWindow, VantageSeen } from "./db/reads";
+import { EXPIRY_WARNING_MS } from "./probe/tls";
 import { DAY, HOUR, startOfDay, startOfHour } from "./format";
 import { byHour, RANGES, rangeStart, type RangeKey } from "./domain/range";
 import { median } from "./domain/consensus";
@@ -74,6 +75,8 @@ export interface ClusterOverview {
   uptime: number | null;
   bars: Bucket[];
   latency: (number | null)[];
+  /** The host's latest logged TLS certificate. */
+  certificate: Certificate | null;
 }
 
 export interface RegionOverview extends Region {
@@ -107,6 +110,8 @@ export interface Overview {
   regions: RegionOverview[];
   /** The measured endpoints: those of active components. */
   endpoints: Endpoint[];
+  /** Certificates of measured hosts expiring within two weeks, or expired. */
+  expiring: Certificate[];
   activeIncidents: Incident[];
   resolvedIncidents: Incident[];
   /** Maintenance windows in progress or scheduled, soonest first. */
@@ -129,6 +134,14 @@ export function snapshotWindow(now: number, range: RangeKey): SnapshotWindow {
     daysFrom: Math.min(from, rangeStart(range, now)),
   };
 }
+
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "";
+  }
+};
 
 /** Consensus counts per endpoint, keyed by the period's start. */
 type Periods = Map<string, Map<number, ProbeCounts>>;
@@ -250,6 +263,7 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
     });
   };
 
+  const certificates = new Map(snapshot.certificates.map((certificate) => [certificate.host, certificate]));
   const clusterOf = (endpoint: Endpoint): ClusterOverview => {
     const list = bars(counter, [endpoint], range, now);
     const total = sumCounts(list.flatMap((bucket) => (bucket.counts ? [bucket.counts] : [])));
@@ -266,6 +280,7 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
       uptime: uptimeOf(list),
       bars: list,
       latency: latencyOf(list),
+      certificate: certificates.get(hostOf(endpoint.url)) ?? null,
     };
   };
   const clusters = new Map(
@@ -344,6 +359,10 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
       .filter((group) => group.components.length > 0),
     regions,
     endpoints: measured,
+    expiring: [...new Set(measured.map((endpoint) => hostOf(endpoint.url)))].flatMap((host) => {
+      const certificate = certificates.get(host);
+      return certificate?.notAfter && Date.parse(certificate.notAfter) - now < EXPIRY_WARNING_MS ? [certificate] : [];
+    }),
     activeIncidents: snapshot.incidents.filter(
       (incident) => incident.kind !== "maintenance" && isActive(incident, now),
     ),

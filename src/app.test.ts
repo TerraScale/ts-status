@@ -89,6 +89,17 @@ describe("app", () => {
     expect(body).not.toContain("Monitoring delayed");
   });
 
+  it("warns about certificates close to expiry and shows them on clusters", async () => {
+    const env = seededEnv();
+    env.STATUS_DB.sqlite.exec(`INSERT INTO tls_certs (host, not_after, issuer, checked_at) VALUES
+      ('dash.terrascale.tech', '2026-10-01 00:00:00', 'Let''s Encrypt', '2026-09-26 10:17:00'),
+      ('terrascale.tech', '2026-12-21 00:00:00', 'Google Trust Services', '2026-09-26 10:17:00')`);
+    const body = await (await app.fetch(request("/"), env, ctx)).text();
+    expect(body).toContain("Certificate renewal due for dash.terrascale.tech");
+    expect(body).not.toContain("Certificate renewal due for terrascale.tech");
+    expect(body).toContain("TLS until Oct 1");
+  });
+
   it("warns when probe rounds stop arriving", async () => {
     vi.setSystemTime(Date.parse("2026-09-26T10:30:00Z"));
     const body = await (await app.fetch(request("/"), seededEnv(), ctx)).text();

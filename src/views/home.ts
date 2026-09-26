@@ -265,6 +265,17 @@ export function homePage(view: Overview): Page {
       : ""
   }
 
+  ${view.expiring.map(
+    (certificate) => html`<article class="ts-alert" data-state="degraded" role="status">
+    <h2 class="ts-alert-title">Certificate renewal due for ${certificate.host}</h2>
+    <p class="ts-alert-body">The latest TLS certificate logged for ${certificate.host}${certificate.issuer ? ` (${certificate.issuer})` : ""} ${
+      Date.parse(certificate.notAfter ?? "") <= view.generatedAt
+        ? "has expired"
+        : html`expires ${time(certificate.notAfter ?? "", "datetime")}`
+    }. It is normally renewed well before then.</p>
+  </article>`,
+  )}
+
   <dl class="ts-stats" aria-label="Platform summary">
     ${stat("Components", `${operational}/${measured.length}`, "operational now")}
     ${stat("Regions", `${live}/${view.regions.length}`, live === view.regions.length ? "all live" : `${view.regions.length - live} planned`)}
