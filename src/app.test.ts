@@ -97,22 +97,46 @@ describe("app", () => {
     const response = await app.fetch(request("/api/status"), seededEnv(), ctx);
     const data = (await response.json()) as {
       status: string;
-      groups: { id: string; components: { id: string; status: string; uptime30d: number; hours: string[] }[] }[];
+      range: string;
+      groups: { id: string; components: { id: string; status: string; uptime: number; bars: string[] }[] }[];
       regions: { code: string; status: string; clusters: { pingMs: number; uptime24h: number }[] }[];
     };
     expect(data.status).toBe("partial_outage");
     expect(data.groups.map((group) => group.id)).toEqual(["platform", "terrabase", "developer"]);
     const dashboard = data.groups[0]?.components[0];
-    expect(dashboard).toMatchObject({ id: "dashboard", status: "operational", uptime30d: 1 });
-    expect(dashboard?.hours).toHaveLength(24);
-    expect(dashboard?.hours.at(-1)).toBe("operational");
+    expect(data.range).toBe("90d");
+    expect(dashboard).toMatchObject({ id: "dashboard", status: "operational", uptime: 1 });
+    expect(dashboard?.bars).toHaveLength(90);
+    expect(dashboard?.bars.at(-1)).toBe("operational");
     expect(data.groups[2]?.components[0]).toMatchObject({ id: "git", status: "major_outage" });
     expect(data.regions.map((region) => [region.code, region.status])).toEqual([
       ["SFO", "none"],
       ["GRU", "operational"],
       ["FRA", "none"],
     ]);
-    expect(data.regions[1]?.clusters[0]).toMatchObject({ pingMs: 42, uptime24h: 1 });
+    expect(data.regions[1]?.clusters[0]).toMatchObject({ pingMs: 42, uptime: 1 });
+  });
+
+  it("switches the bars' range, caching each range apart", async () => {
+    const env = seededEnv();
+    const day = (await (await app.fetch(request("/api/status?range=24h"), env, ctx)).json()) as {
+      groups: { components: { bars: string[] }[] }[];
+    };
+    expect(day.groups[0]?.components[0]?.bars).toHaveLength(24);
+    expect(day.groups[0]?.components[0]?.bars.at(-1)).toBe("operational");
+    const body = await (await app.fetch(request("/?range=7d"), env, ctx)).text();
+    expect(body).toContain('<a href="/?range=7d" aria-current="true">7d</a>');
+    expect(body.match(/<li data-state=/g)?.length).toBeGreaterThanOrEqual(28);
+    await app.fetch(request("/?range=bogus"), env, ctx);
+    expect(env.STATUS_DB.batches).toBe(3);
+  });
+
+  it("gives every bar a hover card and every live region a map hub", async () => {
+    const body = await (await app.fetch(request("/?range=24h"), seededEnv(), ctx)).text();
+    expect(body).toContain('data-card="{&quot;rows&quot;:[[&quot;Uptime&quot;,&quot;100%&quot;]');
+    expect(body).toContain('data-title="GRU · São Paulo"');
+    expect(body).toContain('class="st-arc"');
+    expect(body).toContain("Response time");
   });
 
   it("renders the history page grouped by month", async () => {

@@ -55,6 +55,7 @@ ${page.live ? html`<noscript><meta http-equiv="refresh" content="${REFRESH_SECON
   </div>
 </header>
 ${page.body}
+<div id="st-live" class="ts-sr-only" aria-live="polite"></div>
 <footer class="st-foot">
   <div class="st-frame">
     <span>© ${year} TerraScale</span>

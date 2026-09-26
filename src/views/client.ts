@@ -1,11 +1,14 @@
 /* The only script on the site, inlined and allowed by its CSP hash. Pages
    render every time in UTC so they stay cacheable; this script re-renders
    them in the visitor's time zone (their browser's by default, or the one
-   picked in the top bar) and refreshes live pages in place. */
+   picked in the top bar), opens a hover card for every element carrying
+   data-card (on hover, keyboard focus, or tap), counts up "last round"
+   times, and refreshes live pages in place. */
 
 export const REFRESH_SECONDS = 30;
 
 export const CLIENT_SCRIPT = `(() => {
+  document.documentElement.dataset.js = "";
   const storageKey = "ts-status-time-zone";
   const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const isZone = (zone) => {
@@ -30,6 +33,7 @@ export const CLIENT_SCRIPT = `(() => {
     datetime: { dateStyle: "medium", timeStyle: "short", hourCycle: "h23" },
     clock: { hour: "2-digit", minute: "2-digit", hourCycle: "h23" },
     seconds: { timeStyle: "medium", hourCycle: "h23" },
+    day: { month: "short", day: "numeric" },
   };
 
   const zoneLabel = () => {
@@ -47,10 +51,12 @@ export const CLIENT_SCRIPT = `(() => {
     for (const element of root.querySelectorAll("time[data-format]")) {
       element.textContent = format[element.dataset.format].format(new Date(element.dateTime)) + " " + label;
     }
-    for (const element of root.querySelectorAll("[data-from]")) {
-      const from = format.clock.format(Number(element.dataset.from));
-      const to = format.clock.format(Number(element.dataset.to));
-      element.dataset.tip = from + "–" + to + " " + label + " · " + element.dataset.label;
+    // Spans shorter than a day follow the zone; UTC days keep their dates.
+    for (const element of root.querySelectorAll("[data-from][data-span=hour]")) {
+      const from = Number(element.dataset.from);
+      const when = format.day.format(from) + ", " + format.clock.format(from) + "–" + format.clock.format(Number(element.dataset.to)) + " " + label;
+      element.dataset.when = when;
+      element.dataset.tip = when + " · " + element.dataset.label;
     }
     for (const element of root.querySelectorAll("[data-zone]")) element.textContent = label;
   };
@@ -78,6 +84,133 @@ export const CLIENT_SCRIPT = `(() => {
   }
   localize(document);
 
+  // "Last round 12s ago" counters.
+  const ago = () => {
+    for (const element of document.querySelectorAll("[data-ago]")) {
+      const seconds = Math.max(0, Math.round((Date.now() - Number(element.dataset.ago)) / 1000));
+      element.textContent = seconds < 90 ? seconds + "s ago" : Math.round(seconds / 60) + "m ago";
+    }
+  };
+  ago();
+  setInterval(() => document.hidden || ago(), 1000);
+
+  // One hover card, filled from the data-card JSON of the element it
+  // describes and placed beside it through CSSOM.
+  const card = document.createElement("div");
+  card.className = "st-card";
+  card.setAttribute("role", "tooltip");
+  card.hidden = true;
+  document.body.append(card);
+  const live = document.getElementById("st-live");
+  let current = null;
+
+  const element = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+
+  // Above the element, or below it near the top of the viewport.
+  const place = () => {
+    if (!current) return;
+    const box = current.getBoundingClientRect();
+    const left = Math.min(Math.max(8, box.left + box.width / 2 - card.offsetWidth / 2), innerWidth - card.offsetWidth - 8);
+    const above = box.top - card.offsetHeight - 10;
+    card.style.left = left + "px";
+    card.style.top = (above >= 8 ? above : box.bottom + 10) + "px";
+  };
+
+  const show = (target, announce) => {
+    let data = {};
+    try {
+      data = JSON.parse(target.dataset.card || "{}");
+    } catch {
+      // Malformed content shows the header alone.
+    }
+    const title = target.dataset.when || target.dataset.title || "";
+    const head = element("div", "st-card-head");
+    head.append(element("span", "st-card-title", title));
+    if (target.dataset.label) {
+      const badge = element("span", "ts-badge");
+      badge.dataset.state = target.dataset.state || "none";
+      badge.append(element("span", "ts-dot"), target.dataset.label);
+      head.append(badge);
+    }
+    const parts = [head];
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    if (rows.length > 0) {
+      const list = element("dl", "st-card-rows");
+      for (const [name, value] of rows) list.append(element("dt", "", name), element("dd", "", value));
+      parts.push(list);
+    }
+    const notes = Array.isArray(data.notes) ? data.notes : [];
+    if (notes.length > 0) {
+      const list = element("ul", "st-card-notes");
+      for (const note of notes) list.append(element("li", "", note));
+      parts.push(list);
+    }
+    card.replaceChildren(...parts);
+
+    current?.classList.remove("is-active");
+    current = target;
+    target.classList.add("is-active");
+    card.hidden = false;
+    place();
+    if (announce && live) {
+      live.textContent = [title, target.dataset.label, ...rows.map((row) => row.join(" ")), ...notes].filter(Boolean).join(". ");
+    }
+  };
+
+  const hide = () => {
+    card.hidden = true;
+    current?.classList.remove("is-active");
+    current = null;
+  };
+
+  const cardOf = (node) => (node instanceof Element ? node.closest("[data-card]") : null);
+
+  document.addEventListener("pointerover", (event) => {
+    if (event.pointerType === "touch") return;
+    const target = cardOf(event.target);
+    if (target) show(target, false);
+    else if (current) hide();
+  });
+  document.addEventListener("pointerout", (event) => event.relatedTarget || hide());
+  // Taps open a card and a second tap, or a tap elsewhere, closes it.
+  document.addEventListener("click", (event) => {
+    const target = cardOf(event.target);
+    if (target && target !== current) show(target, false);
+    else hide();
+  });
+  document.addEventListener("focusin", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.matches(".st-bars")) {
+      const cells = target.children;
+      const active = target.querySelector(".is-active");
+      show(active || cells[cells.length - 1], true);
+    } else if (target.matches("[data-card]")) show(target, true);
+  });
+  document.addEventListener("focusout", (event) => {
+    const next = event.relatedTarget;
+    if (!(next instanceof Element) || !(next.matches(".st-bars") || next.matches("[data-card]"))) hide();
+  });
+  // Arrow keys move between the cells of a focused strip.
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") return hide();
+    const strip = event.target instanceof Element && event.target.matches(".st-bars") ? event.target : null;
+    if (!strip || !current || current.parentElement !== strip) return;
+    const cells = [...strip.children];
+    const index = cells.indexOf(current);
+    const next = { ArrowLeft: index - 1, ArrowRight: index + 1, Home: 0, End: cells.length - 1 }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    show(cells[Math.max(0, Math.min(cells.length - 1, next))], true);
+  });
+  addEventListener("scroll", place, { passive: true });
+  addEventListener("resize", place);
+
   const main = document.querySelector("main[data-live]");
   if (!main) return;
   const interval = ${REFRESH_SECONDS * 1000};
@@ -87,15 +220,25 @@ export const CLIENT_SCRIPT = `(() => {
     if (busy || document.hidden) return;
     busy = true;
     try {
-      const response = await fetch(location.pathname + "?fragment=main", { headers: { accept: "text/html" } });
+      const url = new URL(location.href);
+      url.searchParams.set("fragment", "main");
+      const response = await fetch(url, { headers: { accept: "text/html" } });
       if (!response.ok) return;
       const template = document.createElement("template");
       template.innerHTML = await response.text();
       const next = template.content.querySelector("main");
       if (!next) return;
       localize(next);
-      document.querySelector("main").replaceWith(next);
+      // Keep keyboard focus on the same element across the swap, found by
+      // its position among the focusable elements: labels carry live values.
+      const focusable = "a[href], button, input, select, [tabindex]";
+      const page = document.querySelector("main");
+      const position = [...page.querySelectorAll(focusable)].indexOf(document.activeElement);
+      hide();
+      page.replaceWith(next);
+      ago();
       document.title = next.dataset.title || document.title;
+      if (position >= 0) next.querySelectorAll(focusable)[position]?.focus();
       last = Date.now();
     } catch {
       // Offline or failing: keep the last good page and try again later.

@@ -98,6 +98,17 @@
 .st-hero-mark > .ts-dot {
   width: 14px;
   height: 14px;
+  box-shadow: 0 0 0 0 color-mix(in oklab, var(--state) 60%, transparent);
+  animation: st-pulse 2.4s var(--ts-ease) infinite;
+}
+
+@keyframes st-pulse {
+  70% {
+    box-shadow: 0 0 0 12px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 
 .st-hero-copy {
@@ -152,28 +163,53 @@
   grid-column: 1 / -1;
 }
 
-/* Status bars: one cell per hour or day, colored by its worst state. The
-   whole strip is a labeled image; cells show a tooltip on hover. */
+/* Status bars: one cell per bucket, colored by its worst state. The strip
+   is one focusable image; the client script opens a hover card for the
+   active cell. Without scripts, cells show a one-line tip on hover. */
 .st-bars {
   display: grid;
   grid-auto-columns: minmax(0, 1fr);
   grid-auto-flow: column;
-  gap: 3px;
+  gap: 2px;
   height: 28px;
+  border-radius: var(--ts-radius-sm);
 }
 
 .st-bars-lg {
   height: 40px;
 }
 
+.st-bars:focus-visible {
+  outline-offset: 4px;
+}
+
 .st-bars > li {
   position: relative;
   border-radius: 2px;
   background: var(--state);
+  transition:
+    opacity var(--ts-fast) var(--ts-ease),
+    transform var(--ts-fast) var(--ts-ease);
 }
 
 .st-bars > li[data-state="none"] {
   background: var(--ts-surface-3);
+}
+
+.st-bars:focus-visible > li {
+  opacity: 0.55;
+}
+
+@media (hover: hover) {
+  .st-bars:hover > li {
+    opacity: 0.55;
+  }
+}
+
+.st-bars > li:hover,
+.st-bars > li.is-active {
+  opacity: 1;
+  transform: scaleY(1.12);
 }
 
 .st-bars > li::after {
@@ -207,13 +243,114 @@
 }
 
 @media (hover: hover) {
-  .st-bars > li:hover {
-    opacity: 0.8;
-  }
-
   .st-bars > li:hover::after {
     opacity: 1;
   }
+}
+
+:root[data-js] .st-bars > li::after {
+  display: none;
+}
+
+/* The hover card: time and state, then the details of what it describes. */
+.st-card {
+  position: fixed;
+  z-index: var(--ts-z-tooltip);
+  display: grid;
+  gap: var(--ts-s2);
+  min-width: 13rem;
+  max-width: min(20rem, calc(100vw - 16px));
+  padding: var(--ts-s3);
+  border-radius: var(--ts-radius);
+  background: var(--ts-surface-2);
+  box-shadow: var(--ts-shadow-overlay);
+  font-size: var(--ts-fs-xs);
+  pointer-events: none;
+  animation: st-card-in var(--ts-fast) var(--ts-ease);
+}
+
+.st-card[hidden] {
+  display: none;
+}
+
+.st-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ts-s3);
+}
+
+.st-card-title {
+  color: var(--ts-ink);
+  font-weight: 600;
+}
+
+.st-card-rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px var(--ts-s4);
+  padding-top: var(--ts-s2);
+  border-top: 1px solid var(--ts-line);
+}
+
+.st-card-rows dt {
+  color: var(--ts-ink-3);
+}
+
+.st-card-rows dd {
+  color: var(--ts-ink);
+  font-family: var(--ts-font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.st-card-notes {
+  display: grid;
+  gap: 2px;
+  padding-top: var(--ts-s2);
+  border-top: 1px solid var(--ts-line);
+  color: var(--ts-ink-2);
+}
+
+.st-card-notes li::before {
+  content: "● ";
+  color: var(--ts-warning);
+}
+
+@keyframes st-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+/* Range links: a small segmented control. */
+.st-range {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: var(--ts-radius);
+}
+
+.st-range a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px var(--ts-s3);
+  border-radius: var(--ts-radius-sm);
+  color: var(--ts-ink-3);
+  font-size: var(--ts-fs-xs);
+  font-weight: 600;
+}
+
+.st-range a:hover {
+  color: var(--ts-ink);
+  text-decoration: none;
+}
+
+.st-range a[aria-current] {
+  background: var(--ts-accent-soft);
+  color: var(--ts-ink);
 }
 
 .st-axis {
@@ -246,13 +383,26 @@
   color: var(--ts-surface-3);
 }
 
-/* Region map: the dotted world with one hub per region. */
+/* Region map: the dotted world, a hub per region, the vantage points, and
+   the probe paths between them. */
+.st-map-figure {
+  display: grid;
+  gap: var(--ts-s2);
+  margin: 0;
+}
+
 .st-map {
   width: 100%;
-  max-height: 22rem;
+  max-height: 24rem;
   border: 1px solid var(--ts-line);
   border-radius: var(--ts-radius-lg);
   background: var(--ts-surface);
+}
+
+.st-hub,
+.st-vantage {
+  outline: none;
+  cursor: default;
 }
 
 .st-hub {
@@ -268,10 +418,125 @@
   fill: color-mix(in oklab, currentColor 22%, transparent);
 }
 
+.st-hub-pulse {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 0.4;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: st-hub-pulse 2.4s var(--ts-ease) infinite;
+}
+
+.st-hub[data-lifecycle="planned"] .st-hub-pulse {
+  display: none;
+}
+
+@keyframes st-hub-pulse {
+  from {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
 .st-hub text {
   fill: var(--ts-ink-2);
   font-size: 2.6px;
   font-weight: 600;
+}
+
+.st-hub:is(:hover, :focus-visible, .is-active) .st-hub-ring {
+  fill: color-mix(in oklab, currentColor 45%, transparent);
+}
+
+.st-hub:focus-visible .st-hub-ring {
+  stroke: var(--ts-ink);
+  stroke-width: 0.5;
+}
+
+.st-vantage rect {
+  fill: var(--ts-canvas);
+  stroke: var(--ts-cat-2);
+  stroke-width: 0.5;
+}
+
+.st-vantage:is(:hover, :focus-visible, .is-active) rect {
+  fill: var(--ts-cat-2);
+}
+
+.st-arc-line {
+  fill: none;
+  stroke: var(--state);
+  stroke-width: 0.35;
+  stroke-dasharray: 1.2 1.6;
+  opacity: 0.55;
+}
+
+.st-arc[data-state="none"] .st-arc-line {
+  stroke: var(--ts-ink-3);
+}
+
+.st-arc-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 2.4;
+}
+
+/* Only the path in view flows, so the map never repaints while idle. */
+.st-arc:is(:hover, :focus-visible, .is-active) .st-arc-line {
+  opacity: 1;
+  stroke-width: 0.6;
+  animation: st-flow 1.6s linear infinite;
+}
+
+.st-arc {
+  outline: none;
+}
+
+@keyframes st-flow {
+  to {
+    stroke-dashoffset: -2.8;
+  }
+}
+
+.st-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ts-s2) var(--ts-s4);
+  color: var(--ts-ink-3);
+  font-size: var(--ts-fs-xs);
+}
+
+.st-map-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.st-key {
+  display: inline-block;
+}
+
+.st-key-hub {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ts-ink-2);
+}
+
+.st-key-vantage {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--ts-cat-2);
+  transform: rotate(45deg);
+}
+
+.st-key-arc {
+  width: 14px;
+  border-top: 1px dashed var(--ts-ink-2);
 }
 
 /* Regions side by side, each with its clusters. */
@@ -360,6 +625,6 @@
   }
 
   .st-bars {
-    gap: 2px;
+    gap: 1px;
   }
 }
