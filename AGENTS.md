@@ -3,10 +3,10 @@ AI IS NOT ALLOWED TO EDIT THIS FILE ONLY HUMANS CAN!
 # Rules
 
 ## Stack
-- Vite
-- vinext
-- Tailwind
-- Cloudflare Workers
+- Vite (vite-plus) with the Cloudflare Vite plugin
+- TypeScript Cloudflare Worker rendering HTML on the server, no frontend framework
+- Cloudflare D1
+- Plain CSS with the ts-dashboard design system tokens, bundled by Lightning CSS
 
 ## Develop
 - Always create a feature called feat/{feature_name} fix/{fix_name} and then we create a PR into main when the work is ready to be merged when pushing and creating the pull request make sure that the linter has no errors and that all tests passes, when creating pull request send the link of that PR to the user.

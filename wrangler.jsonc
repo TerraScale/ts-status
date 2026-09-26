@@ -3,23 +3,15 @@
   "name": "ts-status",
   "main": "src/worker.ts",
   "compatibility_date": "2026-09-13",
-  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "routes": [{ "pattern": "status.terrascale.tech", "custom_domain": true }],
-  "assets": {
-    "directory": "dist/client",
-    "binding": "ASSETS",
-    "not_found_handling": "none"
-  },
+  // Probes every region's clusters (src/probe.ts).
+  "triggers": { "crons": ["* * * * *"] },
   "d1_databases": [
     {
       "binding": "STATUS_DB",
       "database_name": "ts-status-db",
-      "database_id": "8a72dd69-2136-4398-8d70-92c0c2dade5a"
-    }
+      "database_id": "8a72dd69-2136-4398-8d70-92c0c2dade5a",
+    },
   ],
-  "vars": {
-    "STATUS_PAGE_NAME": "TerraScale Status",
-    "STATUS_PAGE_URL": "https://status.terrascale.tech"
-  }
 }
