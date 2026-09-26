@@ -612,6 +612,15 @@
     gap: var(--ts-s4);
   }
 
+  .st-top-end {
+    min-width: 0;
+  }
+
+  .st-nav {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
   .st-zone {
     width: 8.5rem;
   }
@@ -918,4 +927,54 @@
 .st-tls[data-state] {
   color: var(--state);
   font-weight: 600;
+}
+
+/* Forms of the subscription pages. */
+.st-narrow {
+  max-width: 40rem;
+}
+
+.st-form {
+  display: grid;
+  justify-items: start;
+  gap: var(--ts-s4);
+}
+
+.st-form > .st-field {
+  width: 100%;
+}
+
+.st-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ts-s2) var(--ts-s5);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.st-choices > legend {
+  margin-bottom: var(--ts-s2);
+  color: var(--ts-ink-3);
+  font-size: var(--ts-fs-xs);
+  font-weight: 600;
+}
+
+.st-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ts-s2);
+  font-size: var(--ts-fs-sm);
+}
+
+.st-choice input {
+  accent-color: var(--ts-accent);
+}
+
+.st-honeypot {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
 }

@@ -98,9 +98,26 @@ The operator API under `/api/operator` needs the `OPERATOR_TOKEN` bearer token (
 
 Editing an automatic incident takes it over from the probe coordinator. Pausing a component, or its last enabled endpoint, answers `409` while an automatic incident is open for it: resolve the incident first.
 
+## Subscriptions
+
+Visitors subscribe on `/subscribe` by email or webhook (Discord, Slack, or any public HTTPS URL), optionally to some components only, and confirm by double opt-in. Confirm and unsubscribe links are HMAC-signed with `SUBSCRIPTION_SECRET` and act only through POST forms, so link scanners cannot trigger them; emails carry RFC 8058 one-click unsubscribe, and generic webhooks an `x-terrascale-signature: sha256=…` HMAC of the body, keyed by the `signingKey` their confirmation request carries. Requests are rate limited per IP (per /64 for IPv6), a target gets at most one confirmation an hour and three in all, and a honeypot field drops bots. Delivery runs claim their messages first, so overlapping runs never send one twice.
+
+The minute cron enqueues every eligible update into the D1 `outbox` and delivers what is due, retrying failures with exponential backoff (8 attempts). Automatic incidents notify only once they have lasted five minutes; one resolved sooner notifies nobody. Email goes through OCI Email Delivery's SMTP relay (STARTTLS on 587, over Cloudflare TCP sockets) with the credentials ts-auth uses.
+
 ## Deploy
 
-The production D1 database is `ts-status-db` (`8a72dd69-2136-4398-8d70-92c0c2dade5a`). Build, apply migrations, deploy the four vantage Workers, then the status Worker with:
+The production D1 database is `ts-status-db` (`8a72dd69-2136-4398-8d70-92c0c2dade5a`). Set the secrets once (the SMTP ones are ts-auth's `TS_AUTH_SMTP_*` values; without them, email subscriptions are hidden):
+
+```sh
+npx wrangler secret put OPERATOR_TOKEN
+npx wrangler secret put SUBSCRIPTION_SECRET
+npx wrangler secret put SMTP_HOST       # smtp.email.sa-saopaulo-1.oci.oraclecloud.com
+npx wrangler secret put SMTP_USERNAME   # the OCI SMTP credential, with its @oci suffix
+npx wrangler secret put SMTP_PASSWORD
+npx wrangler secret put SMTP_FROM       # noreply@terrascale.tech, an approved sender
+```
+
+Build, apply migrations, deploy the four vantage Workers, then the status Worker with:
 
 ```sh
 npm run deploy

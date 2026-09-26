@@ -3,10 +3,14 @@
    and keeps each response in the edge cache for a few seconds, so traffic
    spikes during an incident cost at most one D1 batch per URL per colo
    every CACHE_SECONDS. Its minute cron keeps the probe coordinator armed,
-   rolls the probe samples up into hours and days, and hourly refreshes the
-   TLS certificates of the monitored hosts. */
+   rolls the probe samples up into hours and days, delivers subscription
+   messages, and hourly refreshes the TLS certificates of the monitored
+   hosts. */
 
 import { operator } from "./api/operator";
+import { connect } from "./notify/connect";
+import { deliverDue, runOutbox } from "./notify/outbox";
+import { subscriptions } from "./notify/subscribe";
 import { statuspage, type StatuspageDocument } from "./api/statuspage";
 import { incidentsDocument, latencyDocument, regionsDocument, statusDocument } from "./api/v1";
 import { loadDays, loadDetails, loadPeriods } from "./db/details";
@@ -293,6 +297,21 @@ export default {
     const url = new URL(request.url);
     const now = Date.now();
     if (url.pathname.startsWith("/api/operator/")) return secure(await operator(request, env, now), false);
+    if (url.pathname === "/subscribe" || url.pathname.startsWith("/subscribe/")) {
+      const answer = await subscriptions(env, request, now);
+      if (answer instanceof Response) return secure(answer, false);
+      // Send a new confirmation right away instead of on the next cron run.
+      if (answer.deliver) ctx.waitUntil(deliverDue(env, now, { connect }, answer.deliver));
+      const context = {
+        now,
+        origin: url.origin,
+        fragment: false,
+        params: {},
+        query: {},
+        policy: { formAction: "'self'" },
+      };
+      return secure(await page(answer.page, context, answer.status), false);
+    }
     // The browser ping test's baseline: the round trip to this data center.
     if (url.pathname === "/api/ping") {
       return secure(
@@ -333,7 +352,7 @@ export default {
 
   async scheduled(controller, env, ctx): Promise<void> {
     const now = controller.scheduledTime;
-    const work: Promise<unknown>[] = [coordinator(env).arm(), rollup(env, now)];
+    const work: Promise<unknown>[] = [coordinator(env).arm(), rollup(env, now), runOutbox(env, now, { connect })];
     if (new Date(now).getUTCMinutes() === CHECK_MINUTE) work.push(checkCertificates(env, now));
     ctx.waitUntil(Promise.all(work));
   },
