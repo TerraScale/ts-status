@@ -19,6 +19,8 @@ const vantages = VANTAGES.map((vantage) => ({
   },
 }));
 
+const root = dirname(fileURLToPath(import.meta.url));
+
 export default defineConfig({
   plugins: process.env.VITEST ? [] : [cloudflare({ auxiliaryWorkers: vantages })],
   css: { transformer: "lightningcss" },
@@ -28,7 +30,10 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
-    alias: { "cloudflare:workers": join(dirname(fileURLToPath(import.meta.url)), "src/testing/cloudflare-workers.ts") },
+    alias: {
+      "cloudflare:workers": join(root, "src/testing/cloudflare-workers.ts"),
+      "cloudflare:sockets": join(root, "src/testing/cloudflare-sockets.ts"),
+    },
   },
   fmt: {
     printWidth: 120,

@@ -15,6 +15,7 @@ const NAV = [
   { href: "/ping", label: "Ping" },
   { href: "/history", label: "History" },
   { href: "/maintenance", label: "Maintenance" },
+  { href: "/subscribe", label: "Subscribe" },
 ] as const;
 
 export interface Page {

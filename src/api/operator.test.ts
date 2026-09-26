@@ -56,7 +56,7 @@ describe("operator API", () => {
 
     const read = await call("GET", `/incidents/${id}`);
     expect(read.data?.components).toEqual(["dashboard"]);
-    expect((read.data?.updates as unknown[]).length).toBe(2);
+    expect(read.data?.updates).toHaveLength(2);
   });
 
   it("schedules maintenance and validates its window", async () => {
