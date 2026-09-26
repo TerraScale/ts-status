@@ -13,9 +13,18 @@ export type TimelineState = Status | "none";
 
 export type Lifecycle = "active" | "planned";
 
-export type IncidentStatus = "investigating" | "identified" | "monitoring" | "resolved";
+export type IncidentKind = "incident" | "warning" | "maintenance";
 
-export type IncidentImpact = "minor" | "major" | "critical";
+export type IncidentStatus =
+  | "investigating"
+  | "identified"
+  | "monitoring"
+  | "resolved"
+  | "scheduled"
+  | "in_progress"
+  | "completed";
+
+export type IncidentImpact = "none" | "minor" | "major" | "critical";
 
 export type Provider = "fly" | "oci" | "cloudflare" | "other";
 
@@ -35,14 +44,28 @@ export interface Component {
 
 export interface Incident {
   id: string;
-  kind: "incident" | "warning";
+  kind: IncidentKind;
   title: string;
   status: IncidentStatus;
   impact: IncidentImpact;
+  source: "manual" | "auto";
+  /** The latest update's text. */
   message: string;
+  /** Affected components; none means the whole platform. */
+  components: string[];
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
+}
+
+export interface IncidentUpdate {
+  id: string;
+  incidentId: string;
+  status: IncidentStatus;
+  body: string;
+  createdAt: string;
 }
 
 /** A span of time in one state. */
@@ -72,6 +95,7 @@ export const STATE_LABELS: Record<TimelineState, string> = {
 
 /** The state an active incident implies. */
 export const IMPACT_STATUS: Record<IncidentImpact, Status> = {
+  none: "operational",
   minor: "degraded",
   major: "partial_outage",
   critical: "major_outage",
@@ -96,31 +120,90 @@ export function aggregate(states: readonly TimelineState[]): TimelineState {
   return known.reduce<TimelineState>(worst, "none");
 }
 
-export function isActive(incident: Pick<Incident, "status">): boolean {
+export type MaintenancePhase = "scheduled" | "in_progress" | "completed";
+
+/** Where a maintenance window stands at `now`: operators may complete it
+    early; otherwise its schedule decides. */
+export function maintenancePhase(
+  incident: Pick<Incident, "status" | "scheduledStart" | "scheduledEnd" | "resolvedAt">,
+  now: number,
+): MaintenancePhase {
+  const end = incident.resolvedAt ?? incident.scheduledEnd;
+  if (incident.status === "completed" || (end !== null && now >= Date.parse(end))) return "completed";
+  if (incident.status === "in_progress" || (incident.scheduledStart && now >= Date.parse(incident.scheduledStart))) {
+    return "in_progress";
+  }
+  return "scheduled";
+}
+
+/** Whether an incident affects the present: open incidents and warnings, and
+    maintenance windows in progress. */
+export function isActive(incident: Incident, now: number): boolean {
+  if (incident.kind === "maintenance") return maintenancePhase(incident, now) === "in_progress";
   return incident.status !== "resolved";
 }
 
+/** Whether an incident is over: resolved, or maintenance completed. */
+export function isClosed(incident: Incident, now: number): boolean {
+  return incident.kind === "maintenance"
+    ? maintenancePhase(incident, now) === "completed"
+    : incident.status === "resolved";
+}
+
+/** Whether an incident concerns a component: it names it, or names none. */
+export const affects = (incident: Pick<Incident, "components">, componentId: string): boolean =>
+  incident.components.length === 0 || incident.components.includes(componentId);
+
 /** The headline: the components taken together, worsened by the impact of
-    every active incident. One component down is a partial outage of the
+    every active platform-wide incident, or maintenance while a platform-wide
+    window is in progress. Incidents naming components count through those
+    components' states, so one component down is a partial outage of the
     platform; only all of them is a major one. */
 export function overallStatus(
   components: readonly TimelineState[],
-  incidents: readonly Pick<Incident, "status" | "impact">[],
+  incidents: readonly Incident[],
+  now: number,
 ): Status {
   let state = aggregate(components);
   for (const incident of incidents) {
-    if (isActive(incident)) state = worst(state, IMPACT_STATUS[incident.impact]);
+    if (!isActive(incident, now) || incident.components.length > 0) continue;
+    state = worst(state, incident.kind === "maintenance" ? "maintenance" : IMPACT_STATUS[incident.impact]);
   }
   return state === "none" ? "operational" : state;
 }
 
-/** The time every incident was open, in the state its impact implies. */
+/** A component's state: maintenance while a window covering it is in
+    progress (measured failures are expected then), otherwise the measured
+    state worsened by the impact of active incidents naming it. */
+export function componentState(
+  measured: TimelineState,
+  componentId: string,
+  incidents: readonly Incident[],
+  now: number,
+): TimelineState {
+  const active = incidents.filter((incident) => incident.components.includes(componentId) && isActive(incident, now));
+  const impact = active
+    .filter((incident) => incident.kind !== "maintenance")
+    .reduce<TimelineState>((acc, incident) => worst(acc, IMPACT_STATUS[incident.impact]), "none");
+  if (active.some((incident) => incident.kind === "maintenance")) return worst("maintenance", impact);
+  return worst(measured, impact);
+}
+
+/** The time every incident was open, in the state its impact implies, and
+    every maintenance window as maintenance. */
 export function incidentWindows(incidents: readonly Incident[], now: number): Segment[] {
-  return incidents.map((incident) => ({
-    from: Date.parse(incident.createdAt),
-    to: incident.resolvedAt ? Date.parse(incident.resolvedAt) : now,
-    state: IMPACT_STATUS[incident.impact],
-  }));
+  return incidents.map((incident) => {
+    if (incident.kind === "maintenance") {
+      const from = Date.parse(incident.scheduledStart ?? incident.createdAt);
+      const end = incident.resolvedAt ?? incident.scheduledEnd;
+      return { from, to: end ? Math.min(Date.parse(end), Math.max(now, from)) : now, state: "maintenance" as const };
+    }
+    return {
+      from: Date.parse(incident.createdAt),
+      to: incident.resolvedAt ? Date.parse(incident.resolvedAt) : now,
+      state: IMPACT_STATUS[incident.impact],
+    };
+  });
 }
 
 /** The worst state of any window overlapping [from, to). */

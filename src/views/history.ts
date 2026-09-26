@@ -1,10 +1,37 @@
-/* Incident history: every incident and warning, grouped by month. */
+/* Incident history: incidents and warnings filtered by component, kind,
+   impact, text and month, with their figures, grouped by month. The
+   filters are a plain GET form and links, so the page needs no script. */
 
-import { formatMonth } from "../format";
-import { html } from "../html";
+import type { History } from "../db/reads";
+import { incidentStats } from "../domain/history";
 import type { Incident } from "../domain/status";
-import { card, empty, incidentItem } from "./components";
+import { DAY, formatDuration, formatMonth } from "../format";
+import { html, raw, type Html } from "../html";
+import { card, empty, incidentItem, stat } from "./components";
 import type { Page } from "./layout";
+
+export interface HistoryQuery {
+  component?: string;
+  kind?: string;
+  impact?: string;
+  q?: string;
+  /** "YYYY-MM"; without it the page covers the last twelve months. */
+  month?: string;
+}
+
+/** Months of history offered as links. */
+export const HISTORY_MONTHS = 12;
+
+/** The window a query covers. */
+export function historyWindow(query: HistoryQuery, now: number): { from: number; to: number } {
+  if (query.month) {
+    const from = Date.parse(`${query.month}-01T00:00:00Z`);
+    const next = new Date(from);
+    next.setUTCMonth(next.getUTCMonth() + 1);
+    return { from, to: next.getTime() };
+  }
+  return { from: now - 365 * DAY, to: now + DAY };
+}
 
 function byMonth(incidents: readonly Incident[]): Map<string, Incident[]> {
   const groups = new Map<string, Incident[]>();
@@ -15,25 +42,102 @@ function byMonth(incidents: readonly Incident[]): Map<string, Incident[]> {
   return groups;
 }
 
-export function historyPage(incidents: readonly Incident[]): Page {
-  const months = [...byMonth(incidents)];
+/** The history URL for a query. */
+function href(query: HistoryQuery): string {
+  const params = new URLSearchParams(
+    Object.entries(query).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1] !== ""),
+  );
+  const search = params.toString();
+  return `/history${search ? `?${search}` : ""}`;
+}
+
+function option(value: string, label: string, current: string | undefined): Html {
+  return html`<option value="${value}"${value === (current ?? "") ? raw(" selected") : ""}>${label}</option>`;
+}
+
+function filters(history: History, query: HistoryQuery): Html {
+  return html`<form class="st-filters" method="get" action="/history" role="search" aria-label="Filter incidents">
+  <label class="st-field"><span>Component</span>
+    <select class="ts-select ts-select-sm" name="component">
+      ${option("", "All components", query.component)}
+      ${history.components.map((component) => option(component.id, component.name, query.component))}
+    </select>
+  </label>
+  <label class="st-field"><span>Kind</span>
+    <select class="ts-select ts-select-sm" name="kind">
+      ${option("", "All kinds", query.kind)}${option("incident", "Incidents", query.kind)}${option("warning", "Warnings", query.kind)}
+    </select>
+  </label>
+  <label class="st-field"><span>Impact</span>
+    <select class="ts-select ts-select-sm" name="impact">
+      ${option("", "Any impact", query.impact)}${option("minor", "Minor", query.impact)}${option("major", "Major", query.impact)}${option("critical", "Critical", query.impact)}
+    </select>
+  </label>
+  <label class="st-field st-field-grow"><span>Search</span>
+    <input class="ts-input" type="search" name="q" value="${query.q ?? ""}" maxlength="80" placeholder="Search titles">
+  </label>
+  ${query.month ? html`<input type="hidden" name="month" value="${query.month}">` : ""}
+  <button class="ts-button" type="submit">Filter</button>
+</form>`;
+}
+
+function months(query: HistoryQuery, now: number): Html {
+  const list = Array.from({ length: HISTORY_MONTHS }, (_, index) => {
+    const date = new Date(now);
+    date.setUTCDate(1);
+    date.setUTCMonth(date.getUTCMonth() - index);
+    return date.toISOString().slice(0, 7);
+  });
+  const link = (month: string | undefined, label: string) =>
+    html`<a href="${href({ ...query, month })}"${query.month === month ? raw(' aria-current="true"') : ""}>${label}</a>`;
+  return html`<nav class="st-range st-months" aria-label="Months">${link(undefined, "12 months")}${list.map((month) =>
+    link(month, formatMonth(`${month}-01T00:00:00Z`).replace(/ \d{4}$/, "")),
+  )}</nav>`;
+}
+
+export function historyPage(history: History, query: HistoryQuery, now: number): Page {
+  const stats = incidentStats(history.incidents);
+  const names = new Map(history.components.map((component) => [component.id, component.name]));
+  const filtered = Boolean(query.component || query.kind || query.impact || query.q);
+  const groups = [...byMonth(history.incidents)];
+  const period = query.month ? formatMonth(`${query.month}-01T00:00:00Z`) : "the last 12 months";
+
   const body = html`<main id="main" class="ts-page">
   <header class="st-page-head">
     <p class="ts-eyebrow">Transparency</p>
     <h1 class="st-title">Incident history</h1>
-    <p class="ts-muted">Incidents and operational warnings from the TerraScale platform, newest first.</p>
+    <p class="ts-muted">Incidents and operational warnings from the TerraScale platform, newest first. Automatic incidents are opened by the health checks themselves.</p>
   </header>
+
+  <dl class="ts-stats" aria-label="Figures for ${period}">
+    ${stat("Incidents", String(stats.count), period)}
+    ${stat("Mean time to recovery", stats.mttrMs === null ? "—" : formatDuration(stats.mttrMs), `${stats.resolved} resolved`)}
+    ${stat("Longest", stats.longest ? formatDuration(stats.longest.durationMs) : "—", stats.longest?.title ?? "nothing resolved")}
+    ${stat("Critical", String(stats.byImpact.critical), `${stats.byImpact.major} major · ${stats.byImpact.minor} minor`)}
+  </dl>
+
+  <section class="st-history-controls" aria-label="Filters">
+    ${filters(history, query)}
+    ${months(query, now)}
+    ${filtered ? html`<p class="ts-meta">Filtered · <a class="ts-link" href="${href({ month: query.month })}">Clear filters</a></p>` : ""}
+  </section>
+
   ${
-    months.length === 0
-      ? empty("No incidents recorded", "TerraScale has not reported any incidents or warnings.")
-      : months.map(([month, list]) =>
+    groups.length === 0
+      ? empty(
+          filtered ? "No matching incidents" : "No incidents recorded",
+          filtered
+            ? "No incident or warning matches these filters."
+            : `TerraScale reported no incidents or warnings in ${period}.`,
+        )
+      : groups.map(([month, list]) =>
           card(
             {
               id: `month-${month}`,
               title: formatMonth(`${month}-01T00:00:00Z`),
               description: `${list.length} ${list.length === 1 ? "entry" : "entries"}`,
             },
-            html`<ul class="ts-list">${list.map(incidentItem)}</ul>`,
+            html`<ul class="ts-list">${list.map((incident) => incidentItem(incident, now, names))}</ul>`,
           ),
         )
   }

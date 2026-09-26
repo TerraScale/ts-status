@@ -5,17 +5,20 @@
    every CACHE_SECONDS. Its minute cron keeps the probe coordinator armed
    and rolls the probe samples up into hours and days. */
 
-import { loadHistory, loadSnapshot } from "./db/reads";
+import { loadHistory, loadIncident, loadMaintenance, loadSnapshot } from "./db/reads";
 import type { Env } from "./env";
 import { DEFAULT_RANGE, isRange, RANGE_KEYS, type RangeKey } from "./domain/range";
-import { cacheKey, oneOf, readQuery, type QuerySpec } from "./http/cache";
+import { cacheKey, oneOf, readQuery, text, type QuerySpec } from "./http/cache";
 import { contentSecurityPolicy, type PolicyOptions } from "./http/csp";
 import { secure } from "./http/security";
 import { overview, snapshotWindow } from "./overview";
 import { coordinator } from "./probe/coordinator";
 import { rollup } from "./probe/rollup";
+import { DAY } from "./format";
 import { createRouter } from "./router";
-import { historyPage } from "./views/history";
+import { historyPage, historyWindow } from "./views/history";
+import { incidentPage } from "./views/incident";
+import { MAINTENANCE_DAYS, maintenancePage } from "./views/maintenance";
 import { homePage } from "./views/home";
 import { document, type Page } from "./views/layout";
 import { notFoundPage } from "./views/not-found";
@@ -54,7 +57,31 @@ const route = createRouter<Route>({
       page(homePage(await loadOverview(env, context.now, rangeOf(context.query))), context),
   },
   "/history": {
-    render: async (env, context) => page(historyPage(await loadHistory(env)), context),
+    query: {
+      component: (value) => /^[a-z0-9-]{1,40}$/.test(value),
+      kind: oneOf("incident", "warning"),
+      impact: oneOf("minor", "major", "critical"),
+      q: text(80),
+      month: (value) => /^20\d\d-(0[1-9]|1[0-2])$/.test(value),
+    },
+    policy: { formAction: "'self'" },
+    render: async (env, context) => {
+      const { query, now } = context;
+      const history = await loadHistory(env, { ...query, ...historyWindow(query, now) });
+      return page(historyPage(history, query, now), context);
+    },
+  },
+  "/incidents/:id": {
+    render: async (env, context) => {
+      const detail = await loadIncident(env, context.params.id ?? "", context.now);
+      return detail ? page(incidentPage(detail, context.now), context) : page(notFoundPage(), context, 404);
+    },
+  },
+  "/maintenance": {
+    render: async (env, context) => {
+      const { windows, components } = await loadMaintenance(env, context.now - MAINTENANCE_DAYS * DAY);
+      return page(maintenancePage(windows, components, context.now), context);
+    },
   },
   "/api/status": {
     query: rangeQuery,

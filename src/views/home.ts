@@ -35,6 +35,7 @@ import {
   zone,
 } from "./components";
 import type { Page } from "./layout";
+import { maintenanceItems } from "./maintenance";
 
 const HEADLINES: Record<Status, string> = {
   operational: "All systems operational",
@@ -277,6 +278,7 @@ export function homePage(view: Overview): Page {
     view.monitoring.lastRoundAt === null
       ? "Health checks have not reported yet, so component states are unknown."
       : html`Health checks last reported ${time(view.monitoring.lastRoundAt, "seconds")}; states below may be out of date.`;
+  const names = new Map(view.groups.flatMap((entry) => entry.components).map((entry) => [entry.id, entry.name]));
 
   const body = html`<main id="main" class="ts-page" data-live data-title="${title}">
   <section class="st-hero" data-state="${view.status}" aria-labelledby="st-headline">
@@ -316,7 +318,22 @@ export function homePage(view: Overview): Page {
             title: "Active incidents",
             description: "Updates are posted here as soon as we have them.",
           },
-          html`<div class="ts-card-body">${view.activeIncidents.map(incidentAlert)}</div>`,
+          html`<div class="ts-card-body">${view.activeIncidents.map((incident) => incidentAlert(incident, view.generatedAt, names))}</div>`,
+        )
+      : ""
+  }
+
+  ${
+    view.maintenance.length > 0
+      ? card(
+          {
+            id: "maintenance",
+            title: "Scheduled maintenance",
+            description:
+              "Components under maintenance show in blue; health checks open no incidents for them meanwhile.",
+            actions: html`<a class="ts-link" href="/maintenance">All maintenance</a>`,
+          },
+          maintenanceItems(view.maintenance, view.generatedAt, names),
         )
       : ""
   }
@@ -360,7 +377,7 @@ export function homePage(view: Overview): Page {
             description: `Incidents and warnings resolved in the last ${RESOLVED_DAYS} days.`,
             actions: html`<a class="ts-link" href="/history">Full history</a>`,
           },
-          html`<ul class="ts-list">${view.resolvedIncidents.map(incidentItem)}</ul>`,
+          html`<ul class="ts-list">${view.resolvedIncidents.map((incident) => incidentItem(incident, view.generatedAt, names))}</ul>`,
         )
       : ""
   }

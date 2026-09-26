@@ -9,9 +9,23 @@ const NOW = "2026-09-26T10:15:00Z";
 function seededEnv(): Env & { STATUS_DB: TestD1 } {
   const db = testD1();
   db.sqlite.exec(`
-    INSERT INTO incidents (id, kind, title, status, impact, message, created_at, updated_at) VALUES
-      ('i1', 'warning', 'Slow <queries>', 'monitoring', 'minor', 'We are watching it.',
-       '2026-09-26 09:00:00', '2026-09-26 09:30:00');
+    INSERT INTO incidents (id, kind, title, status, impact, created_at, updated_at) VALUES
+      ('i1', 'warning', 'Slow <queries>', 'monitoring', 'minor', '2026-09-26 09:00:00', '2026-09-26 09:30:00');
+    INSERT INTO incident_updates (id, incident_id, status, body, created_at) VALUES
+      ('u1', 'i1', 'investigating', 'Looking into it.', '2026-09-26 09:00:00'),
+      ('u2', 'i1', 'monitoring', 'We are watching it.', '2026-09-26 09:30:00');
+    INSERT INTO incidents (id, kind, title, status, impact, source, created_at, updated_at, resolved_at) VALUES
+      ('i2', 'incident', 'Website is down', 'resolved', 'critical', 'auto',
+       '2026-08-02 10:00:00', '2026-08-02 10:20:00', '2026-08-02 10:20:00');
+    INSERT INTO incident_components (incident_id, component_id) VALUES ('i2', 'website');
+    INSERT INTO incident_updates (id, incident_id, status, body, created_at) VALUES
+      ('u3', 'i2', 'resolved', 'Recovered.', '2026-08-02 10:20:00');
+    INSERT INTO incidents (id, kind, title, status, impact, scheduled_start, scheduled_end, created_at, updated_at) VALUES
+      ('m1', 'maintenance', 'Forgejo upgrade', 'scheduled', 'none',
+       '2026-09-26 10:00:00', '2026-09-26 11:00:00', '2026-09-20 10:00:00', '2026-09-20 10:00:00'),
+      ('m2', 'maintenance', 'Atlas migration', 'scheduled', 'none',
+       '2026-09-28 10:00:00', '2026-09-28 11:00:00', '2026-09-20 10:00:00', '2026-09-20 10:00:00');
+    INSERT INTO incident_components (incident_id, component_id) VALUES ('m1', 'git'), ('m2', 'atlas');
     INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES
       ('dashboard-fly-gru', '2026-09-26 10:14:30', 'operational', 4, 4, 42, '[]'),
       ('website-pages', '2026-09-26 10:14:30', 'operational', 4, 4, 30, '[]'),
@@ -63,8 +77,10 @@ describe("app", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("public, max-age=10");
     expect(response.headers.get("content-security-policy")).toMatch(/script-src 'sha256-[^']+'/);
-    // Git is down: one component of four is a partial platform outage.
-    expect(body).toContain("Partial system outage");
+    // Git is down but under maintenance, so only the warning degrades the headline.
+    expect(body).toContain("Some systems are degraded");
+    expect(body).toContain("Scheduled maintenance");
+    expect(body).toContain("Forgejo upgrade");
     expect(body).toContain("Warning: Slow &lt;queries&gt;");
     expect(body).toContain("TerraScale platform");
     expect(body).toContain("Developer tools");
@@ -82,7 +98,7 @@ describe("app", () => {
   it("serves only the main element for in-place refreshes", async () => {
     const body = await (await app.fetch(request("/?fragment=main"), seededEnv(), ctx)).text();
     expect(body.startsWith("<main")).toBe(true);
-    expect(body).toContain('data-title="Partial system outage · TerraScale Status"');
+    expect(body).toContain('data-title="Some systems are degraded · TerraScale Status"');
     expect(body).not.toContain("<style>");
   });
 
@@ -101,14 +117,14 @@ describe("app", () => {
       groups: { id: string; components: { id: string; status: string; uptime: number; bars: string[] }[] }[];
       regions: { code: string; status: string; clusters: { pingMs: number; uptime24h: number }[] }[];
     };
-    expect(data.status).toBe("partial_outage");
+    expect(data.status).toBe("degraded");
     expect(data.groups.map((group) => group.id)).toEqual(["platform", "terrabase", "developer"]);
     const dashboard = data.groups[0]?.components[0];
     expect(data.range).toBe("90d");
     expect(dashboard).toMatchObject({ id: "dashboard", status: "operational", uptime: 1 });
     expect(dashboard?.bars).toHaveLength(90);
     expect(dashboard?.bars.at(-1)).toBe("operational");
-    expect(data.groups[2]?.components[0]).toMatchObject({ id: "git", status: "major_outage" });
+    expect(data.groups[2]?.components[0]).toMatchObject({ id: "git", status: "maintenance" });
     expect(data.regions.map((region) => [region.code, region.status])).toEqual([
       ["SFO", "none"],
       ["GRU", "operational"],
@@ -139,10 +155,41 @@ describe("app", () => {
     expect(body).toContain("Response time");
   });
 
-  it("renders the history page grouped by month", async () => {
-    const body = await (await app.fetch(request("/history"), seededEnv(), ctx)).text();
+  it("renders the history page grouped by month, with figures and filters", async () => {
+    const response = await app.fetch(request("/history"), seededEnv(), ctx);
+    const body = await response.text();
+    expect(response.headers.get("content-security-policy")).toContain("form-action 'self'");
     expect(body).toContain("September 2026");
+    expect(body).toContain("August 2026");
+    expect(body).toContain("Auto-detected");
+    expect(body).toContain("20m");
+    expect(body).not.toContain("Forgejo upgrade");
     expect(body).not.toMatch(/<main[^>]*data-live/);
+  });
+
+  it("filters the history by component, kind, text and month", async () => {
+    const text = async (path: string) => (await app.fetch(request(path), seededEnv(), ctx)).text();
+    expect(await text("/history?component=website")).not.toContain("Slow &lt;queries&gt;");
+    expect(await text("/history?kind=warning")).not.toContain("Website is down");
+    expect(await text("/history?q=slow")).toContain("Slow &lt;queries&gt;");
+    expect(await text("/history?q=nothing%25")).toContain("No matching incidents");
+    expect(await text("/history?month=2026-08")).not.toContain("Slow &lt;queries&gt;");
+  });
+
+  it("renders an incident with its timeline", async () => {
+    const body = await (await app.fetch(request("/incidents/i1"), seededEnv(), ctx)).text();
+    expect(body).toContain("Slow &lt;queries&gt;");
+    expect(body).toContain("Looking into it.");
+    expect(body.indexOf("We are watching it.")).toBeLessThan(body.indexOf("Looking into it."));
+    expect(body).toContain("All components");
+    expect((await app.fetch(request("/incidents/nope"), seededEnv(), ctx)).status).toBe(404);
+  });
+
+  it("lists maintenance in progress and upcoming", async () => {
+    const body = await (await app.fetch(request("/maintenance"), seededEnv(), ctx)).text();
+    expect(body).toContain("In progress");
+    expect(body.indexOf("Forgejo upgrade")).toBeLessThan(body.indexOf("Atlas migration"));
+    expect(body).toContain('data-prefix="Starts"');
   });
 
   it("rejects unknown paths and methods", async () => {

@@ -12,7 +12,7 @@ export const STYLES = styles;
 export interface Page {
   title: string;
   description: string;
-  path: "/" | "/history" | null;
+  path: "/" | "/history" | "/maintenance" | null;
   /** The page's <main>; live pages mark it data-live to refresh in place. */
   body: Html;
   live?: boolean;
@@ -21,6 +21,7 @@ export interface Page {
 const NAV = [
   { href: "/", label: "Status" },
   { href: "/history", label: "History" },
+  { href: "/maintenance", label: "Maintenance" },
 ] as const;
 
 export function document(page: Page, year: number): Html {
