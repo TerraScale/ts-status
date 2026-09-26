@@ -1,6 +1,6 @@
 # TerraScale status catalog: components, regions and clusters
 
-Use this repo skill when the human asks to add, launch, move, pause, or remove a component, region, or cluster on the status page. The catalog lives in D1; the Worker's cron trigger probes every enabled endpoint each minute, so changes apply within a minute without a deploy.
+Use this repo skill when the human asks to add, launch, move, pause, or remove a component, region, or cluster on the status page. The catalog lives in D1; the Worker's cron trigger probes every enabled endpoint every 30 seconds, so changes apply within a minute without a deploy.
 
 ## Model
 
@@ -9,7 +9,7 @@ Use this repo skill when the human asks to add, launch, move, pause, or remove a
 - `regions`: one row per region (`code` such as `GRU`, `name`, `country`, and `map_x`/`map_y`, the hub position on the 136×80 region map viewBox). Regions without enabled endpoints show as "Planned".
 - `endpoints`: one health check per cluster of a component. `region_code` names the region, or is null for global services such as edge Workers; `url` answers 2xx when healthy; `headers` is a JSON object sent with every probe; `provider` is `fly`, `oci`, `cloudflare`, or `other`.
 
-A component's status is measured: a cluster is degraded after one failed probe or a healthy response slower than 1.5 s, and down after three consecutive failures. A component or region is down only when all of its clusters are, and partially down when some are.
+A component's status is measured from four vantage points: a cluster is degraded when some vantages fail or it answers slower than 1.5 s, and down once most vantages fail two rounds in a row. A component or region is down only when all of its clusters are, and partially down when some are.
 
 ## Launch a planned component
 

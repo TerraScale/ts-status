@@ -2,7 +2,8 @@
    before this runs; the Worker renders the pages and the JSON API from D1
    and keeps each response in the edge cache for a few seconds, so traffic
    spikes during an incident cost at most one D1 batch per URL per colo
-   every CACHE_SECONDS. Its cron trigger probes every endpoint once a minute. */
+   every CACHE_SECONDS. Its minute cron keeps the probe coordinator armed
+   and rolls the probe samples up into hours and days. */
 
 import { loadHistory, loadSnapshot } from "./db/reads";
 import type { Env } from "./env";
@@ -10,7 +11,8 @@ import { cacheKey, readQuery, type QuerySpec } from "./http/cache";
 import { contentSecurityPolicy, type PolicyOptions } from "./http/csp";
 import { secure } from "./http/security";
 import { overview, snapshotWindow } from "./overview";
-import { probeAll } from "./probe";
+import { coordinator } from "./probe/coordinator";
+import { rollup } from "./probe/rollup";
 import { createRouter } from "./router";
 import { historyPage } from "./views/history";
 import { homePage } from "./views/home";
@@ -127,6 +129,6 @@ export default {
   },
 
   async scheduled(controller, env, ctx): Promise<void> {
-    ctx.waitUntil(probeAll(env, controller.scheduledTime));
+    ctx.waitUntil(Promise.all([coordinator(env).arm(), rollup(env, controller.scheduledTime)]));
   },
 } satisfies ExportedHandler<Env>;

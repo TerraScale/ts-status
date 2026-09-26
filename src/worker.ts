@@ -2,3 +2,4 @@
    handler and Durable Object classes; everything else lives in app.ts. */
 
 export { default } from "./app";
+export { Coordinator } from "./probe/coordinator";

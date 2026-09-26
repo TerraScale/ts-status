@@ -3,7 +3,15 @@
    datetime text ("YYYY-MM-DD HH:MM:SS", UTC) and returned as ISO 8601. */
 
 import type { Env } from "../env";
-import type { Component, ComponentGroup, Endpoint, Incident, ProbeHour, Region } from "../domain/status";
+import type {
+  Component,
+  ComponentGroup,
+  Endpoint,
+  Incident,
+  LatestSample,
+  ProbePeriod,
+  Region,
+} from "../domain/status";
 
 export interface Snapshot {
   groups: ComponentGroup[];
@@ -11,7 +19,10 @@ export interface Snapshot {
   incidents: Incident[];
   regions: Region[];
   endpoints: Endpoint[];
-  probeHours: ProbeHour[];
+  latest: LatestSample[];
+  /** Consensus counts per endpoint and hour, then per endpoint and day. */
+  hours: ProbePeriod[];
+  days: ProbePeriod[];
 }
 
 const iso = (column: string) => `strftime('%Y-%m-%dT%H:%M:%SZ', ${column})`;
@@ -32,13 +43,21 @@ const CURRENT_INCIDENTS = `SELECT ${INCIDENT_COLUMNS} FROM incidents
 
 const REGIONS = `SELECT code, name, country, map_x AS mapX, map_y AS mapY FROM regions ORDER BY position, code`;
 
-const ENDPOINTS = `SELECT id, component_id AS componentId, region_code AS regionCode, cluster, provider,
-  ${iso("last_checked_at")} AS lastCheckedAt, last_ok AS lastOk, last_latency_ms AS lastLatencyMs,
-  consecutive_failures AS consecutiveFailures
+const ENDPOINTS = `SELECT id, component_id AS componentId, region_code AS regionCode, cluster, provider
   FROM endpoints WHERE enabled = 1 ORDER BY position, id`;
 
-const PROBE_HOURS = `SELECT endpoint_id AS endpointId, ${iso("hour")} AS hour, checks, failures, latency_sum AS latencySum
-  FROM probe_hours WHERE hour >= ?1`;
+// Joined from the endpoints so every lookup is a primary key seek.
+const LATEST = `SELECT s.endpoint_id AS endpointId, ${iso("s.at")} AS at, s.state, s.ok, s.total,
+    s.latency_ms AS latencyMs
+  FROM endpoints e JOIN probe_samples s ON s.endpoint_id = e.id
+    AND s.at = (SELECT max(at) FROM probe_samples WHERE endpoint_id = e.id)
+  WHERE e.enabled = 1`;
+
+const periods = (table: "probe_hours" | "probe_days", column: "hour" | "day") =>
+  `SELECT p.endpoint_id AS endpointId, ${iso(`p.${column}`)} AS start, p.checks, p.failures, p.degraded,
+    p.latency_sum AS latencySum
+  FROM endpoints e JOIN ${table} p ON p.endpoint_id = e.id AND p.${column} >= ?1 AND p.vantage = 'all'
+  WHERE e.enabled = 1`;
 
 const HISTORY = `SELECT ${INCIDENT_COLUMNS} FROM incidents ORDER BY created_at DESC LIMIT 100`;
 
@@ -55,19 +74,23 @@ export interface SnapshotWindow {
   /** Incidents open at any time from here on. */
   incidentsFrom: number;
   /** Hourly probe rollups from here on. */
-  probesFrom: number;
+  hoursFrom: number;
+  /** Daily probe rollups from here on. */
+  daysFrom: number;
 }
 
 /** Everything the status page and API show, in one batched round trip. */
 export async function loadSnapshot(env: Env, window: SnapshotWindow): Promise<Snapshot> {
   const db = session(env);
-  const [groups, components, incidents, regions, endpoints, probeHours] = await db.batch([
+  const [groups, components, incidents, regions, endpoints, latest, hours, days] = await db.batch([
     db.prepare(GROUPS),
     db.prepare(COMPONENTS),
     db.prepare(CURRENT_INCIDENTS).bind(sqlTime(window.incidentsFrom)),
     db.prepare(REGIONS),
     db.prepare(ENDPOINTS),
-    db.prepare(PROBE_HOURS).bind(sqlTime(window.probesFrom)),
+    db.prepare(LATEST),
+    db.prepare(periods("probe_hours", "hour")).bind(sqlTime(window.hoursFrom)),
+    db.prepare(periods("probe_days", "day")).bind(sqlTime(window.daysFrom)),
   ]);
   return {
     groups: (groups?.results ?? []) as ComponentGroup[],
@@ -75,7 +98,9 @@ export async function loadSnapshot(env: Env, window: SnapshotWindow): Promise<Sn
     incidents: (incidents?.results ?? []) as Incident[],
     regions: (regions?.results ?? []) as Region[],
     endpoints: (endpoints?.results ?? []) as Endpoint[],
-    probeHours: (probeHours?.results ?? []) as ProbeHour[],
+    latest: (latest?.results ?? []) as LatestSample[],
+    hours: (hours?.results ?? []) as ProbePeriod[],
+    days: (days?.results ?? []) as ProbePeriod[],
   };
 }
 

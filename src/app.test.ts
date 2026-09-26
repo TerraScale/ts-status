@@ -1,74 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import app from "./app";
 import type { Env } from "./env";
+import { testD1, type TestD1 } from "./testing/d1";
 
-const rows: Record<string, unknown[]> = {
-  component_groups: [
-    { id: "platform", name: "TerraScale platform" },
-    { id: "terrabase", name: "TerraBase" },
-  ],
-  components: [
-    { id: "dashboard", groupId: "platform", name: "Dashboard", description: "Customer dashboard", lifecycle: "active" },
-    { id: "data-api", groupId: "terrabase", name: "Data API", description: "Documents", lifecycle: "planned" },
-  ],
-  incidents: [
-    {
-      id: "i1",
-      kind: "warning",
-      title: "Slow <queries>",
-      status: "monitoring",
-      impact: "minor",
-      message: "We are watching it.",
-      createdAt: "2026-09-26T09:00:00Z",
-      updatedAt: "2026-09-26T09:30:00Z",
-      resolvedAt: null,
-    },
-  ],
-  regions: [
-    { code: "GRU", name: "São Paulo", country: "Brazil", mapX: 50, mapY: 59.76 },
-    { code: "FRA", name: "Frankfurt", country: "Germany", mapX: 71.5, mapY: 20.78 },
-  ],
-  endpoints: [
-    {
-      id: "dashboard-gru",
-      componentId: "dashboard",
-      regionCode: "GRU",
-      cluster: "gru",
-      provider: "fly",
-      lastCheckedAt: "2026-09-26T10:14:00Z",
-      lastOk: 1,
-      lastLatencyMs: 42,
-      consecutiveFailures: 0,
-    },
-  ],
-  probe_hours: [
-    { endpointId: "dashboard-gru", hour: "2026-09-26T10:00:00Z", checks: 15, failures: 0, latencySum: 630 },
-  ],
-};
+const NOW = "2026-09-26T10:15:00Z";
 
-/** A D1 stand-in that answers each statement from the table it reads. */
-function fakeEnv(): Env & { reads: number } {
-  const env = {
-    reads: 0,
-    STATUS_DB: {
-      withSession: () => {
-        const statement = (sql: string) => {
-          const table = Object.keys(rows).find((name) => sql.includes(`FROM ${name}`)) ?? "";
-          const result = { results: rows[table] ?? [] };
-          const self = { bind: () => self, all: async () => result, result };
-          return self;
-        };
-        return {
-          prepare: statement,
-          batch: async (list: { result: unknown }[]) => {
-            env.reads += 1;
-            return list.map((item) => item.result);
-          },
-        };
-      },
-    },
-  };
-  return env as unknown as Env & { reads: number };
+/** The seeded catalog plus a warning and the dashboard's recent probes. */
+function seededEnv(): Env & { STATUS_DB: TestD1 } {
+  const db = testD1();
+  db.sqlite.exec(`
+    INSERT INTO incidents (id, kind, title, status, impact, message, created_at, updated_at) VALUES
+      ('i1', 'warning', 'Slow <queries>', 'monitoring', 'minor', 'We are watching it.',
+       '2026-09-26 09:00:00', '2026-09-26 09:30:00');
+    INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES
+      ('dashboard-fly-gru', '2026-09-26 10:14:30', 'operational', 4, 4, 42, '[]'),
+      ('website-pages', '2026-09-26 10:14:30', 'operational', 4, 4, 30, '[]'),
+      ('atlas-workers', '2026-09-26 10:14:30', 'operational', 4, 4, 80, '[]'),
+      ('git-forgejo', '2026-09-26 10:14:30', 'major_outage', 0, 4, NULL, '[]');
+    INSERT INTO probe_hours (endpoint_id, hour, vantage, checks, failures, degraded, latency_sum, latency_max) VALUES
+      ('dashboard-fly-gru', '2026-09-26 10:00:00', 'all', 30, 0, 0, 1260, 60);
+    INSERT INTO probe_days (endpoint_id, day, vantage, checks, failures, degraded, latency_sum, latency_max, hist) VALUES
+      ('dashboard-fly-gru', '2026-09-26 00:00:00', 'all', 1200, 0, 0, 50400, 90, '[]');
+  `);
+  return { STATUS_DB: db } as unknown as Env & { STATUS_DB: TestD1 };
 }
 
 const ctx = {
@@ -81,8 +35,8 @@ function request(path: string, method = "GET"): Request<unknown, IncomingRequest
 }
 
 describe("worker", () => {
-  it("exports only its handler, as workerd requires of the entry module", async () => {
-    expect(Object.keys(await import("./worker"))).toEqual(["default"]);
+  it("exports only its handler and Durable Objects, as workerd requires of the entry module", async () => {
+    expect(Object.keys(await import("./worker")).sort()).toEqual(["Coordinator", "default"]);
   });
 });
 
@@ -95,7 +49,7 @@ describe("app", () => {
         put: async (key: Request, response: Response) => void store.set(key.url, response),
       },
     });
-    vi.useFakeTimers({ now: Date.parse("2026-09-26T10:15:00Z"), toFake: ["Date"] });
+    vi.useFakeTimers({ now: Date.parse(NOW), toFake: ["Date"] });
   });
 
   afterEach(() => {
@@ -104,66 +58,76 @@ describe("app", () => {
   });
 
   it("renders the status page with escaped content and a strict policy", async () => {
-    const response = await app.fetch(request("/"), fakeEnv(), ctx);
+    const response = await app.fetch(request("/"), seededEnv(), ctx);
     const body = await response.text();
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("public, max-age=10");
     expect(response.headers.get("content-security-policy")).toMatch(/script-src 'sha256-[^']+'/);
-    expect(body).toContain("Some systems are degraded");
+    // Git is down: one component of four is a partial platform outage.
+    expect(body).toContain("Partial system outage");
     expect(body).toContain("Warning: Slow &lt;queries&gt;");
-    expect(body).toContain('data-state="degraded"');
     expect(body).toContain("TerraScale platform");
-    // The dashboard and its GRU cluster have hourly bars; the planned Data API has none.
-    expect(body.match(/ data-tip=/g)).toHaveLength(24 + 24 + 30);
+    expect(body).toContain("Developer tools");
     expect(body).toContain("Ping 42 ms");
     expect(body).toContain('data-lifecycle="planned"');
+    expect(body).not.toContain("Monitoring delayed");
+  });
+
+  it("warns when probe rounds stop arriving", async () => {
+    vi.setSystemTime(Date.parse("2026-09-26T10:30:00Z"));
+    const body = await (await app.fetch(request("/"), seededEnv(), ctx)).text();
+    expect(body).toContain("Monitoring delayed");
   });
 
   it("serves only the main element for in-place refreshes", async () => {
-    const body = await (await app.fetch(request("/?fragment=main"), fakeEnv(), ctx)).text();
+    const body = await (await app.fetch(request("/?fragment=main"), seededEnv(), ctx)).text();
     expect(body.startsWith("<main")).toBe(true);
-    expect(body).toContain('data-title="Some systems are degraded · TerraScale Status"');
+    expect(body).toContain('data-title="Partial system outage · TerraScale Status"');
     expect(body).not.toContain("<style>");
   });
 
   it("serves repeat requests from the edge cache, ignoring query strings", async () => {
-    const env = fakeEnv();
+    const env = seededEnv();
     await app.fetch(request("/"), env, ctx);
     await app.fetch(request("/?bust=1"), env, ctx);
-    expect(env.reads).toBe(1);
+    expect(env.STATUS_DB.batches).toBe(1);
   });
 
   it("returns the JSON API", async () => {
-    const response = await app.fetch(request("/api/status"), fakeEnv(), ctx);
+    const response = await app.fetch(request("/api/status"), seededEnv(), ctx);
     const data = (await response.json()) as {
       status: string;
-      groups: { id: string; components: { id: string; status: string; hours: string[] }[] }[];
+      groups: { id: string; components: { id: string; status: string; uptime30d: number; hours: string[] }[] }[];
       regions: { code: string; status: string; clusters: { pingMs: number; uptime24h: number }[] }[];
     };
-    expect(data.status).toBe("degraded");
-    expect(data.groups.map((group) => group.id)).toEqual(["platform", "terrabase"]);
-    expect(data.groups[0]?.components[0]).toMatchObject({ id: "dashboard", status: "operational" });
-    expect(data.groups[0]?.components[0]?.hours).toHaveLength(24);
+    expect(data.status).toBe("partial_outage");
+    expect(data.groups.map((group) => group.id)).toEqual(["platform", "terrabase", "developer"]);
+    const dashboard = data.groups[0]?.components[0];
+    expect(dashboard).toMatchObject({ id: "dashboard", status: "operational", uptime30d: 1 });
+    expect(dashboard?.hours).toHaveLength(24);
+    expect(dashboard?.hours.at(-1)).toBe("operational");
+    expect(data.groups[2]?.components[0]).toMatchObject({ id: "git", status: "major_outage" });
     expect(data.regions.map((region) => [region.code, region.status])).toEqual([
+      ["SFO", "none"],
       ["GRU", "operational"],
       ["FRA", "none"],
     ]);
-    expect(data.regions[0]?.clusters[0]).toMatchObject({ pingMs: 42, uptime24h: 1 });
+    expect(data.regions[1]?.clusters[0]).toMatchObject({ pingMs: 42, uptime24h: 1 });
   });
 
   it("renders the history page grouped by month", async () => {
-    const body = await (await app.fetch(request("/history"), fakeEnv(), ctx)).text();
+    const body = await (await app.fetch(request("/history"), seededEnv(), ctx)).text();
     expect(body).toContain("September 2026");
     expect(body).not.toMatch(/<main[^>]*data-live/);
   });
 
   it("rejects unknown paths and methods", async () => {
-    expect((await app.fetch(request("/nope"), fakeEnv(), ctx)).status).toBe(404);
-    expect((await app.fetch(request("/", "POST"), fakeEnv(), ctx)).status).toBe(405);
+    expect((await app.fetch(request("/nope"), seededEnv(), ctx)).status).toBe(404);
+    expect((await app.fetch(request("/", "POST"), seededEnv(), ctx)).status).toBe(405);
   });
 
   it("answers HEAD without a body", async () => {
-    const response = await app.fetch(request("/", "HEAD"), fakeEnv(), ctx);
+    const response = await app.fetch(request("/", "HEAD"), seededEnv(), ctx);
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("");
   });
