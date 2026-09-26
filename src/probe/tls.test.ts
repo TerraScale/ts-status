@@ -45,6 +45,7 @@ describe("certificates", () => {
       "terrascale.tech",
     ]);
     expect(await checkCertificates(env, now + 3_600_000, fetcher)).toEqual([]);
+    expect(await checkCertificates(env, now + 86_400_000 - 3_600_000, fetcher)).toEqual([]);
     fail = true;
     await checkCertificates(env, now + 2 * 86_400_000, fetcher);
     expect(db.sqlite.prepare("SELECT not_after, error FROM tls_certs WHERE host = 'terrascale.tech'").get()).toEqual({
@@ -52,5 +53,23 @@ describe("certificates", () => {
       error: "Cert Spotter HTTP 429",
     });
     expect(asked).toHaveLength(8);
+    expect(await checkCertificates(env, now + 3 * 86_400_000, fetcher)).toHaveLength(4);
+  });
+
+  it("reads every page, where the newest certificates come last", async () => {
+    const db = testD1();
+    const env = { STATUS_DB: db } as unknown as Env;
+    const pages: Record<string, unknown[]> = {
+      "": [{ id: "1", dns_names: ["terrascale.tech"], not_after: "2026-10-01T00:00:00Z" }],
+      "1": [{ id: "2", dns_names: ["terrascale.tech"], not_after: "2026-12-24T00:00:00Z", issuer: { name: "LE" } }],
+      "2": [],
+    };
+    const fetcher = (async (url: string) =>
+      Response.json(pages[new URL(url).searchParams.get("after") ?? ""] ?? [])) as typeof fetch;
+    await checkCertificates(env, Date.parse("2026-09-26T10:17:00Z"), fetcher);
+    expect(db.sqlite.prepare("SELECT not_after, issuer FROM tls_certs WHERE host = 'terrascale.tech'").get()).toEqual({
+      not_after: "2026-12-24 00:00:00",
+      issuer: "LE",
+    });
   });
 });

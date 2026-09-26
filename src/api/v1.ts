@@ -1,7 +1,7 @@
 /* The JSON API, version 1: the status overview, recent incidents with their
    updates, regions, and the latency of one component over a range. */
 
-import type { Recent } from "../db/reads";
+import type { Certificate, Recent } from "../db/reads";
 import { RANGES, type RangeKey } from "../domain/range";
 import { updatesByIncident } from "../domain/status";
 import type { Measurements } from "../measure";
@@ -9,6 +9,11 @@ import type { ComponentOverview, Overview } from "../overview";
 import { VANTAGES } from "../probe/vantages";
 import { byHour, rangeStart } from "../domain/range";
 import { DAY, HOUR } from "../format";
+
+/** A cluster's certificate as published: its expiry and issuer, never the
+    lookup's internals. */
+const publicCertificate = (certificate: Certificate | null) =>
+  certificate && { notAfter: certificate.notAfter, issuer: certificate.issuer };
 
 const iso = (at: number | null) => (at === null ? null : new Date(at).toISOString());
 const states = (list: readonly { state: string }[]) => list.map((bucket) => bucket.state);
@@ -30,7 +35,11 @@ export function statusDocument(view: Overview) {
     })),
     regions: view.regions.map(({ mapX: _x, mapY: _y, clusters, ...region }) => ({
       ...region,
-      clusters: clusters.map(({ bars, ...entry }) => ({ ...entry, bars: states(bars) })),
+      clusters: clusters.map(({ bars, certificate, ...entry }) => ({
+        ...entry,
+        certificate: publicCertificate(certificate),
+        bars: states(bars),
+      })),
     })),
     days: states(view.days),
     maintenance: view.maintenance,
@@ -51,7 +60,10 @@ export function regionsDocument(view: Overview) {
     regions: view.regions.map(({ mapX: _x, mapY: _y, clusters, ...region }) => ({
       ...region,
       live: clusters.length > 0,
-      clusters: clusters.map(({ bars: _bars, latency: _latency, ...entry }) => entry),
+      clusters: clusters.map(({ bars: _bars, latency: _latency, certificate, ...entry }) => ({
+        ...entry,
+        certificate: publicCertificate(certificate),
+      })),
     })),
     vantages: VANTAGES.map((vantage) => ({
       code: vantage.code,
