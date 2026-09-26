@@ -9,20 +9,23 @@ import { CLIENT_SCRIPT, REFRESH_SECONDS } from "./client";
 
 export const STYLES = styles;
 
+const NAV = [
+  { href: "/", label: "Status" },
+  { href: "/uptime", label: "Uptime" },
+  { href: "/ping", label: "Ping" },
+  { href: "/history", label: "History" },
+  { href: "/maintenance", label: "Maintenance" },
+] as const;
+
 export interface Page {
   title: string;
   description: string;
-  path: "/" | "/history" | "/maintenance" | null;
+  /** The nav entry the page belongs to. */
+  path: (typeof NAV)[number]["href"] | null;
   /** The page's <main>; live pages mark it data-live to refresh in place. */
   body: Html;
   live?: boolean;
 }
-
-const NAV = [
-  { href: "/", label: "Status" },
-  { href: "/history", label: "History" },
-  { href: "/maintenance", label: "Maintenance" },
-] as const;
 
 export function document(page: Page, year: number): Html {
   return html`<!doctype html>

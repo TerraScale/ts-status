@@ -51,7 +51,20 @@ The dev server listens on every interface (reachable over the tailnet) and reloa
 
 ## API
 
-Pages: `/` (status, `?range=24h|7d|30d|90d`), `/history` (filters by component, kind, impact, text and month, with figures), `/incidents/:id` (timeline and what the checks saw), and `/maintenance`.
+Pages:
+
+| Path              | Shows                                                                                           |
+| ----------------- | ----------------------------------------------------------------------------------------------- |
+| `/`               | Status, components, response times, regions and the 90-day history (`?range=24h\|7d\|30d\|90d`) |
+| `/uptime`         | A year of daily status as a calendar, monthly uptime per component against 99.9%                |
+| `/ping`           | Latency from each vantage to every region and component, and a test from your browser           |
+| `/components/:id` | A component's bars, median and p95 latency with deploys, latency per vantage, clusters          |
+| `/regions/:code`  | A region's clusters, latency from each vantage, and incidents                                   |
+| `/history`        | Incidents filtered by component, kind, impact, text and month, with MTTR                        |
+| `/incidents/:id`  | An incident's timeline and what the health checks saw around it                                 |
+| `/maintenance`    | Maintenance windows in progress, upcoming and completed                                         |
+
+`GET /api/ping` answers with the visitor's Cloudflare data center; the ping page times it as a baseline. Regions carry a `ping_url` the browser test times (`no-cors`, so any HTTPS URL on `*.terrascale.tech` works).
 
 `GET /api/status` returns the overall status, component groups with each component's 24 hourly states and uptime, regions with their clusters' ping, uptime and hourly states, and current incidents. Operators publish incidents with the [`status-warning`](skills/status-warning/SKILL.md) skill.
 

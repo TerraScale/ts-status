@@ -3,14 +3,13 @@
    the 90-day platform history, and recently resolved incidents. */
 
 import regionMap from "../assets/region-map.svg?raw";
-import { byHour, RANGE_KEYS, RANGES, DEFAULT_RANGE, type RangeKey } from "../domain/range";
+import { byHour, RANGES } from "../domain/range";
 import { STATES, STATE_LABELS, type Status, type TimelineState } from "../domain/status";
 import { formatClock, formatDay, formatUptime } from "../format";
 import { html, raw, type Html } from "../html";
 import {
   PLATFORM_DAYS,
   RESOLVED_DAYS,
-  type ClusterOverview,
   type ComponentOverview,
   type GroupOverview,
   type Overview,
@@ -23,12 +22,16 @@ import { sparkline } from "./charts/sparkline";
 import {
   bars,
   card,
+  clusterRow,
+  componentHref,
   empty,
   incidentAlert,
   incidentItem,
   legend,
   ms,
   probeRows,
+  rangeSwitch,
+  regionHref,
   stat,
   statusBadge,
   time,
@@ -45,26 +48,9 @@ const HEADLINES: Record<Status, string> = {
   major_outage: "Major system outage",
 };
 
-const PROVIDERS: Record<ClusterOverview["provider"], string> = {
-  fly: "Fly.io",
-  oci: "Oracle Cloud",
-  cloudflare: "Cloudflare",
-  other: "Self-hosted",
-};
-
 const LEGEND: TimelineState[] = [...STATES, "none"];
 
 const lower = (state: TimelineState): string => STATE_LABELS[state].toLowerCase();
-
-const rangeHref = (range: RangeKey): string => (range === DEFAULT_RANGE ? "/" : `/?range=${range}`);
-
-/** Links switching the bars' time range; the page renders without scripts. */
-function rangeSwitch(current: RangeKey): Html {
-  return html`<nav class="st-range" aria-label="Time range">${RANGE_KEYS.map(
-    (range) =>
-      html`<a href="${rangeHref(range)}"${range === current ? raw(' aria-current="true"') : ""}>${RANGES[range].short}</a>`,
-  )}</nav>`;
-}
 
 function axis(view: Overview): Html {
   return html`<div class="st-axis" aria-hidden="true"><span>${RANGES[view.range].label} ago</span><span>Now</span></div>`;
@@ -84,7 +70,7 @@ function component(entry: ComponentOverview, view: Overview) {
   const summary = `${entry.name}: ${formatUptime(entry.uptime)} uptime over the last ${range}, currently ${lower(entry.status)}`;
   return html`<li class="ts-list-item st-service">
   <div class="ts-list-main">
-    <h4 class="ts-strong">${entry.name}</h4>
+    <h4 class="ts-strong"><a class="st-incident-link" href="${componentHref(entry.id)}">${entry.name}</a></h4>
     <p class="ts-meta">${entry.description}</p>
   </div>
   <div class="st-service-state">
@@ -103,29 +89,13 @@ function group(entry: GroupOverview, view: Overview) {
 </section>`;
 }
 
-function cluster(entry: ClusterOverview, view: Overview) {
-  const summary = `${entry.componentName} on ${entry.cluster}: ${formatUptime(entry.uptime)} of checks up over the last ${RANGES[view.range].label}, currently ${lower(entry.status)}`;
-  return html`<li class="ts-list-item st-service">
-  <div class="ts-list-main">
-    <h4 class="ts-strong">${entry.componentName}</h4>
-    <p class="ts-meta">${PROVIDERS[entry.provider]} · ${entry.cluster}</p>
-  </div>
-  <div class="st-service-state">
-    ${sparkline(entry.latency)}
-    <span class="ts-meta ts-num" title="Latest ping · mean over the range">${ms(entry.pingMs)} · ${ms(entry.meanLatency)}</span>
-    ${statusBadge(entry.status)}
-  </div>
-  ${bars(entry.bars, { label: summary })}
-</li>`;
-}
-
 function region(entry: RegionOverview, view: Overview) {
   const planned = entry.clusters.length === 0;
   return html`<section class="st-region" aria-labelledby="region-${entry.code}">
   <header class="ts-row-between">
     <div class="ts-row">
       <span class="st-region-code">${entry.code}</span>
-      <h3 id="region-${entry.code}" class="ts-strong">${entry.name}</h3>
+      <h3 id="region-${entry.code}" class="ts-strong"><a class="st-incident-link" href="${regionHref(entry.code)}">${entry.name}</a></h3>
       <span class="ts-meta">${entry.country}</span>
     </div>
     <div class="ts-row">
@@ -136,7 +106,7 @@ function region(entry: RegionOverview, view: Overview) {
   ${
     planned
       ? html`<p class="ts-meta">No clusters serve this region yet.</p>`
-      : html`<ul class="ts-list">${entry.clusters.map((item) => cluster(item, view))}</ul>`
+      : html`<ul class="ts-list">${entry.clusters.map((item) => clusterRow(item, view.range))}</ul>`
   }
 </section>`;
 }
@@ -343,7 +313,7 @@ export function homePage(view: Overview): Page {
       id: "components",
       title: "Components",
       description: html`Status over the last ${range}, in ${zone}. Hover or focus a bar for details.`,
-      actions: rangeSwitch(view.range),
+      actions: rangeSwitch(view.range, "/"),
     },
     view.groups.length === 0
       ? empty("No components published", "Component status will appear here once components are registered.")

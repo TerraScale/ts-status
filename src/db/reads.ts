@@ -40,9 +40,9 @@ export interface Snapshot {
   days: ProbePeriod[];
 }
 
-const iso = (column: string) => `strftime('%Y-%m-%dT%H:%M:%SZ', ${column})`;
+export const iso = (column: string) => `strftime('%Y-%m-%dT%H:%M:%SZ', ${column})`;
 
-const INCIDENT_COLUMNS = `id, kind, title, status, impact, source,
+export const INCIDENT_COLUMNS = `id, kind, title, status, impact, source,
   (SELECT body FROM incident_updates u WHERE u.incident_id = incidents.id
     ORDER BY u.created_at DESC, u.rowid DESC LIMIT 1) AS message,
   (SELECT json_group_array(component_id) FROM incident_components c WHERE c.incident_id = incidents.id) AS components,
@@ -64,7 +64,7 @@ function toIncident(row: IncidentRow): Incident {
   return { ...row, message: row.message ?? "", components };
 }
 
-const incidents = (result: D1Result | undefined): Incident[] =>
+export const incidents = (result: D1Result | undefined): Incident[] =>
   ((result?.results ?? []) as IncidentRow[]).map(toIncident);
 
 const GROUPS = `SELECT id, name FROM component_groups ORDER BY position, id`;
@@ -80,7 +80,8 @@ const CURRENT_INCIDENTS = `SELECT ${INCIDENT_COLUMNS} FROM incidents
     OR (kind = 'maintenance' AND coalesce(resolved_at, scheduled_end) >= ?1)
   ORDER BY status NOT IN ('resolved', 'completed') DESC, created_at DESC LIMIT 50`;
 
-const REGIONS = `SELECT code, name, country, map_x AS mapX, map_y AS mapY FROM regions ORDER BY position, code`;
+const REGIONS = `SELECT code, name, country, map_x AS mapX, map_y AS mapY, ping_url AS pingUrl, ping_label AS pingLabel
+  FROM regions ORDER BY position, code`;
 
 const ENDPOINTS = `SELECT id, component_id AS componentId, region_code AS regionCode, cluster, provider
   FROM endpoints WHERE enabled = 1 ORDER BY position, id`;
@@ -147,7 +148,7 @@ export function sqlTime(at: number): string {
   return new Date(at).toISOString().slice(0, 19).replace("T", " ");
 }
 
-function session(env: Env): D1DatabaseSession {
+export function session(env: Env): D1DatabaseSession {
   return env.STATUS_DB.withSession("first-unconstrained");
 }
 
