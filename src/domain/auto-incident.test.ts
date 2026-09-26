@@ -94,4 +94,16 @@ describe("adopt", () => {
       git: { state: "partial_outage", since: 5, incidentId: "i9", impact: "major", healthySince: null },
     });
   });
+
+  it("lets go of incidents closed or deleted outside the machine", () => {
+    const tracked: Tracker = {
+      state: "major_outage",
+      since: 0,
+      incidentId: "gone",
+      impact: "critical",
+      healthySince: null,
+    };
+    const pending: Tracker = { state: "degraded", since: 0, incidentId: null, impact: null, healthySince: null };
+    expect(adopt({ git: tracked, docs: pending }, [])).toEqual({ docs: pending });
+  });
 });

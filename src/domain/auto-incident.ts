@@ -66,13 +66,18 @@ const TITLES: Record<Unhealthy, (name: string) => string> = {
 const isUnhealthy = (state: TimelineState): state is Unhealthy =>
   state === "degraded" || state === "partial_outage" || state === "major_outage";
 
-/** Trackers for automatic incidents open in D1 that the machine has no
-    memory of, such as after its storage was reset. */
+/** Reconciles the trackers with the automatic incidents open in D1: it lets
+    go of incidents closed or deleted outside the machine, such as by an
+    operator, and tracks open ones it has no memory of, such as after its
+    storage was reset. */
 export function adopt(
   trackers: Readonly<Record<string, Tracker>>,
   open: readonly { id: string; componentId: string; impact: IncidentImpact; createdAt: number }[],
 ): Record<string, Tracker> {
-  const next = { ...trackers };
+  const openIds = new Set(open.map((incident) => incident.id));
+  const next = Object.fromEntries(
+    Object.entries(trackers).filter(([, tracker]) => !tracker.incidentId || openIds.has(tracker.incidentId)),
+  );
   for (const incident of open) {
     if (next[incident.componentId]?.incidentId) continue;
     const state =

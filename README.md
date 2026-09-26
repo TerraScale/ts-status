@@ -68,7 +68,7 @@ The operator API under `/api/operator` needs the `OPERATOR_TOKEN` bearer token (
 | `PATCH /api/operator/components/:id`       | Launches (`active`) or plans a component, enabling its endpoints |
 | `PATCH /api/operator/endpoints/:id`        | Enables or pauses one endpoint                                   |
 
-Editing an automatic incident takes it over from the probe coordinator.
+Editing an automatic incident takes it over from the probe coordinator. Pausing a component, or its last enabled endpoint, answers `409` while an automatic incident is open for it: resolve the incident first.
 
 ## Deploy
 

@@ -21,6 +21,9 @@ const statusesOf = (kind: IncidentKind) => (kind === "maintenance" ? MAINTENANCE
 
 class NotFound extends Error {}
 
+/** The request clashes with the current state of the record. */
+class Conflict extends Error {}
+
 interface Context {
   env: Env;
   params: Record<string, string>;
@@ -32,12 +35,35 @@ type Handler = (context: Context) => Promise<Response>;
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 
-async function incidentKind(env: Env, id: string): Promise<IncidentKind> {
-  const row = await env.STATUS_DB.prepare("SELECT kind FROM incidents WHERE id = ?1")
+interface Stored {
+  kind: IncidentKind;
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
+}
+
+async function stored(env: Env, id: string): Promise<Stored> {
+  const row = await env.STATUS_DB.prepare(
+    `SELECT kind, strftime('%Y-%m-%dT%H:%M:%SZ', scheduled_start) AS scheduledStart,
+      strftime('%Y-%m-%dT%H:%M:%SZ', scheduled_end) AS scheduledEnd FROM incidents WHERE id = ?1`,
+  )
     .bind(id)
-    .first<{ kind: IncidentKind }>();
+    .first<Stored>();
   if (!row) throw new NotFound();
-  return row.kind;
+  return row;
+}
+
+// An open automatic incident for the component that nothing would measure
+// once the change applies, so the coordinator could never close it.
+const STRANDED_BY_COMPONENT = `SELECT 1 FROM incidents WHERE source = 'auto' AND auto_key = ?1
+  AND status NOT IN ('resolved', 'completed')`;
+const STRANDED_BY_ENDPOINT = `SELECT 1 FROM incidents i JOIN endpoints e ON e.id = ?1 AND i.auto_key = e.component_id
+  WHERE i.source = 'auto' AND i.status NOT IN ('resolved', 'completed')
+    AND NOT EXISTS (SELECT 1 FROM endpoints o WHERE o.component_id = e.component_id AND o.enabled = 1 AND o.id != ?1)`;
+
+async function refuseStranding(env: Env, sql: string, id: string): Promise<void> {
+  if (await env.STATUS_DB.prepare(sql).bind(id).first()) {
+    throw new Conflict("An automatic incident is open for this component; resolve it first.");
+  }
 }
 
 const componentStatements = (env: Env, id: string, components: readonly string[]) => [
@@ -55,12 +81,23 @@ const postUpdate = (env: Env, id: string, status: IncidentStatus, body: string, 
     "INSERT INTO incident_updates (id, incident_id, status, body, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
   ).bind(crypto.randomUUID(), id, status, body, time);
 
-/** The scheduled window of maintenance, checked for order. */
-function schedule(body: Body): { start: string; end: string } {
-  const start = instant(body, "scheduledStart");
-  const end = instant(body, "scheduledEnd");
+const SCHEDULE_FIELDS = ["scheduledStart", "scheduledEnd"] as const;
+
+const hasSchedule = (body: Body): boolean => SCHEDULE_FIELDS.some((field) => body[field] !== undefined);
+
+/** The scheduled window of maintenance, checked for order. A field left out
+    keeps its stored value, when there is one. */
+function schedule(body: Body, current?: Stored): { start: string; end: string } {
+  const at = (field: (typeof SCHEDULE_FIELDS)[number], fallback: string | null | undefined) =>
+    body[field] === undefined && fallback ? Date.parse(fallback) : instant(body, field);
+  const start = at("scheduledStart", current?.scheduledStart);
+  const end = at("scheduledEnd", current?.scheduledEnd);
   if (end <= start) throw new Invalid("scheduledEnd", "must be after scheduledStart");
   return { start: sqlTime(start), end: sqlTime(end) };
+}
+
+function onlyMaintenance(kind: IncidentKind, body: Body): void {
+  if (kind !== "maintenance" && hasSchedule(body)) throw new Invalid("scheduledStart", "applies to maintenance only");
 }
 
 const routes: Record<string, Handler> = {
@@ -90,6 +127,7 @@ const routes: Record<string, Handler> = {
       optionalChoice(body, "status", statusesOf(kind)) ??
       (kind === "maintenance" ? "scheduled" : kind === "warning" ? "monitoring" : "investigating");
     const components = ids(body, "components");
+    onlyMaintenance(kind, body);
     const window = kind === "maintenance" ? schedule(body) : null;
     const id = crypto.randomUUID();
     const time = sqlTime(now);
@@ -116,10 +154,11 @@ const routes: Record<string, Handler> = {
 
   "PATCH /api/operator/incidents/:id": async ({ env, params, body, now }) => {
     const id = params.id ?? "";
-    const kind = await incidentKind(env, id);
+    const current = await stored(env, id);
     const title = optionalString(body, "title", 200);
     const impact = optionalChoice(body, "impact", IMPACTS);
-    const window = kind === "maintenance" && body.scheduledStart !== undefined ? schedule(body) : null;
+    onlyMaintenance(current.kind, body);
+    const window = hasSchedule(body) ? schedule(body, current) : null;
     const statements = [
       env.STATUS_DB.prepare(
         `UPDATE incidents SET title = coalesce(?2, title), impact = coalesce(?3, impact),
@@ -133,14 +172,14 @@ const routes: Record<string, Handler> = {
   },
 
   "DELETE /api/operator/incidents/:id": async ({ env, params }) => {
-    await incidentKind(env, params.id ?? "");
+    await stored(env, params.id ?? "");
     await env.STATUS_DB.prepare("DELETE FROM incidents WHERE id = ?1").bind(params.id).run();
     return new Response(null, { status: 204 });
   },
 
   "POST /api/operator/incidents/:id/updates": async ({ env, params, body, now }) => {
     const id = params.id ?? "";
-    const kind = await incidentKind(env, id);
+    const { kind } = await stored(env, id);
     const status = choice(body, "status", statusesOf(kind));
     const message = string(body, "message", 4_000);
     const impact = optionalChoice(body, "impact", IMPACTS);
@@ -161,14 +200,19 @@ const routes: Record<string, Handler> = {
   "POST /api/operator/deploys": async ({ env, body, now }) => {
     const endpoint = string(body, "endpointId", 80);
     const version = string(body, "version", 100);
-    await env.STATUS_DB.prepare("INSERT OR IGNORE INTO deploys (endpoint_id, version, detected_at) VALUES (?1, ?2, ?3)")
+    const result = await env.STATUS_DB.prepare(
+      "INSERT OR IGNORE INTO deploys (endpoint_id, version, detected_at) VALUES (?1, ?2, ?3)",
+    )
       .bind(endpoint, version, sqlTime(now))
       .run();
+    // Deploys are keyed by endpoint and second: one was already recorded.
+    if ((result.meta.changes ?? 0) === 0) throw new Conflict("A deploy was already recorded for this endpoint now.");
     return json({ endpointId: endpoint, version }, 201);
   },
 
   "PATCH /api/operator/components/:id": async ({ env, params, body }) => {
     const lifecycle = choice(body, "lifecycle", ["active", "planned"] as const);
+    if (lifecycle === "planned") await refuseStranding(env, STRANDED_BY_COMPONENT, params.id ?? "");
     const statements = [
       env.STATUS_DB.prepare("UPDATE components SET lifecycle = ?2 WHERE id = ?1").bind(params.id, lifecycle),
     ];
@@ -188,6 +232,7 @@ const routes: Record<string, Handler> = {
 
   "PATCH /api/operator/endpoints/:id": async ({ env, params, body }) => {
     if (typeof body.enabled !== "boolean") throw new Invalid("enabled", "must be true or false");
+    if (!body.enabled) await refuseStranding(env, STRANDED_BY_ENDPOINT, params.id ?? "");
     const result = await env.STATUS_DB.prepare("UPDATE endpoints SET enabled = ?2 WHERE id = ?1")
       .bind(params.id, body.enabled ? 1 : 0)
       .run();
@@ -217,6 +262,7 @@ export async function operator(request: Request, env: Env, now: number): Promise
   } catch (error) {
     if (error instanceof Invalid) return failure(400, "invalid", error.message);
     if (error instanceof NotFound) return failure(404, "not_found", "No such record.");
+    if (error instanceof Conflict) return failure(409, "conflict", error.message);
     if (error instanceof Error && /FOREIGN KEY|CHECK constraint/.test(error.message)) {
       return failure(400, "invalid", "A referenced component or endpoint does not exist, or a value is out of range.");
     }

@@ -29,7 +29,7 @@ echo '{ "lifecycle": "active" }' > launch.json
 api PATCH /components/auth launch.json
 ```
 
-Pause or resume one endpoint with `PATCH /endpoints/ID` and `{ "enabled": false }`.
+Pause or resume one endpoint with `PATCH /endpoints/ID` and `{ "enabled": false }`. Pausing a component, or its last enabled endpoint, answers `409` while an automatic incident is open for it; resolve that incident first.
 
 ## Add a cluster
 

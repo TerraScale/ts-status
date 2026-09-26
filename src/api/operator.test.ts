@@ -60,7 +60,7 @@ describe("operator API", () => {
   });
 
   it("schedules maintenance and validates its window", async () => {
-    const { call } = setup();
+    const { call, sql } = setup();
     const bad = await call("POST", "/incidents", {
       kind: "maintenance",
       title: "Upgrade",
@@ -78,6 +78,21 @@ describe("operator API", () => {
       scheduledEnd: "2026-10-01T03:00:00Z",
     });
     expect(good.status).toBe(201);
+    const id = String(good.data?.id);
+    expect((await call("PATCH", `/incidents/${id}`, { scheduledEnd: "2026-10-01T05:00:00Z" })).status).toBe(200);
+    expect(sql.prepare("SELECT scheduled_start, scheduled_end FROM incidents WHERE id = ?").get(id)).toEqual({
+      scheduled_start: "2026-10-01 02:00:00",
+      scheduled_end: "2026-10-01 05:00:00",
+    });
+    expect((await call("PATCH", `/incidents/${id}`, { scheduledEnd: "2026-10-01T01:00:00Z" })).status).toBe(400);
+    expect((await call("PATCH", `/incidents/${id}`, { scheduledStart: "1" })).status).toBe(400);
+    const incident = await call("POST", "/incidents", {
+      kind: "incident",
+      title: "Errors",
+      message: "Some fail.",
+      scheduledStart: "2026-10-01T02:00:00Z",
+    });
+    expect(incident.status).toBe(400);
     expect(
       (await call("POST", `/incidents/${String(good.data?.id)}/updates`, { status: "resolved", message: "x" })).status,
     ).toBe(400);
@@ -107,6 +122,18 @@ describe("operator API", () => {
     expect((await call("PATCH", "/endpoints/missing", { enabled: false })).status).toBe(404);
     expect((await call("POST", "/deploys", { endpointId: "dashboard-fly-gru", version: "1.2.3" })).status).toBe(201);
     expect(sql.prepare("SELECT version FROM deploys").all()).toEqual([{ version: "1.2.3" }]);
+    expect((await call("POST", "/deploys", { endpointId: "dashboard-fly-gru", version: "1.2.4" })).status).toBe(409);
+  });
+
+  it("refuses to pause what an open automatic incident still needs measured", async () => {
+    const { call, sql } = setup();
+    sql.exec(
+      `INSERT INTO incidents (id, kind, title, status, impact, source, auto_key) VALUES ('a1', 'incident', 'Git is down', 'investigating', 'critical', 'auto', 'git')`,
+    );
+    expect((await call("PATCH", "/endpoints/git-forgejo", { enabled: false })).status).toBe(409);
+    expect((await call("PATCH", "/components/git", { lifecycle: "planned" })).status).toBe(409);
+    expect((await call("POST", "/incidents/a1/updates", { status: "resolved", message: "Fixed." })).status).toBe(201);
+    expect((await call("PATCH", "/components/git", { lifecycle: "planned" })).status).toBe(200);
   });
 
   it("answers unknown routes and bad bodies clearly", async () => {

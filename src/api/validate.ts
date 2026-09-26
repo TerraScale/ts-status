@@ -49,11 +49,14 @@ export function optionalChoice<T extends string>(body: Body, field: string, valu
   return body[field] === undefined ? undefined : choice(body, field, values);
 }
 
+/** A full ISO 8601 date and time with a zone, such as 2026-10-01T02:00:00Z. */
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
+
 /** Epoch milliseconds from an ISO 8601 time. */
 export function instant(body: Body, field: string): number {
   const value = body[field];
-  const at = typeof value === "string" ? Date.parse(value) : Number.NaN;
-  if (Number.isNaN(at)) throw new Invalid(field, "must be an ISO 8601 time");
+  const at = typeof value === "string" && ISO_TIME.test(value) ? Date.parse(value) : Number.NaN;
+  if (Number.isNaN(at) || at < 0) throw new Invalid(field, "must be an ISO 8601 time with a zone");
   return at;
 }
 
