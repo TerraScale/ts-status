@@ -707,3 +707,129 @@
   color: var(--ts-info);
   font-weight: 600;
 }
+
+/* Tables that may scroll sideways on small screens. */
+.st-table-wrap {
+  overflow-x: auto;
+}
+
+.st-sla,
+.st-ping {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ts-fs-sm);
+}
+
+.st-sla :is(th, td),
+.st-ping :is(th, td) {
+  padding: var(--ts-s2) var(--ts-s3);
+  border-bottom: 1px solid var(--ts-line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.st-sla thead th,
+.st-ping thead th {
+  color: var(--ts-ink-3);
+  font-size: var(--ts-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.st-sla tbody th,
+.st-ping tbody th {
+  color: var(--ts-ink);
+  font-weight: 600;
+}
+
+.st-sla-cell {
+  text-align: right;
+}
+
+.st-sla-cell[data-sla="met"] {
+  color: var(--ts-success);
+}
+
+.st-sla-cell[data-sla="missed"] {
+  color: var(--ts-danger);
+}
+
+.st-sla-cell[data-sla="none"] {
+  color: var(--ts-ink-3);
+}
+
+.st-sla-total th,
+.st-sla-total td {
+  border-top: 1px solid var(--ts-line-strong);
+}
+
+/* Latency matrices: the latest value large, p95 and the day's trend below. */
+.st-ping-cell {
+  vertical-align: top;
+}
+
+.st-ping-cell > * {
+  display: block;
+}
+
+.st-ping-value {
+  color: var(--ts-ink);
+  font-size: var(--ts-fs-lg);
+  font-weight: 600;
+}
+
+.st-ping-cell:is(:hover, .is-active) {
+  background: var(--ts-accent-soft);
+}
+
+.st-ping-test {
+  display: grid;
+  justify-items: start;
+  gap: var(--ts-s3);
+}
+
+.st-ping-browser td {
+  font-size: var(--ts-fs-lg);
+  font-weight: 600;
+}
+
+/* Calendar heatmap. */
+.st-heat {
+  width: 100%;
+  height: auto;
+}
+
+.st-heat rect {
+  fill: var(--state);
+  outline: none;
+}
+
+.st-heat rect[data-state="none"] {
+  fill: var(--ts-surface-3);
+}
+
+.st-heat rect:is(:hover, .is-active) {
+  stroke: var(--ts-ink);
+  stroke-width: 1.5;
+}
+
+.st-heat g:focus-visible {
+  outline: 2px solid var(--ts-accent);
+}
+
+.st-heat-label {
+  fill: var(--ts-ink-3);
+  font-size: 9px;
+}
+
+/* Deploy markers on charts. */
+.st-chart-marker line {
+  stroke: var(--ts-cat-3);
+  stroke-dasharray: 2 3;
+}
+
+.st-chart-marker text {
+  fill: var(--ts-cat-3);
+  font-size: 10px;
+}

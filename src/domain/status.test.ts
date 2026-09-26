@@ -122,6 +122,11 @@ describe("incident windows", () => {
     ]);
   });
 
+  it("ignores maintenance that has not started", () => {
+    const windows = incidentWindows([maintenance(11 * H, 12 * H)], NOW);
+    expect(worstDuring(windows, 0, 24 * H)).toBe("none");
+  });
+
   it("takes the worst overlapping window", () => {
     const windows = incidentWindows([incident()], NOW);
     expect(worstDuring(windows, 0, 2 * H)).toBe("none");

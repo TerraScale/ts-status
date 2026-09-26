@@ -192,6 +192,37 @@ describe("app", () => {
     expect(body).toContain('data-prefix="Starts"');
   });
 
+  it("renders the uptime page with a year calendar and monthly table", async () => {
+    const body = await (await app.fetch(request("/uptime"), seededEnv(), ctx)).text();
+    expect(body.match(/<rect [^>]*data-state=/g)).toHaveLength(365);
+    expect(body).toContain('class="st-sla"');
+    expect(body).toContain('data-sla="met"');
+  });
+
+  it("renders component and region pages, and 404s for unknown ones", async () => {
+    const env = seededEnv();
+    const component = await (await app.fetch(request("/components/dashboard?range=24h"), env, ctx)).text();
+    expect(component).toContain("From each vantage point");
+    expect(component).toContain('<a href="/components/dashboard?range=24h" aria-current="true">24h</a>');
+    expect(await (await app.fetch(request("/components/website"), env, ctx)).text()).toContain("Website is down");
+    expect(await (await app.fetch(request("/components/auth"), env, ctx)).text()).toContain("Not launched yet");
+    expect(await (await app.fetch(request("/regions/gru"), env, ctx)).text()).toContain("São Paulo");
+    expect((await app.fetch(request("/components/nope"), env, ctx)).status).toBe(404);
+    expect((await app.fetch(request("/regions/XYZ"), env, ctx)).status).toBe(404);
+  });
+
+  it("renders the ping page with vantage matrices and the browser test", async () => {
+    const response = await app.fetch(request("/ping"), seededEnv(), ctx);
+    const body = await response.text();
+    expect(response.headers.get("content-security-policy")).toContain("connect-src 'self' https://*.terrascale.tech");
+    expect(body).toContain('data-ping-url="https://dash.terrascale.tech/health/live"');
+    expect(body).toContain('data-ping-url="/api/ping"');
+    expect(body).toContain("Not yet live");
+    expect(body.match(/class="st-ping-cell"/g)?.length).toBeGreaterThanOrEqual(4);
+    const ping = await app.fetch(request("/api/ping"), seededEnv(), ctx);
+    expect(ping.headers.get("cache-control")).toBe("no-store");
+  });
+
   it("rejects unknown paths and methods", async () => {
     expect((await app.fetch(request("/nope"), seededEnv(), ctx)).status).toBe(404);
     expect((await app.fetch(request("/", "POST"), seededEnv(), ctx)).status).toBe(405);

@@ -198,7 +198,7 @@ export const CLIENT_SCRIPT = `(() => {
   document.addEventListener("focusin", (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
-    if (target.matches(".st-bars")) {
+    if (target.matches("[data-strip]")) {
       const cells = target.children;
       const active = target.querySelector(".is-active");
       show(active || cells[cells.length - 1], true);
@@ -206,12 +206,12 @@ export const CLIENT_SCRIPT = `(() => {
   });
   document.addEventListener("focusout", (event) => {
     const next = event.relatedTarget;
-    if (!(next instanceof Element) || !(next.matches(".st-bars") || next.matches("[data-card]"))) hide();
+    if (!(next instanceof Element) || !(next.matches("[data-strip]") || next.matches("[data-card]"))) hide();
   });
   // Arrow keys move between the cells of a focused strip.
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") return hide();
-    const strip = event.target instanceof Element && event.target.matches(".st-bars") ? event.target : null;
+    const strip = event.target instanceof Element && event.target.matches("[data-strip]") ? event.target : null;
     if (!strip || !current || current.parentElement !== strip) return;
     const cells = [...strip.children];
     const index = cells.indexOf(current);
@@ -222,6 +222,56 @@ export const CLIENT_SCRIPT = `(() => {
   });
   addEventListener("scroll", place, { passive: true });
   addEventListener("resize", place);
+
+  // The ping page's browser test: a warm-up request to open the connection,
+  // then five timed ones; opaque (no-cors) responses still time the trip.
+  const start = document.querySelector("[data-ping-start]");
+  if (start) {
+    start.disabled = false;
+    const once = async (url) => {
+      const same = url.startsWith("/");
+      const began = performance.now();
+      const response = await fetch(url + (url.includes("?") ? "&" : "?") + "ts-ping=" + Math.random().toString(36).slice(2), {
+        mode: same ? "same-origin" : "no-cors",
+        cache: "no-store",
+        credentials: "omit",
+      });
+      const elapsed = performance.now() - began;
+      return { elapsed, response: same ? response : null };
+    };
+    start.addEventListener("click", async () => {
+      start.disabled = true;
+      start.textContent = "Testing…";
+      for (const row of document.querySelectorAll("[data-ping-url]")) {
+        const result = row.querySelector("[data-ping-result]");
+        const fastest = row.querySelector("[data-ping-min]");
+        result.textContent = "…";
+        try {
+          await once(row.dataset.pingUrl);
+          const times = [];
+          let last = null;
+          for (let index = 0; index < 5; index++) {
+            const { elapsed, response } = await once(row.dataset.pingUrl);
+            times.push(elapsed);
+            last = response;
+          }
+          times.sort((a, b) => a - b);
+          result.textContent = Math.round(times[2]) + " ms";
+          fastest.textContent = Math.round(times[0]) + " ms";
+          if (last) {
+            const data = await last.json().catch(() => null);
+            const colo = row.querySelector("[data-ping-colo]");
+            if (data && data.colo && colo) colo.textContent = " · " + data.colo;
+          }
+        } catch {
+          result.textContent = "Unreachable";
+          fastest.textContent = "—";
+        }
+      }
+      start.disabled = false;
+      start.textContent = "Test again";
+    });
+  }
 
   const main = document.querySelector("main[data-live]");
   if (!main) return;

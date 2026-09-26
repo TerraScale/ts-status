@@ -1,7 +1,10 @@
 /* Markup helpers mirroring the ts-dashboard component kit (ui.Card, ui.Stat,
    ui.StatusBadge, ui.Empty) plus the status bars. */
 
-import { html, type Html } from "../html";
+import { DEFAULT_RANGE, RANGE_KEYS, RANGES, type RangeKey } from "../domain/range";
+import { html, raw, type Html } from "../html";
+import type { ClusterOverview } from "../overview";
+import { sparkline } from "./charts/sparkline";
 import { percentile } from "../domain/histogram";
 import {
   IMPACT_STATUS,
@@ -124,7 +127,7 @@ export function bars<T extends Bucket>(list: readonly T[], options: BarsOptions<
     const card = JSON.stringify(options.card?.(bucket) ?? { rows: probeRows(bucket.counts) });
     return html`<li data-state="${bucket.state}" data-from="${bucket.start}" data-to="${bucket.end}" data-span="${span}" data-label="${state}" data-when="${when(bucket)}" data-tip="${when(bucket)} · ${state}" data-card="${card}"></li>`;
   });
-  return html`<ol class="st-bars${options.large ? " st-bars-lg" : ""}" role="img" tabindex="0" aria-label="${options.label}">${cells}</ol>`;
+  return html`<ol class="st-bars${options.large ? " st-bars-lg" : ""}" role="img" tabindex="0" data-strip aria-label="${options.label}">${cells}</ol>`;
 }
 
 export function legend(states: readonly TimelineState[]): Html {
@@ -216,5 +219,45 @@ export function incidentItem(incident: Incident, now: number, names: ReadonlyMap
     <p class="st-incident-body">${incident.message}</p>
     <p class="ts-meta">${affected(incident, names)} · ${timing(incident)}${extra ? html` · ${extra}` : ""}</p>
   </article>
+</li>`;
+}
+
+const rangeHref = (base: string, range: RangeKey): string =>
+  range === DEFAULT_RANGE ? base : `${base}?range=${range}`;
+
+/** Links switching a page's time range; pages render without scripts. */
+export function rangeSwitch(current: RangeKey, base: string): Html {
+  return html`<nav class="st-range" aria-label="Time range">${RANGE_KEYS.map(
+    (range) =>
+      html`<a href="${rangeHref(base, range)}"${range === current ? raw(' aria-current="true"') : ""}>${RANGES[range].short}</a>`,
+  )}</nav>`;
+}
+
+export const PROVIDERS: Record<ClusterOverview["provider"], string> = {
+  fly: "Fly.io",
+  oci: "Oracle Cloud",
+  cloudflare: "Cloudflare",
+  other: "Self-hosted",
+};
+
+/** One cluster: its component, where it runs, pings, state and bars. */
+export function clusterRow(
+  entry: ClusterOverview,
+  range: RangeKey,
+  title: "component" | "cluster" = "component",
+): Html {
+  const summary = `${entry.componentName} on ${entry.cluster}: ${formatUptime(entry.uptime)} of checks up over the last ${RANGES[range].label}, currently ${STATE_LABELS[entry.status].toLowerCase()}`;
+  const where = `${PROVIDERS[entry.provider]} · ${entry.cluster}${entry.regionCode ? ` · ${entry.regionCode}` : " · global"}`;
+  return html`<li class="ts-list-item st-service">
+  <div class="ts-list-main">
+    <h4 class="ts-strong">${title === "component" ? html`<a class="st-incident-link" href="/components/${entry.componentId}">${entry.componentName}</a>` : entry.cluster}</h4>
+    <p class="ts-meta">${where}</p>
+  </div>
+  <div class="st-service-state">
+    ${sparkline(entry.latency)}
+    <span class="ts-meta ts-num" title="Latest ping · mean over the range">${ms(entry.pingMs)} · ${ms(entry.meanLatency)}</span>
+    ${statusBadge(entry.status)}
+  </div>
+  ${bars(entry.bars, { label: summary })}
 </li>`;
 }

@@ -205,7 +205,7 @@ export function incidentWindows(incidents: readonly Incident[], now: number): Se
 /** The worst state of any window overlapping [from, to). */
 export function worstDuring(windows: readonly Segment[], from: number, to: number): TimelineState {
   return windows
-    .filter((window) => window.from < to && window.to > from)
+    .filter((window) => window.to > window.from && window.from < to && window.to > from)
     .reduce<TimelineState>((acc, window) => worst(acc, window.state), "none");
 }
 
@@ -227,6 +227,9 @@ export interface Region {
   country: string;
   mapX: number;
   mapY: number;
+  /** A URL visitors' browsers can time requests to, and what serves it. */
+  pingUrl: string | null;
+  pingLabel: string | null;
 }
 
 export interface Endpoint {

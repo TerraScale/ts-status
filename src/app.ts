@@ -6,9 +6,10 @@
    and rolls the probe samples up into hours and days. */
 
 import { operator } from "./api/operator";
+import { loadDays, loadDetails } from "./db/details";
 import { loadHistory, loadIncident, loadMaintenance, loadSnapshot } from "./db/reads";
 import type { Env } from "./env";
-import { DEFAULT_RANGE, isRange, RANGE_KEYS, type RangeKey } from "./domain/range";
+import { byHour, DEFAULT_RANGE, isRange, RANGE_KEYS, rangeStart, type RangeKey } from "./domain/range";
 import { cacheKey, oneOf, readQuery, text, type QuerySpec } from "./http/cache";
 import { contentSecurityPolicy, type PolicyOptions } from "./http/csp";
 import { secure } from "./http/security";
@@ -19,7 +20,11 @@ import { DAY } from "./format";
 import { createRouter } from "./router";
 import { historyPage, historyWindow } from "./views/history";
 import { incidentPage } from "./views/incident";
+import { componentPage } from "./views/component";
 import { MAINTENANCE_DAYS, maintenancePage } from "./views/maintenance";
+import { pingPage } from "./views/ping";
+import { regionPage } from "./views/region";
+import { uptimePage, YEAR_DAYS } from "./views/uptime";
 import { homePage } from "./views/home";
 import { document, type Page } from "./views/layout";
 import { notFoundPage } from "./views/not-found";
@@ -42,6 +47,9 @@ interface Route {
   /** Widens the page's content security policy. */
   policy?: PolicyOptions;
 }
+
+/** Deploys and incidents shown on detail pages go back this far. */
+const DETAIL_DAYS = 90;
 
 const rangeQuery: QuerySpec = { range: oneOf(...RANGE_KEYS) };
 
@@ -76,6 +84,66 @@ const route = createRouter<Route>({
     render: async (env, context) => {
       const detail = await loadIncident(env, context.params.id ?? "", context.now);
       return detail ? page(incidentPage(detail, context.now), context) : page(notFoundPage(), context, 404);
+    },
+  },
+  "/uptime": {
+    render: async (env, context) => {
+      const view = await loadOverview(env, context.now, "90d");
+      const days = await loadDays(
+        env,
+        view.endpoints.map((endpoint) => endpoint.id),
+        context.now - YEAR_DAYS * DAY,
+      );
+      return page(uptimePage(view, days, context.now), context);
+    },
+  },
+  "/components/:id": {
+    query: rangeQuery,
+    render: async (env, context) => {
+      const range = rangeOf(context.query);
+      const view = await loadOverview(env, context.now, range);
+      const entry = view.groups.flatMap((group) => group.components).find((item) => item.id === context.params.id);
+      if (!entry) return page(notFoundPage(), context, 404);
+      const details = await loadDetails(env, {
+        endpointIds: entry.clusters.map((cluster) => cluster.id),
+        componentIds: [entry.id],
+        from: rangeStart(range, context.now),
+        hourly: byHour(range),
+        since: context.now - DETAIL_DAYS * DAY,
+      });
+      return page(componentPage(view, entry, details, context.now), context);
+    },
+  },
+  "/regions/:code": {
+    query: rangeQuery,
+    render: async (env, context) => {
+      const range = rangeOf(context.query);
+      const view = await loadOverview(env, context.now, range);
+      const entry = view.regions.find((item) => item.code === context.params.code?.toUpperCase());
+      if (!entry) return page(notFoundPage(), context, 404);
+      const details = await loadDetails(env, {
+        endpointIds: entry.clusters.map((cluster) => cluster.id),
+        componentIds: [...new Set(entry.clusters.map((cluster) => cluster.componentId))],
+        from: rangeStart(range, context.now),
+        hourly: byHour(range),
+        since: context.now - DETAIL_DAYS * DAY,
+      });
+      return page(regionPage(view, entry, details, context.now), context);
+    },
+  },
+  "/ping": {
+    // The browser test times requests to the regions' own hosts.
+    policy: { connect: ["https://*.terrascale.tech"] },
+    render: async (env, context) => {
+      const view = await loadOverview(env, context.now, "24h");
+      const details = await loadDetails(env, {
+        endpointIds: view.endpoints.map((endpoint) => endpoint.id),
+        componentIds: [],
+        from: rangeStart("24h", context.now),
+        hourly: true,
+        since: context.now,
+      });
+      return page(pingPage(view, details, context.now), context);
     },
   },
   "/maintenance": {
@@ -146,6 +214,13 @@ export default {
     const url = new URL(request.url);
     const now = Date.now();
     if (url.pathname.startsWith("/api/operator/")) return secure(await operator(request, env, now), false);
+    // The browser ping test's baseline: the round trip to this data center.
+    if (url.pathname === "/api/ping") {
+      return secure(
+        Response.json({ colo: request.cf?.colo ?? null }, { headers: { "access-control-allow-origin": "*" } }),
+        false,
+      );
+    }
     const match = route(url.pathname);
 
     if (!match) return secure(await page(notFoundPage(), { now, fragment: false, params: {}, query: {} }, 404), false);

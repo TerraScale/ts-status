@@ -21,6 +21,8 @@ export interface LineOptions {
   /** Formats values in tooltips and on the y axis. */
   format: (value: number) => string;
   height?: number;
+  /** Vertical markers, such as deploys, at sample indexes. */
+  markers?: readonly { index: number; label: string }[];
 }
 
 const WIDTH = 720;
@@ -144,9 +146,16 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
 </g>`);
   }
 
+  const markers = (options.markers ?? [])
+    .filter((marker) => marker.index >= 0 && marker.index < count)
+    .map((marker) => {
+      const x = coordinate(xAt(marker.index));
+      return html`<g class="st-chart-marker"><line x1="${x}" y1="${TOP}" x2="${x}" y2="${bottom}"></line><text x="${x}" y="${TOP - 3}" text-anchor="middle">${marker.label}</text><title>${marker.label}</title></g>`;
+    });
+
   return html`<svg class="ts-chart" viewBox="0 0 ${WIDTH} ${height}" role="group" aria-label="${options.label}">
   <defs><linearGradient id="${gradient}" x1="0" y1="0" x2="0" y2="1"><stop class="ts-chart-fill-start" offset="0"></stop><stop class="ts-chart-fill-end" offset="1"></stop></linearGradient></defs>
-  ${grid}${ticks}${paths}${columns}
+  ${grid}${ticks}${markers}${paths}${columns}
 </svg>`;
 }
 

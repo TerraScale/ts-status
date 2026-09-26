@@ -46,6 +46,10 @@ export const RESOLVED_DAYS = 7;
 
 export interface ComponentOverview extends Component {
   status: TimelineState;
+  /** Every measured endpoint serving the component, regional or global. */
+  clusters: ClusterOverview[];
+  /** Each vantage's latest median latency to the component's clusters. */
+  vantagePings: Record<string, number | null>;
   bars: Bucket[];
   /** Median latency per bar. */
   latency: (number | null)[];
@@ -60,6 +64,7 @@ export interface ClusterOverview {
   id: string;
   componentId: string;
   componentName: string;
+  regionCode: string | null;
   cluster: string;
   provider: Provider;
   status: TimelineState;
@@ -100,6 +105,8 @@ export interface Overview {
   monitoring: Monitoring;
   groups: GroupOverview[];
   regions: RegionOverview[];
+  /** The measured endpoints: those of active components. */
+  endpoints: Endpoint[];
   activeIncidents: Incident[];
   resolvedIncidents: Incident[];
   /** Maintenance windows in progress or scheduled, soonest first. */
@@ -228,7 +235,11 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
       const during = worstDuring(own, bucket.start, bucket.end);
       if (during === "none") return bucket;
       const maintenance = own.some(
-        (window) => window.state === "maintenance" && window.from < bucket.end && window.to > bucket.start,
+        (window) =>
+          window.state === "maintenance" &&
+          window.to > window.from &&
+          window.from < bucket.end &&
+          window.to > bucket.start,
       );
       const outage = worstDuring(
         own.filter((window) => window.state !== "maintenance"),
@@ -238,6 +249,30 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
       return { ...bucket, state: maintenance ? worst("maintenance", outage) : worst(bucket.state, during) };
     });
   };
+
+  const clusterOf = (endpoint: Endpoint): ClusterOverview => {
+    const list = bars(counter, [endpoint], range, now);
+    const total = sumCounts(list.flatMap((bucket) => (bucket.counts ? [bucket.counts] : [])));
+    return {
+      id: endpoint.id,
+      componentId: endpoint.componentId,
+      componentName: components.get(endpoint.componentId)?.name ?? endpoint.componentId,
+      regionCode: endpoint.regionCode,
+      cluster: endpoint.cluster,
+      provider: endpoint.provider,
+      status: status(endpoint),
+      pingMs: fresh(endpoint)?.latencyMs ?? null,
+      meanLatency: meanLatency(total),
+      uptime: uptimeOf(list),
+      bars: list,
+      latency: latencyOf(list),
+    };
+  };
+  const clusters = new Map(
+    snapshot.endpoints
+      .filter((endpoint) => components.get(endpoint.componentId)?.lifecycle === "active")
+      .map((endpoint) => [endpoint.id, clusterOf(endpoint)]),
+  );
 
   const componentList = snapshot.components.map((component): ComponentOverview => {
     const endpoints = component.lifecycle === "planned" ? [] : (endpointsOf.get(component.id) ?? []);
@@ -251,6 +286,8 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
       bars: list,
       latency: latencyOf(list),
       uptime: uptimeOf(list),
+      clusters: endpoints.flatMap((endpoint) => clusters.get(endpoint.id) ?? []),
+      vantagePings: vantagePings(endpoints.flatMap((endpoint) => fresh(endpoint) ?? [])),
     };
   });
   const active = componentList.filter((component) => component.lifecycle === "active");
@@ -258,30 +295,14 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
 
   const regions = snapshot.regions.map((region): RegionOverview => {
     const endpoints = measured.filter((endpoint) => endpoint.regionCode === region.code);
-    const clusters = endpoints.map((endpoint): ClusterOverview => {
-      const list = bars(counter, [endpoint], range, now);
-      const total = sumCounts(list.flatMap((bucket) => (bucket.counts ? [bucket.counts] : [])));
-      return {
-        id: endpoint.id,
-        componentId: endpoint.componentId,
-        componentName: components.get(endpoint.componentId)?.name ?? endpoint.componentId,
-        cluster: endpoint.cluster,
-        provider: endpoint.provider,
-        status: status(endpoint),
-        pingMs: fresh(endpoint)?.latencyMs ?? null,
-        meanLatency: meanLatency(total),
-        uptime: uptimeOf(list),
-        bars: list,
-        latency: latencyOf(list),
-      };
-    });
-    const pings = clusters.flatMap((entry) => (entry.pingMs === null ? [] : [entry.pingMs]));
+    const own = endpoints.flatMap((endpoint) => clusters.get(endpoint.id) ?? []);
+    const pings = own.flatMap((entry) => (entry.pingMs === null ? [] : [entry.pingMs]));
     return {
       ...region,
-      status: aggregate(clusters.map((entry) => entry.status)),
+      status: aggregate(own.map((entry) => entry.status)),
       pingMs: pings.length === 0 ? null : Math.round(pings.reduce((sum, ping) => sum + ping, 0) / pings.length),
       vantagePings: vantagePings(endpoints.flatMap((endpoint) => fresh(endpoint) ?? [])),
-      clusters,
+      clusters: own,
     };
   });
 
@@ -322,6 +343,7 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
       .map((group) => ({ ...group, components: componentList.filter((component) => component.groupId === group.id) }))
       .filter((group) => group.components.length > 0),
     regions,
+    endpoints: measured,
     activeIncidents: snapshot.incidents.filter(
       (incident) => incident.kind !== "maintenance" && isActive(incident, now),
     ),
