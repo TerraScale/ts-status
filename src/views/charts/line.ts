@@ -29,6 +29,16 @@ const RIGHT = 12;
 const TOP = 14;
 const BOTTOM = 32;
 
+/** Series colors in the categorical palette (--ts-cat-1 to 8 in tokens.css).
+    Beyond this many series colors repeat, so callers should aggregate first. */
+export const CATEGORIES = 8;
+
+/** The class coloring a series by its index. */
+const category = (seriesIndex: number): string => `ts-cat-${(seriesIndex % CATEGORIES) + 1}`;
+
+/** X-axis label anchors: the ends align inward so labels stay in the chart. */
+const TICK_ANCHORS = ["start", "middle", "middle", "middle", "end"] as const;
+
 /** Hover targets rendered per chart; dense series share columns. */
 export const MAX_COLUMNS = 60;
 
@@ -39,7 +49,7 @@ const TIP = { char: 6.8, padX: 10, padY: 6, line: 17, swatch: 12, gap: 16, offse
 interface TipRow {
   name: string;
   value: string;
-  series: number;
+  series: string;
 }
 
 function tip(x: number, header: string, rows: readonly TipRow[]): Html {
@@ -59,7 +69,7 @@ function tip(x: number, header: string, rows: readonly TipRow[]): Html {
     (
       row,
       index,
-    ) => html`<circle class="ts-chart-tip-swatch ts-cat-${row.series}" cx="${coordinate(left + TIP.padX + 3)}" cy="${lineY(first + index)}" r="3"></circle>
+    ) => html`<circle class="ts-chart-tip-swatch ${row.series}" cx="${coordinate(left + TIP.padX + 3)}" cy="${lineY(first + index)}" r="3"></circle>
   <text class="ts-chart-tip-name" x="${coordinate(left + TIP.padX + TIP.swatch)}" y="${lineY(first + index)}" dy="0.35em">${row.name}</text>
   <text class="ts-chart-tip-value" x="${coordinate(left + width - TIP.padX)}" y="${lineY(first + index)}" dy="0.35em" text-anchor="end">${row.value}</text>`,
   )}
@@ -90,7 +100,7 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
   });
   const ticks = Array.from({ length: 5 }, (_, step) => {
     const index = count > 1 ? Math.round((step * (count - 1)) / 4) : 0;
-    const anchor = step === 0 ? "start" : step === 4 ? "end" : "middle";
+    const anchor = TICK_ANCHORS[step] ?? "middle";
     return html`<text class="ts-chart-axis" x="${coordinate(xAt(index))}" y="${height - 8}" text-anchor="${anchor}">${options.ticks[step] ?? ""}</text>`;
   });
   const paths = series.map((entry, seriesIndex) =>
@@ -101,7 +111,7 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
       const area = single
         ? html`<path class="ts-chart-area" d="${line} L ${coordinate(xAt(last))},${bottom} L ${coordinate(xAt(first))},${bottom} Z" fill="url(#${gradient})"></path>`
         : "";
-      return html`${area}<path class="ts-chart-line ts-cat-${seriesIndex + 1}" d="${line}"></path>`;
+      return html`${area}<path class="ts-chart-line ${category(seriesIndex)}" d="${line}"></path>`;
     }),
   );
 
@@ -114,7 +124,7 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
     const right = Math.min(WIDTH - RIGHT, x + columnWidth / 2);
     const rows = series.map((entry, seriesIndex): TipRow => {
       const value = entry.values[index] ?? null;
-      return { name: entry.name, value: value === null ? "—" : options.format(value), series: seriesIndex + 1 };
+      return { name: entry.name, value: value === null ? "—" : options.format(value), series: category(seriesIndex) };
     });
     const header = options.points[index] ?? "";
     const label = `${header ? `${header}: ` : ""}${rows.map((row) => `${row.name} ${row.value}`).join(", ")}`;
@@ -123,7 +133,7 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
       return value === null
         ? []
         : [
-            html`<circle class="ts-chart-dot ts-cat-${seriesIndex + 1}" cx="${coordinate(x)}" cy="${coordinate(yAt(value))}" r="4"></circle>`,
+            html`<circle class="ts-chart-dot ${category(seriesIndex)}" cx="${coordinate(x)}" cy="${coordinate(yAt(value))}" r="4"></circle>`,
           ];
     });
     columns.push(html`<g class="ts-chart-column" tabindex="0" role="img" aria-label="${label}">
@@ -144,6 +154,6 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
 export function chartLegend(names: readonly string[]): Html {
   return html`<ul class="ts-chart-legend" aria-hidden="true">${names.map(
     (name, index) =>
-      html`<li class="ts-chart-legend-item"><span class="ts-chart-swatch ts-cat-${index + 1}"></span>${name}</li>`,
+      html`<li class="ts-chart-legend-item"><span class="ts-chart-swatch ${category(index)}"></span>${name}</li>`,
   )}</ul>`;
 }

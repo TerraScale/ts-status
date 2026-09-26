@@ -229,14 +229,16 @@ export const CLIENT_SCRIPT = `(() => {
       const next = template.content.querySelector("main");
       if (!next) return;
       localize(next);
-      // Keep keyboard focus on the same strip or control across the swap.
-      const focused = document.activeElement?.closest("[aria-label]");
-      const label = focused?.getAttribute("aria-label");
+      // Keep keyboard focus on the same element across the swap, found by
+      // its position among the focusable elements: labels carry live values.
+      const focusable = "a[href], button, input, select, [tabindex]";
+      const page = document.querySelector("main");
+      const position = [...page.querySelectorAll(focusable)].indexOf(document.activeElement);
       hide();
-      document.querySelector("main").replaceWith(next);
+      page.replaceWith(next);
       ago();
       document.title = next.dataset.title || document.title;
-      if (label) [...next.querySelectorAll("[tabindex]")].find((node) => node.getAttribute("aria-label") === label)?.focus();
+      if (position >= 0) next.querySelectorAll(focusable)[position]?.focus();
       last = Date.now();
     } catch {
       // Offline or failing: keep the last good page and try again later.

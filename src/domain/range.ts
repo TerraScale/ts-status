@@ -17,7 +17,8 @@ export const RANGE_KEYS = Object.keys(RANGES) as RangeKey[];
 
 export const DEFAULT_RANGE: RangeKey = "90d";
 
-export const isRange = (value: string | undefined): value is RangeKey => value !== undefined && value in RANGES;
+export const isRange = (value: string | undefined): value is RangeKey =>
+  value !== undefined && Object.hasOwn(RANGES, value);
 
 /** Hourly rollups back the ranges with sub-day buckets; the rest use days. */
 export const byHour = (range: RangeKey): boolean => RANGES[range].size < DAY;

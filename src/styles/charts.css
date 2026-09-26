@@ -141,6 +141,15 @@
 .ts-cat-5 {
   --series: var(--ts-cat-5);
 }
+.ts-cat-6 {
+  --series: var(--ts-cat-6);
+}
+.ts-cat-7 {
+  --series: var(--ts-cat-7);
+}
+.ts-cat-8 {
+  --series: var(--ts-cat-8);
+}
 
 /* Sparklines: a quiet trend beside a row's numbers. */
 .st-spark {
@@ -159,4 +168,10 @@
 .st-spark circle {
   fill: var(--ts-chart-1);
   stroke: none;
+}
+
+@media (max-width: 47.99rem) {
+  .st-spark {
+    display: none;
+  }
 }

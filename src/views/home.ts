@@ -3,7 +3,7 @@
    the 90-day platform history, and recently resolved incidents. */
 
 import regionMap from "../assets/region-map.svg?raw";
-import { RANGE_KEYS, RANGES, DEFAULT_RANGE, type RangeKey } from "../domain/range";
+import { byHour, RANGE_KEYS, RANGES, DEFAULT_RANGE, type RangeKey } from "../domain/range";
 import { STATES, STATE_LABELS, type Status, type TimelineState } from "../domain/status";
 import { formatClock, formatDay, formatUptime } from "../format";
 import { html, raw, type Html } from "../html";
@@ -17,6 +17,7 @@ import {
   type RegionOverview,
 } from "../overview";
 import { VANTAGES } from "../probe/vantages";
+import { MAP_HEIGHT, MAP_WIDTH } from "./charts/geometry";
 import { chartLegend, lineChart } from "./charts/line";
 import { sparkline } from "./charts/sparkline";
 import {
@@ -153,14 +154,14 @@ function map(view: Overview) {
       const dx = entry.mapX - vantage.mapX;
       const dy = entry.mapY - vantage.mapY;
       const distance = Math.hypot(dx, dy);
-      if (distance < 6) return [];
+      if (vantage.region === entry.code) return [];
       const cx = (vantage.mapX + entry.mapX) / 2;
       const cy = Math.min(vantage.mapY, entry.mapY) - distance * 0.22;
       const d = `M ${vantage.mapX} ${vantage.mapY} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${entry.mapX} ${entry.mapY}`;
       const ping = entry.vantagePings[vantage.code] ?? null;
       const cardData = JSON.stringify({ rows: [["Latest", ms(ping)]] });
       return [
-        html`<g class="st-arc" data-state="${ping === null ? "none" : entry.status}" data-title="${vantage.name} → ${entry.name}" data-card="${cardData}">
+        html`<g class="st-arc" data-state="${ping === null ? "none" : entry.status}" tabindex="0" role="img" aria-label="${vantage.name} to ${entry.name}: latest ${ms(ping)}" data-title="${vantage.name} → ${entry.name}" data-card="${cardData}">
     <path class="st-arc-line" d="${d}"></path><path class="st-arc-hit" d="${d}"></path>
   </g>`,
       ];
@@ -200,7 +201,7 @@ function map(view: Overview) {
   });
   const dots = regionMap.replace(/^<svg[^>]*>|<\/svg>\s*$/g, "");
   return html`<figure class="st-map-figure">
-  <svg class="st-map" viewBox="0 0 136 80" role="group" aria-label="${label}">${raw(dots)}${arcs}${vantages}${hubs}</svg>
+  <svg class="st-map" viewBox="0 0 ${MAP_WIDTH} ${MAP_HEIGHT}" role="group" aria-label="${label}">${raw(dots)}${arcs}${vantages}${hubs}</svg>
   <figcaption class="st-map-legend" aria-hidden="true">
     <span><span class="st-key st-key-hub"></span>Region</span>
     <span><span class="st-key st-key-vantage"></span>Vantage point</span>
@@ -216,13 +217,13 @@ function responseTimes(view: Overview): Html {
     .filter((entry) => entry.lifecycle === "active" && entry.latency.some((value) => value !== null));
   const first = components[0];
   if (!first) return html``;
-  const hourly = RANGES[view.range].size < 86_400_000;
+  const hourly = byHour(view.range);
   const name = (start: number) => (hourly ? `${formatDay(start)} ${formatClock(start)} UTC` : formatDay(start));
   const points = first.bars.map((bucket) => name(bucket.start));
   const tickAt = (step: number) => first.bars[Math.round((step * (first.bars.length - 1)) / 4)];
   const ticks = [0, 1, 2, 3, 4].map((step) => {
     const bucket = tickAt(step);
-    return bucket ? (hourly ? `${formatDay(bucket.start)} ${formatClock(bucket.start)}` : formatDay(bucket.start)) : "";
+    return bucket ? name(bucket.start) : "";
   });
   return card(
     {
@@ -255,10 +256,7 @@ function historyCard(view: Overview): Html {
     html`${bars(view.days, {
       label: summary,
       large: true,
-      card: (bucket) => {
-        const day = view.days.find((entry) => entry.start === bucket.start);
-        return { rows: probeRows(bucket.counts), notes: day?.incidents.map((incident) => incident.title) ?? [] };
-      },
+      card: (day) => ({ rows: probeRows(day.counts), notes: day.incidents.map((incident) => incident.title) }),
     })}
   <div class="st-axis" aria-hidden="true"><span>${formatDay(view.days[0]?.start ?? view.generatedAt)}</span><span>Today</span></div>
   ${legend(LEGEND)}`,

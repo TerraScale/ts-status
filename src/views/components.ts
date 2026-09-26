@@ -98,11 +98,11 @@ export function probeRows(counts: ProbeCounts | undefined): [string, string][] {
   ];
 }
 
-export interface BarsOptions {
+export interface BarsOptions<T extends Bucket> {
   /** Summarizes the strip for assistive tech. */
   label: string;
   large?: boolean;
-  card?: (bucket: Bucket) => CardContent;
+  card?: (bucket: T) => CardContent;
 }
 
 /** When a bar's time span was, in UTC; the client script re-renders spans
@@ -115,7 +115,7 @@ function when(bucket: Bucket): string {
 /** Status bars: one cell per bucket, colored by its worst state. The strip
     is one focusable image; arrow keys move between cells, and every cell
     opens a hover card with its details. */
-export function bars(list: readonly Bucket[], options: BarsOptions): Html {
+export function bars<T extends Bucket>(list: readonly T[], options: BarsOptions<T>): Html {
   const cells = list.map((bucket) => {
     const state = STATE_LABELS[bucket.state];
     const span = bucket.end - bucket.start >= DAY ? "day" : "hour";

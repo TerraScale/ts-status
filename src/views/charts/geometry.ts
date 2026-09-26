@@ -4,6 +4,10 @@
 
 export type Point = [number, number];
 
+/** The region map's viewBox; hub and vantage positions are in its units. */
+export const MAP_WIDTH = 136;
+export const MAP_HEIGHT = 80;
+
 export const coordinate = (value: number): string => value.toFixed(1);
 
 /** The smallest of 1, 2 or 5 × 10ⁿ at or above `value`. */

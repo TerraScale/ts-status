@@ -196,9 +196,14 @@
   background: var(--ts-surface-3);
 }
 
-.st-bars:hover > li,
 .st-bars:focus-visible > li {
   opacity: 0.55;
+}
+
+@media (hover: hover) {
+  .st-bars:hover > li {
+    opacity: 0.55;
+  }
 }
 
 .st-bars > li:hover,
@@ -328,6 +333,9 @@
 }
 
 .st-range a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
   padding: 2px var(--ts-s3);
   border-radius: var(--ts-radius-sm);
   color: var(--ts-ink-3);
@@ -444,6 +452,11 @@
   fill: color-mix(in oklab, currentColor 45%, transparent);
 }
 
+.st-hub:focus-visible .st-hub-ring {
+  stroke: var(--ts-ink);
+  stroke-width: 0.5;
+}
+
 .st-vantage rect {
   fill: var(--ts-canvas);
   stroke: var(--ts-cat-2);
@@ -460,12 +473,10 @@
   stroke-width: 0.35;
   stroke-dasharray: 1.2 1.6;
   opacity: 0.55;
-  animation: st-flow 1.6s linear infinite;
 }
 
 .st-arc[data-state="none"] .st-arc-line {
   stroke: var(--ts-ink-3);
-  animation: none;
 }
 
 .st-arc-hit {
@@ -474,9 +485,15 @@
   stroke-width: 2.4;
 }
 
-.st-arc:is(:hover, .is-active) .st-arc-line {
+/* Only the path in view flows, so the map never repaints while idle. */
+.st-arc:is(:hover, :focus-visible, .is-active) .st-arc-line {
   opacity: 1;
   stroke-width: 0.6;
+  animation: st-flow 1.6s linear infinite;
+}
+
+.st-arc {
+  outline: none;
 }
 
 @keyframes st-flow {
@@ -507,7 +524,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--ts-success);
+  background: var(--ts-ink-2);
 }
 
 .st-key-vantage {
@@ -519,7 +536,7 @@
 
 .st-key-arc {
   width: 14px;
-  border-top: 1px dashed var(--ts-success);
+  border-top: 1px dashed var(--ts-ink-2);
 }
 
 /* Regions side by side, each with its clusters. */
@@ -609,9 +626,5 @@
 
   .st-bars {
     gap: 1px;
-  }
-
-  .st-spark {
-    display: none;
   }
 }

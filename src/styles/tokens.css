@@ -27,12 +27,15 @@
   --ts-info: #60a5fa;
 
   /* Chart series: the accent first, then the categorical palette. */
-  --ts-chart-1: #3b82f6;
-  --ts-cat-1: #3b82f6;
+  --ts-chart-1: var(--ts-accent);
+  --ts-cat-1: var(--ts-chart-1);
   --ts-cat-2: #22d3ee;
   --ts-cat-3: #a5b4fc;
   --ts-cat-4: #f472b6;
   --ts-cat-5: #facc15;
+  --ts-cat-6: #c084fc;
+  --ts-cat-7: #a3e635;
+  --ts-cat-8: #fdba74;
 
   /* Type. Oxanium carries the brand; body copy stays at a readable 14px. */
   --ts-font-sans: "Oxanium", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
