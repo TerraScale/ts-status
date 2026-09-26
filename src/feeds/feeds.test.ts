@@ -50,11 +50,17 @@ describe("feeds", () => {
   });
 
   it("writes a valid calendar of maintenance only, with folded lines", () => {
-    const ics = calendar(recent, "https://s.test", 0);
+    const ics = calendar(recent, "https://s.test");
     expect(ics.startsWith("BEGIN:VCALENDAR\r\n")).toBe(true);
     expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(1);
     expect(ics).toContain("DTSTART:20261001T020000Z");
     expect(ics).toContain(String.raw`DESCRIPTION:Fixed\, finally\; really.`);
+    expect(ics).toContain("UID:m1@s.test");
+    const slashed = calendar(
+      { ...recent, incidents: recent.incidents.map((entry) => ({ ...entry, message: String.raw`C:\path, done` })) },
+      "https://s.test",
+    );
+    expect(slashed).toContain(String.raw`DESCRIPTION:C:\\path\, done`);
     for (const line of ics.split("\r\n")) expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75);
   });
 });

@@ -3,7 +3,7 @@
    maintenance windows. */
 
 import type { Recent } from "../db/reads";
-import type { Incident } from "../domain/status";
+import { updatesByIncident, type Incident, type IncidentUpdate } from "../domain/status";
 import { escape } from "../html";
 
 const TITLE = "TerraScale Status";
@@ -11,9 +11,8 @@ const TITLE = "TerraScale Status";
 const KINDS = { incident: "Incident", warning: "Warning", maintenance: "Maintenance" } as const;
 
 /** An entry's content: its updates, newest first, as escaped HTML. */
-function content(recent: Recent, incident: Incident): string {
-  return recent.updates
-    .filter((update) => update.incidentId === incident.id)
+function content(updates: readonly IncidentUpdate[]): string {
+  return updates
     .map(
       (update) =>
         `<p><strong>${escape(update.status)}</strong> (${escape(update.createdAt)}): ${escape(update.body)}</p>`,
@@ -23,7 +22,15 @@ function content(recent: Recent, incident: Incident): string {
 
 const updated = (recent: Recent, now: number): string => recent.incidents[0]?.updatedAt ?? new Date(now).toISOString();
 
+/** An RFC 822 date; a malformed timestamp falls back to now rather than
+    making the whole feed invalid. */
+function rfc822(at: string, now: number): string {
+  const parsed = Date.parse(at);
+  return new Date(Number.isNaN(parsed) ? now : parsed).toUTCString();
+}
+
 export function atom(recent: Recent, origin: string, now: number): string {
+  const updates = updatesByIncident(recent.updates);
   const entries = recent.incidents.map(
     (incident) => `<entry>
 <id>${origin}/incidents/${escape(incident.id)}</id>
@@ -32,7 +39,7 @@ export function atom(recent: Recent, origin: string, now: number): string {
 <published>${incident.createdAt}</published>
 <updated>${incident.updatedAt}</updated>
 <summary>${escape(incident.message)}</summary>
-<content type="html">${escape(content(recent, incident))}</content>
+<content type="html">${escape(content(updates.get(incident.id) ?? []))}</content>
 </entry>`,
   );
   return `<?xml version="1.0" encoding="utf-8"?>
@@ -50,14 +57,15 @@ ${entries.join("\n")}
 }
 
 export function rss(recent: Recent, origin: string, now: number): string {
-  const date = (at: string) => new Date(at).toUTCString();
+  const updates = updatesByIncident(recent.updates);
+  const date = (at: string) => rfc822(at, now);
   const items = recent.incidents.map(
     (incident) => `<item>
 <title>${escape(`${KINDS[incident.kind]}: ${incident.title}`)}</title>
 <link>${origin}/incidents/${escape(incident.id)}</link>
 <guid isPermaLink="true">${origin}/incidents/${escape(incident.id)}</guid>
 <pubDate>${date(incident.updatedAt)}</pubDate>
-<description>${escape(content(recent, incident))}</description>
+<description>${escape(content(updates.get(incident.id) ?? []))}</description>
 </item>`,
   );
   return `<?xml version="1.0" encoding="utf-8"?>
@@ -74,8 +82,13 @@ ${items.join("\n")}
 `;
 }
 
-/** iCalendar text escaping (RFC 5545 §3.3.11). */
-const text = (value: string): string => value.replace(/[\;,]/g, (char) => `\\${char}`).replace(/\r?\n/g, "\\n");
+/** iCalendar text escaping (RFC 5545 §3.3.11): backslashes first, so the
+    escapes added after them stay intact. */
+const text = (value: string): string =>
+  value
+    .replace(/\\/g, "\\\\")
+    .replace(/[;,]/g, (char) => `\\${char}`)
+    .replace(/\r?\n/g, "\\n");
 
 /** "20261001T020000Z" */
 const stamp = (at: string | number): string =>
@@ -84,15 +97,16 @@ const stamp = (at: string | number): string =>
     .replace(/[-:]/g, "")
     .replace(/\.\d{3}/, "");
 
+const encoder = new TextEncoder();
+
 /** Folds a content line at 75 octets, continuing with a space. */
 function fold(line: string): string {
-  const bytes = new TextEncoder().encode(line);
-  if (bytes.length <= 75) return line;
+  if (encoder.encode(line).length <= 75) return line;
   const parts: string[] = [];
   let current = "";
   let size = 0;
   for (const char of line) {
-    const length = new TextEncoder().encode(char).length;
+    const length = char.length === 1 && char.charCodeAt(0) < 0x80 ? 1 : encoder.encode(char).length;
     if (size + length > (parts.length === 0 ? 75 : 74)) {
       parts.push(current);
       current = "";
@@ -105,16 +119,20 @@ function fold(line: string): string {
   return parts.join("\r\n ");
 }
 
-export function calendar(recent: Recent, origin: string, now: number): string {
+export function calendar(recent: Recent, origin: string): string {
+  const host = new URL(origin).host;
   const events = recent.incidents
-    .filter((incident) => incident.kind === "maintenance" && incident.scheduledStart && incident.scheduledEnd)
+    .filter(
+      (incident): incident is Incident & { scheduledStart: string; scheduledEnd: string } =>
+        incident.kind === "maintenance" && Boolean(incident.scheduledStart && incident.scheduledEnd),
+    )
     .map((incident) =>
       [
         "BEGIN:VEVENT",
-        `UID:${incident.id}@status.terrascale.tech`,
+        `UID:${incident.id}@${host}`,
         `DTSTAMP:${stamp(incident.updatedAt)}`,
-        `DTSTART:${stamp(incident.scheduledStart ?? now)}`,
-        `DTEND:${stamp(incident.resolvedAt ?? incident.scheduledEnd ?? now)}`,
+        `DTSTART:${stamp(incident.scheduledStart)}`,
+        `DTEND:${stamp(incident.resolvedAt ?? incident.scheduledEnd)}`,
         `SUMMARY:${text(`TerraScale maintenance: ${incident.title}`)}`,
         `DESCRIPTION:${text(incident.message)}`,
         `URL:${origin}/incidents/${incident.id}`,

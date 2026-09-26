@@ -10,7 +10,7 @@ import type { Page } from "./layout";
 
 export function embedPage(view: Overview, origin: string): Page {
   const components = view.groups.flatMap((group) => group.components).filter((entry) => entry.lifecycle === "active");
-  const body = html`<main id="main" class="st-embed" data-live data-title="${HEADLINES[view.status]}">
+  const body = html`<main id="main" class="st-embed" data-live data-title="${HEADLINES[view.status]} · TerraScale Status">
   <a class="st-embed-head" href="${origin}/" target="_blank" rel="noopener" data-state="${view.status}">
     <span class="ts-dot" aria-hidden="true"></span>
     <span class="ts-strong">${HEADLINES[view.status]}</span>

@@ -3,6 +3,7 @@
 
 import type { Recent } from "../db/reads";
 import { RANGES, type RangeKey } from "../domain/range";
+import { updatesByIncident } from "../domain/status";
 import type { Measurements } from "../measure";
 import type { ComponentOverview, Overview } from "../overview";
 import { VANTAGES } from "../probe/vantages";
@@ -38,11 +39,9 @@ export function statusDocument(view: Overview) {
 }
 
 export function incidentsDocument(recent: Recent) {
+  const updates = updatesByIncident(recent.updates);
   return {
-    incidents: recent.incidents.map((incident) => ({
-      ...incident,
-      updates: recent.updates.filter((update) => update.incidentId === incident.id),
-    })),
+    incidents: recent.incidents.map((incident) => ({ ...incident, updates: updates.get(incident.id) ?? [] })),
   };
 }
 

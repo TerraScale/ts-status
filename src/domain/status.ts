@@ -68,6 +68,13 @@ export interface IncidentUpdate {
   createdAt: string;
 }
 
+/** Updates grouped by their incident, keeping their order. */
+export function updatesByIncident(updates: readonly IncidentUpdate[]): Map<string, IncidentUpdate[]> {
+  const grouped = new Map<string, IncidentUpdate[]>();
+  for (const update of updates) grouped.set(update.incidentId, [...(grouped.get(update.incidentId) ?? []), update]);
+  return grouped;
+}
+
 /** A span of time in one state. */
 export interface Segment {
   from: number;

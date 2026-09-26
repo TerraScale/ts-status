@@ -23,7 +23,8 @@ function row(title: string, detail: string, url: string, code?: string): Html {
 
 export function integrationsPage(view: Overview, origin: string): Page {
   const components = view.groups.flatMap((group) => group.components).filter((entry) => entry.lifecycle === "active");
-  const first = components[0]?.id ?? "dashboard";
+  // Per-component examples need a component; a fresh page shows the platform only.
+  const first = components[0];
 
   const body = html`<main id="main" class="ts-page">
   <header class="st-page-head">
@@ -47,7 +48,11 @@ export function integrationsPage(view: Overview, origin: string): Page {
     <img src="/badge/status.svg" alt="TerraScale status" height="20">
     ${components.map((entry) => html`<img src="/badge/${entry.id}.svg" alt="${entry.name} status" height="20">`)}
   </div>
-  ${snippet(`[![TerraScale status](${origin}/badge/status.svg)](${origin})\n[![${components[0]?.name ?? "Dashboard"}](${origin}/badge/${first}.svg)](${origin}/components/${first})`)}`,
+  ${snippet(
+    first
+      ? `[![TerraScale status](${origin}/badge/status.svg)](${origin})\n[![${first.name}](${origin}/badge/${first.id}.svg)](${origin}/components/${first.id})`
+      : `[![TerraScale status](${origin}/badge/status.svg)](${origin})`,
+  )}`,
   )}
 
   ${card(
@@ -62,7 +67,7 @@ export function integrationsPage(view: Overview, origin: string): Page {
     ${row("Status", "Headline, components with bars, regions, recent incidents. Takes ?range=24h|7d|30d|90d.", `${origin}/api/v1/status`)}
     ${row("Incidents", "The latest incidents, warnings and maintenance with their updates. Takes ?limit=1–100.", `${origin}/api/v1/incidents`)}
     ${row("Regions", "Every region with its clusters and the latest latency from each vantage.", `${origin}/api/v1/regions`)}
-    ${row("Latency", "Median and p95 per bucket, overall and per vantage, for one component.", `${origin}/api/v1/latency?component=${first}&range=24h`)}
+    ${first ? row("Latency", "Median and p95 per bucket, overall and per vantage, for one component.", `${origin}/api/v1/latency?component=${first.id}&range=24h`) : ""}
     ${row(
       "Statuspage-compatible",
       "The Atlassian Statuspage v2 format, for tools that already read status pages: status, summary, components, incidents (and /unresolved), scheduled-maintenances (and /upcoming, /active).",

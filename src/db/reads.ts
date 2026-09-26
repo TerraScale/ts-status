@@ -311,10 +311,13 @@ export async function loadMaintenance(
 }
 
 // The latest incidents of every kind, by last change.
-const RECENT = `SELECT ${INCIDENT_COLUMNS} FROM incidents ORDER BY updated_at DESC LIMIT ?1`;
+// Both select the same incidents, so their order must be total.
+const RECENT_ORDER = "ORDER BY updated_at DESC, id DESC LIMIT ?1";
+
+const RECENT = `SELECT ${INCIDENT_COLUMNS} FROM incidents ${RECENT_ORDER}`;
 
 const RECENT_UPDATES = `SELECT id, incident_id AS incidentId, status, body, ${iso("created_at")} AS createdAt
-  FROM incident_updates WHERE incident_id IN (SELECT id FROM incidents ORDER BY updated_at DESC LIMIT ?1)
+  FROM incident_updates WHERE incident_id IN (SELECT id FROM incidents ${RECENT_ORDER})
   ORDER BY created_at DESC, rowid DESC`;
 
 export interface Recent {

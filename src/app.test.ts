@@ -238,9 +238,10 @@ describe("app", () => {
     expect(summary.components.some((entry) => entry.id === "auth")).toBe(false);
     expect(summary.incidents.map((entry) => entry.name)).toEqual(["Slow <queries>"]);
     expect(summary.incidents[0]?.incident_updates).toHaveLength(2);
+    // Both were last updated in the same second; the id breaks the tie.
     expect(summary.scheduled_maintenances.map((entry) => [entry.name, entry.status])).toEqual([
-      ["Forgejo upgrade", "in_progress"],
       ["Atlas migration", "scheduled"],
+      ["Forgejo upgrade", "in_progress"],
     ]);
     const upcoming = (await (
       await app.fetch(request("/api/v2/scheduled-maintenances/upcoming.json"), env, ctx)

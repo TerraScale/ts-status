@@ -8,7 +8,7 @@
 import { operator } from "./api/operator";
 import { statuspage, type StatuspageDocument } from "./api/statuspage";
 import { incidentsDocument, latencyDocument, regionsDocument, statusDocument } from "./api/v1";
-import { loadDays, loadDetails } from "./db/details";
+import { loadDays, loadDetails, loadPeriods } from "./db/details";
 import { loadHistory, loadIncident, loadMaintenance, loadRecent, loadSnapshot } from "./db/reads";
 import { byHour, DEFAULT_RANGE, isRange, RANGE_KEYS, rangeStart, type RangeKey } from "./domain/range";
 import { HEADLINES } from "./domain/status";
@@ -80,6 +80,15 @@ const rangeOf = (query: Record<string, string>): RangeKey => (isRange(query.rang
 
 async function loadOverview(env: Env, now: number, range: RangeKey) {
   return overview(await loadSnapshot(env, snapshotWindow(now, range)), now, range);
+}
+
+/** One Statuspage-compatible document, or a 404 for a name it does not have. */
+async function statuspageDocument(env: Env, { now, origin }: RenderContext, name: string | undefined) {
+  if (name === undefined || !Object.hasOwn(statuspage, name)) {
+    return json({ error: { code: "not_found", message: "No such document." } }, 404);
+  }
+  const [view, recent] = await Promise.all([loadOverview(env, now, "24h"), loadRecent(env, FEED_ENTRIES)]);
+  return json(statuspage[name as StatuspageDocument]({ view, ...recent, origin }));
 }
 
 const route = createRouter<Route>({
@@ -181,7 +190,8 @@ const route = createRouter<Route>({
   },
   "/api/v1/incidents": {
     query: { limit: (value) => /^([1-9]\d?|100)$/.test(value) },
-    render: async (env, { query }) => json(incidentsDocument(await loadRecent(env, Number(query.limit ?? 50)))),
+    render: async (env, { query }) =>
+      json(incidentsDocument(await loadRecent(env, Number(query.limit ?? FEED_ENTRIES)))),
   },
   "/api/v1/regions": {
     render: async (env, { now }) => json(regionsDocument(await loadOverview(env, now, "24h"))),
@@ -194,39 +204,21 @@ const route = createRouter<Route>({
       const component = view.groups.flatMap((group) => group.components).find((entry) => entry.id === query.component);
       if (!component)
         return json({ error: { code: "not_found", message: "Pass ?component= a measured component id." } }, 404);
-      const details = await loadDetails(env, {
-        endpointIds: component.clusters.map((cluster) => cluster.id),
-        componentIds: [],
-        from: rangeStart(range, now),
-        hourly: byHour(range),
-        since: now,
-      });
-      return json(latencyDocument(component, new Measurements(details.periods), range, now));
+      const periods = await loadPeriods(
+        env,
+        component.clusters.map((cluster) => cluster.id),
+        rangeStart(range, now),
+        byHour(range),
+      );
+      return json(latencyDocument(component, new Measurements(periods), range, now));
     },
   },
-  "/api/v2/:document": {
-    render: async (env, { now, params, origin }) => {
-      const document = params.document as StatuspageDocument;
-      if (!Object.hasOwn(statuspage, document))
-        return json({ error: { code: "not_found", message: "No such document." } }, 404);
-      const [view, recent] = await Promise.all([loadOverview(env, now, "24h"), loadRecent(env, FEED_ENTRIES)]);
-      return json(statuspage[document]({ view, ...recent, origin }));
-    },
-  },
+  "/api/v2/:document": { render: (env, context) => statuspageDocument(env, context, context.params.document) },
   "/api/v2/incidents/unresolved.json": {
-    render: async (env, { now, origin }) => {
-      const [view, recent] = await Promise.all([loadOverview(env, now, "24h"), loadRecent(env, FEED_ENTRIES)]);
-      return json(statuspage["incidents/unresolved.json"]({ view, ...recent, origin }));
-    },
+    render: (env, context) => statuspageDocument(env, context, "incidents/unresolved.json"),
   },
   "/api/v2/scheduled-maintenances/:which": {
-    render: async (env, { now, params, origin }) => {
-      const document = `scheduled-maintenances/${params.which}` as StatuspageDocument;
-      if (!Object.hasOwn(statuspage, document))
-        return json({ error: { code: "not_found", message: "No such document." } }, 404);
-      const [view, recent] = await Promise.all([loadOverview(env, now, "24h"), loadRecent(env, FEED_ENTRIES)]);
-      return json(statuspage[document]({ view, ...recent, origin }));
-    },
+    render: (env, context) => statuspageDocument(env, context, `scheduled-maintenances/${context.params.which}`),
   },
   "/feed.atom": {
     render: async (env, { now, origin }) =>
@@ -237,8 +229,8 @@ const route = createRouter<Route>({
       text(rss(await loadRecent(env, FEED_ENTRIES), origin, now), "application/rss+xml"),
   },
   "/maintenance.ics": {
-    render: async (env, { now, origin }) =>
-      text(calendar(await loadRecent(env, FEED_ENTRIES), origin, now), "text/calendar", {
+    render: async (env, { origin }) =>
+      text(calendar(await loadRecent(env, FEED_ENTRIES), origin), "text/calendar", {
         "content-disposition": 'inline; filename="terrascale-maintenance.ics"',
       }),
   },
@@ -247,7 +239,7 @@ const route = createRouter<Route>({
       const view = await loadOverview(env, now, "24h");
       if (params.id === "status")
         return text(
-          badge("TerraScale", view.status, HEADLINES[view.status].replace("All systems operational", "Operational")),
+          badge("TerraScale", view.status, view.status === "operational" ? "Operational" : HEADLINES[view.status]),
           "image/svg+xml",
         );
       const component = view.groups.flatMap((group) => group.components).find((entry) => entry.id === params.id);
