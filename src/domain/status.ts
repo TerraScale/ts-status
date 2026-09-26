@@ -93,6 +93,15 @@ export const STATE_LABELS: Record<TimelineState, string> = {
   none: "No data",
 };
 
+/** The headline for each overall state. */
+export const HEADLINES: Record<Status, string> = {
+  operational: "All systems operational",
+  maintenance: "Scheduled maintenance in progress",
+  degraded: "Some systems are degraded",
+  partial_outage: "Partial system outage",
+  major_outage: "Major system outage",
+};
+
 /** The state an active incident implies. */
 export const IMPACT_STATUS: Record<IncidentImpact, Status> = {
   none: "operational",

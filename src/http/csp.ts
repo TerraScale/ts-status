@@ -11,6 +11,8 @@ export interface PolicyOptions {
   frameAncestors?: string;
   /** Where forms may submit; nowhere by default. */
   formAction?: string;
+  /** What the page may frame; nothing by default. */
+  frame?: readonly string[];
 }
 
 async function sha256(text: string): Promise<string> {
@@ -33,6 +35,7 @@ export function contentSecurityPolicy(options: PolicyOptions = {}): Promise<stri
         `script-src ${script}`,
         ["connect-src 'self'", ...(options.connect ?? [])].join(" "),
         "font-src 'self'",
+        ...(options.frame ? [`frame-src ${options.frame.join(" ")}`] : []),
         "img-src 'self' data:",
         "base-uri 'none'",
         `form-action ${options.formAction ?? "'none'"}`,

@@ -65,4 +65,4 @@ Place the hub by eye on `src/assets/region-map.svg` (x grows east, y grows south
 
 ## Remove
 
-Deleting an endpoint also deletes its probe history (`ON DELETE CASCADE`). Verify every change on `GET https://status.terrascale.tech/api/status`.
+Deleting an endpoint also deletes its probe history (`ON DELETE CASCADE`). Verify every change on `GET https://status.terrascale.tech/api/v1/status`.

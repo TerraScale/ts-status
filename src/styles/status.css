@@ -838,3 +838,79 @@
   fill: var(--ts-cat-3);
   font-size: 10px;
 }
+
+/* The embeddable widget: a compact card filling its iframe. */
+.st-embed {
+  display: grid;
+  gap: var(--ts-s3);
+  padding: var(--ts-s4);
+}
+
+.st-embed-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ts-s2);
+  color: var(--ts-ink);
+}
+
+.st-embed-head > .ts-dot {
+  color: var(--state);
+}
+
+.st-embed-head > .ts-meta {
+  margin-left: auto;
+}
+
+.st-embed-list {
+  display: grid;
+}
+
+.st-embed-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ts-s3);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--ts-line);
+  font-size: var(--ts-fs-sm);
+}
+
+/* Integrations: snippets, badge previews and the widget preview. */
+.st-integration .ts-list-main {
+  gap: var(--ts-s1);
+}
+
+.st-mono {
+  font-family: var(--ts-font-mono);
+  font-size: var(--ts-fs-sm);
+  word-break: break-all;
+}
+
+.st-code {
+  margin: 0;
+  padding: var(--ts-s3);
+  overflow-x: auto;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-radius);
+  background: var(--ts-surface);
+  color: var(--ts-ink-2);
+  font-family: var(--ts-font-mono);
+  font-size: var(--ts-fs-xs);
+  white-space: pre;
+}
+
+.st-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ts-s2);
+}
+
+.st-embed-preview {
+  width: 100%;
+  max-width: 360px;
+  height: 260px;
+  border: 1px solid var(--ts-line);
+  border-radius: var(--ts-radius);
+  background: var(--ts-canvas);
+}

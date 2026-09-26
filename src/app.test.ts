@@ -110,7 +110,7 @@ describe("app", () => {
   });
 
   it("returns the JSON API", async () => {
-    const response = await app.fetch(request("/api/status"), seededEnv(), ctx);
+    const response = await app.fetch(request("/api/v1/status"), seededEnv(), ctx);
     const data = (await response.json()) as {
       status: string;
       range: string;
@@ -135,7 +135,7 @@ describe("app", () => {
 
   it("switches the bars' range, caching each range apart", async () => {
     const env = seededEnv();
-    const day = (await (await app.fetch(request("/api/status?range=24h"), env, ctx)).json()) as {
+    const day = (await (await app.fetch(request("/api/v1/status?range=24h"), env, ctx)).json()) as {
       groups: { components: { bars: string[] }[] }[];
     };
     expect(day.groups[0]?.components[0]?.bars).toHaveLength(24);
@@ -221,6 +221,81 @@ describe("app", () => {
     expect(body.match(/class="st-ping-cell"/g)?.length).toBeGreaterThanOrEqual(4);
     const ping = await app.fetch(request("/api/ping"), seededEnv(), ctx);
     expect(ping.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("serves the Statuspage-compatible API", async () => {
+    const env = seededEnv();
+    const summary = (await (await app.fetch(request("/api/v2/summary.json"), env, ctx)).json()) as {
+      page: { url: string };
+      status: { indicator: string };
+      components: { id: string; status: string; group: boolean }[];
+      incidents: { name: string; incident_updates: unknown[] }[];
+      scheduled_maintenances: { name: string; status: string }[];
+    };
+    expect(summary.page.url).toBe("https://status.test");
+    expect(summary.status.indicator).toBe("minor");
+    expect(summary.components.find((entry) => entry.id === "git")?.status).toBe("under_maintenance");
+    expect(summary.components.some((entry) => entry.id === "auth")).toBe(false);
+    expect(summary.incidents.map((entry) => entry.name)).toEqual(["Slow <queries>"]);
+    expect(summary.incidents[0]?.incident_updates).toHaveLength(2);
+    expect(summary.scheduled_maintenances.map((entry) => [entry.name, entry.status])).toEqual([
+      ["Forgejo upgrade", "in_progress"],
+      ["Atlas migration", "scheduled"],
+    ]);
+    const upcoming = (await (
+      await app.fetch(request("/api/v2/scheduled-maintenances/upcoming.json"), env, ctx)
+    ).json()) as {
+      scheduled_maintenances: unknown[];
+    };
+    expect(upcoming.scheduled_maintenances).toHaveLength(1);
+    expect((await app.fetch(request("/api/v2/incidents/unresolved.json"), env, ctx)).status).toBe(200);
+    expect((await app.fetch(request("/api/v2/nope.json"), env, ctx)).status).toBe(404);
+  });
+
+  it("serves the v1 incidents, regions and latency", async () => {
+    const env = seededEnv();
+    const incidents = (await (await app.fetch(request("/api/v1/incidents?limit=2"), env, ctx)).json()) as {
+      incidents: { updates: unknown[] }[];
+    };
+    expect(incidents.incidents).toHaveLength(2);
+    const regions = (await (await app.fetch(request("/api/v1/regions"), env, ctx)).json()) as {
+      regions: { code: string; live: boolean }[];
+      vantages: unknown[];
+    };
+    expect(regions.regions.find((region) => region.code === "GRU")?.live).toBe(true);
+    expect(regions.vantages).toHaveLength(4);
+    const latency = (await (
+      await app.fetch(request("/api/v1/latency?component=dashboard&range=24h"), env, ctx)
+    ).json()) as {
+      buckets: { vantages: Record<string, unknown> }[];
+    };
+    expect(latency.buckets).toHaveLength(24);
+    expect(Object.keys(latency.buckets[0]?.vantages ?? {})).toEqual(["sfo", "gru", "fra", "nrt"]);
+    expect((await app.fetch(request("/api/v1/latency?component=nope"), env, ctx)).status).toBe(404);
+  });
+
+  it("serves feeds, the calendar and badges with their types", async () => {
+    const env = seededEnv();
+    const type = async (path: string) => (await app.fetch(request(path), env, ctx)).headers.get("content-type");
+    expect(await type("/feed.atom")).toBe("application/atom+xml; charset=utf-8");
+    expect(await type("/feed.rss")).toBe("application/rss+xml; charset=utf-8");
+    expect(await type("/maintenance.ics")).toBe("text/calendar; charset=utf-8");
+    const status = await (await app.fetch(request("/badge/status.svg"), env, ctx)).text();
+    expect(status).toContain("Some systems are degraded");
+    expect(await (await app.fetch(request("/badge/auth.svg"), env, ctx)).text()).toContain("Planned");
+    expect((await app.fetch(request("/badge/nope.svg"), env, ctx)).status).toBe(404);
+  });
+
+  it("serves an embeddable widget and the integrations page", async () => {
+    const env = seededEnv();
+    const embed = await app.fetch(request("/embed"), env, ctx);
+    expect(embed.headers.get("content-security-policy")).toContain("frame-ancestors *");
+    const body = await embed.text();
+    expect(body).toContain("st-embed");
+    expect(body).not.toContain("st-top");
+    const integrations = await app.fetch(request("/integrations"), env, ctx);
+    expect(integrations.headers.get("content-security-policy")).toContain("frame-src 'self'");
+    expect(await integrations.text()).toContain("https://status.test/api/v2/summary.json");
   });
 
   it("rejects unknown paths and methods", async () => {

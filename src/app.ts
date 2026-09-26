@@ -6,33 +6,43 @@
    and rolls the probe samples up into hours and days. */
 
 import { operator } from "./api/operator";
+import { statuspage, type StatuspageDocument } from "./api/statuspage";
+import { incidentsDocument, latencyDocument, regionsDocument, statusDocument } from "./api/v1";
 import { loadDays, loadDetails } from "./db/details";
-import { loadHistory, loadIncident, loadMaintenance, loadSnapshot } from "./db/reads";
-import type { Env } from "./env";
+import { loadHistory, loadIncident, loadMaintenance, loadRecent, loadSnapshot } from "./db/reads";
 import { byHour, DEFAULT_RANGE, isRange, RANGE_KEYS, rangeStart, type RangeKey } from "./domain/range";
-import { cacheKey, oneOf, readQuery, text, type QuerySpec } from "./http/cache";
+import { HEADLINES } from "./domain/status";
+import type { Env } from "./env";
+import { badge } from "./feeds/badge";
+import { atom, calendar, rss } from "./feeds/feeds";
+import { DAY } from "./format";
+import { cacheKey, oneOf, readQuery, text as short, type QuerySpec } from "./http/cache";
 import { contentSecurityPolicy, type PolicyOptions } from "./http/csp";
 import { secure } from "./http/security";
+import { Measurements } from "./measure";
 import { overview, snapshotWindow } from "./overview";
 import { coordinator } from "./probe/coordinator";
 import { rollup } from "./probe/rollup";
-import { DAY } from "./format";
 import { createRouter } from "./router";
-import { historyPage, historyWindow } from "./views/history";
-import { incidentPage } from "./views/incident";
 import { componentPage } from "./views/component";
+import { embedPage } from "./views/embed";
+import { historyPage, historyWindow } from "./views/history";
+import { homePage } from "./views/home";
+import { incidentPage } from "./views/incident";
+import { integrationsPage } from "./views/integrations";
+import { document, type Page } from "./views/layout";
 import { MAINTENANCE_DAYS, maintenancePage } from "./views/maintenance";
+import { notFoundPage } from "./views/not-found";
 import { pingPage } from "./views/ping";
 import { regionPage } from "./views/region";
 import { uptimePage, YEAR_DAYS } from "./views/uptime";
-import { homePage } from "./views/home";
-import { document, type Page } from "./views/layout";
-import { notFoundPage } from "./views/not-found";
 
 const FONT_PRELOAD = '</fonts/oxanium.woff2>; rel=preload; as=font; type="font/woff2"; crossorigin';
 
 interface RenderContext {
   now: number;
+  /** The site's origin, for absolute links in feeds and APIs. */
+  origin: string;
   /** Only the page's <main>, for in-place refreshes. */
   fragment: boolean;
   params: Record<string, string>;
@@ -50,6 +60,19 @@ interface Route {
 
 /** Deploys and incidents shown on detail pages go back this far. */
 const DETAIL_DAYS = 90;
+
+/** Entries in the feeds and the Statuspage-compatible API. */
+const FEED_ENTRIES = 50;
+
+const json = (data: unknown, status = 200): Response =>
+  Response.json(data, { status, headers: { "access-control-allow-origin": "*" } });
+
+function text(body: string, type: string, headers: Record<string, string> = {}, status = 200): Response {
+  return new Response(body, {
+    status,
+    headers: { "content-type": `${type}; charset=utf-8`, "access-control-allow-origin": "*", ...headers },
+  });
+}
 
 const rangeQuery: QuerySpec = { range: oneOf(...RANGE_KEYS) };
 
@@ -70,7 +93,7 @@ const route = createRouter<Route>({
       component: (value) => /^[a-z0-9-]{1,40}$/.test(value),
       kind: oneOf("incident", "warning"),
       impact: oneOf("minor", "major", "critical"),
-      q: text(80),
+      q: short(80),
       month: (value) => /^20\d\d-(0[1-9]|1[0-2])$/.test(value),
     },
     policy: { formAction: "'self'" },
@@ -152,36 +175,98 @@ const route = createRouter<Route>({
       return page(maintenancePage(windows, components, context.now), context);
     },
   },
-  "/api/status": {
+  "/api/v1/status": {
     query: rangeQuery,
+    render: async (env, { now, query }) => json(statusDocument(await loadOverview(env, now, rangeOf(query)))),
+  },
+  "/api/v1/incidents": {
+    query: { limit: (value) => /^([1-9]\d?|100)$/.test(value) },
+    render: async (env, { query }) => json(incidentsDocument(await loadRecent(env, Number(query.limit ?? 50)))),
+  },
+  "/api/v1/regions": {
+    render: async (env, { now }) => json(regionsDocument(await loadOverview(env, now, "24h"))),
+  },
+  "/api/v1/latency": {
+    query: { ...rangeQuery, component: (value) => /^[a-z0-9-]{1,40}$/.test(value) },
     render: async (env, { now, query }) => {
-      const view = await loadOverview(env, now, rangeOf(query));
-      const states = (list: readonly { state: string }[]) => list.map((bucket) => bucket.state);
-      return Response.json(
-        {
-          generatedAt: new Date(view.generatedAt).toISOString(),
-          range: view.range,
-          status: view.status,
-          uptime: view.uptime,
-          lastRoundAt:
-            view.monitoring.lastRoundAt === null ? null : new Date(view.monitoring.lastRoundAt).toISOString(),
-          groups: view.groups.map(({ components, ...group }) => ({
-            ...group,
-            components: components.map(({ bars, groupId: _group, ...component }) => ({
-              ...component,
-              bars: states(bars),
-            })),
-          })),
-          regions: view.regions.map(({ mapX: _x, mapY: _y, clusters, ...region }) => ({
-            ...region,
-            clusters: clusters.map(({ bars, ...entry }) => ({ ...entry, bars: states(bars) })),
-          })),
-          days: states(view.days),
-          incidents: [...view.activeIncidents, ...view.resolvedIncidents],
-        },
-        { headers: { "access-control-allow-origin": "*" } },
+      const range: RangeKey = isRange(query.range) ? query.range : "24h";
+      const view = await loadOverview(env, now, range);
+      const component = view.groups.flatMap((group) => group.components).find((entry) => entry.id === query.component);
+      if (!component)
+        return json({ error: { code: "not_found", message: "Pass ?component= a measured component id." } }, 404);
+      const details = await loadDetails(env, {
+        endpointIds: component.clusters.map((cluster) => cluster.id),
+        componentIds: [],
+        from: rangeStart(range, now),
+        hourly: byHour(range),
+        since: now,
+      });
+      return json(latencyDocument(component, new Measurements(details.periods), range, now));
+    },
+  },
+  "/api/v2/:document": {
+    render: async (env, { now, params, origin }) => {
+      const document = params.document as StatuspageDocument;
+      if (!Object.hasOwn(statuspage, document))
+        return json({ error: { code: "not_found", message: "No such document." } }, 404);
+      const [view, recent] = await Promise.all([loadOverview(env, now, "24h"), loadRecent(env, FEED_ENTRIES)]);
+      return json(statuspage[document]({ view, ...recent, origin }));
+    },
+  },
+  "/api/v2/incidents/unresolved.json": {
+    render: async (env, { now, origin }) => {
+      const [view, recent] = await Promise.all([loadOverview(env, now, "24h"), loadRecent(env, FEED_ENTRIES)]);
+      return json(statuspage["incidents/unresolved.json"]({ view, ...recent, origin }));
+    },
+  },
+  "/api/v2/scheduled-maintenances/:which": {
+    render: async (env, { now, params, origin }) => {
+      const document = `scheduled-maintenances/${params.which}` as StatuspageDocument;
+      if (!Object.hasOwn(statuspage, document))
+        return json({ error: { code: "not_found", message: "No such document." } }, 404);
+      const [view, recent] = await Promise.all([loadOverview(env, now, "24h"), loadRecent(env, FEED_ENTRIES)]);
+      return json(statuspage[document]({ view, ...recent, origin }));
+    },
+  },
+  "/feed.atom": {
+    render: async (env, { now, origin }) =>
+      text(atom(await loadRecent(env, FEED_ENTRIES), origin, now), "application/atom+xml"),
+  },
+  "/feed.rss": {
+    render: async (env, { now, origin }) =>
+      text(rss(await loadRecent(env, FEED_ENTRIES), origin, now), "application/rss+xml"),
+  },
+  "/maintenance.ics": {
+    render: async (env, { now, origin }) =>
+      text(calendar(await loadRecent(env, FEED_ENTRIES), origin, now), "text/calendar", {
+        "content-disposition": 'inline; filename="terrascale-maintenance.ics"',
+      }),
+  },
+  "/badge/:id.svg": {
+    render: async (env, { now, params }) => {
+      const view = await loadOverview(env, now, "24h");
+      if (params.id === "status")
+        return text(
+          badge("TerraScale", view.status, HEADLINES[view.status].replace("All systems operational", "Operational")),
+          "image/svg+xml",
+        );
+      const component = view.groups.flatMap((group) => group.components).find((entry) => entry.id === params.id);
+      if (!component) return text(badge("TerraScale", "none", "Unknown component"), "image/svg+xml", {}, 404);
+      return text(
+        badge(component.name, component.status, component.lifecycle === "planned" ? "Planned" : undefined),
+        "image/svg+xml",
       );
     },
+  },
+  "/embed": {
+    policy: { frameAncestors: "*" },
+    render: async (env, context) =>
+      page(embedPage(await loadOverview(env, context.now, "24h"), context.origin), context),
+  },
+  "/integrations": {
+    policy: { frame: ["'self'"] },
+    render: async (env, context) =>
+      page(integrationsPage(await loadOverview(env, context.now, "24h"), context.origin), context),
   },
 });
 
@@ -223,7 +308,12 @@ export default {
     }
     const match = route(url.pathname);
 
-    if (!match) return secure(await page(notFoundPage(), { now, fragment: false, params: {}, query: {} }, 404), false);
+    if (!match) {
+      return secure(
+        await page(notFoundPage(), { now, origin: url.origin, fragment: false, params: {}, query: {} }, 404),
+        false,
+      );
+    }
     if (request.method !== "GET" && request.method !== "HEAD") {
       return secure(new Response("Method not allowed", { status: 405, headers: { allow: "GET, HEAD" } }), false);
     }
@@ -236,6 +326,7 @@ export default {
     if (!response) {
       response = await render(match.value, env, {
         now,
+        origin: url.origin,
         fragment,
         params: match.params,
         query,

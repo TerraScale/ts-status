@@ -66,7 +66,21 @@ Pages:
 
 `GET /api/ping` answers with the visitor's Cloudflare data center; the ping page times it as a baseline. Regions carry a `ping_url` the browser test times (`no-cors`, so any HTTPS URL on `*.terrascale.tech` works).
 
-`GET /api/status` returns the overall status, component groups with each component's 24 hourly states and uptime, regions with their clusters' ping, uptime and hourly states, and current incidents. Operators publish incidents with the [`status-warning`](skills/status-warning/SKILL.md) skill.
+Feeds and APIs, all open to any origin and listed with snippets on `/integrations`:
+
+| Path                                         | Serves                                                                                  |
+| -------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `/feed.atom`, `/feed.rss`                    | Incidents, warnings and maintenance with their updates                                  |
+| `/maintenance.ics`                           | Maintenance windows as an iCalendar subscription                                        |
+| `/badge/status.svg`, `/badge/:component.svg` | Live SVG status badges                                                                  |
+| `/embed`                                     | A compact live widget for iframes (the only page any site may frame)                    |
+| `/api/v1/status`                             | Headline, components with bars, regions, maintenance and incidents (`?range=`)          |
+| `/api/v1/incidents`                          | The latest incidents with their updates (`?limit=`)                                     |
+| `/api/v1/regions`                            | Regions, clusters, and the latest latency from each vantage                             |
+| `/api/v1/latency?component=`                 | Median and p95 per bucket, overall and per vantage (`?range=`)                          |
+| `/api/v2/*.json`                             | The Atlassian Statuspage v2 format: status, summary, components, incidents, maintenance |
+
+Operators publish incidents with the [`status-warning`](skills/status-warning/SKILL.md) skill.
 
 The operator API under `/api/operator` needs the `OPERATOR_TOKEN` bearer token (`wrangler secret put OPERATOR_TOKEN`; locally in `.dev.vars`):
 
