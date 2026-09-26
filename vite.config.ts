@@ -2,7 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { defineConfig } from "vite-plus";
-import { VANTAGES, vantageWorkerName } from "./src/probe/vantages";
+import { VANTAGES, vantageWorkerName } from "./src/probe/vantages.ts";
 
 // One Worker per vantage point, each placed near its cloud region and
 // reachable only through the status Worker's service bindings.

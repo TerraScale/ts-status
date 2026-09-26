@@ -12,7 +12,12 @@ interface VantageEnv {
 function isTarget(value: unknown): value is Target {
   if (typeof value !== "object" || value === null) return false;
   const target = value as Record<string, unknown>;
-  return typeof target.key === "string" && typeof target.url === "string" && typeof target.headers === "string";
+  return (
+    typeof target.key === "string" &&
+    typeof target.url === "string" &&
+    typeof target.headers === "string" &&
+    typeof target.body === "boolean"
+  );
 }
 
 /** "remote-GRU" or "local-EWR" → "GRU" */

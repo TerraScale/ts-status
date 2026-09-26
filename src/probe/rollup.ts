@@ -44,7 +44,7 @@ const ROLL_VANTAGES = `INSERT OR REPLACE INTO probe_hours
       json_extract(result.value, '$.ms') AS ms
     FROM probe_samples, json_each(probe_samples.results) AS result
     WHERE endpoint_id = ?1 AND at >= ?2 AND at < ?3
-  ) GROUP BY vantage`;
+  ) WHERE ok IS NOT NULL GROUP BY vantage`;
 
 const ROLL_DAY = `INSERT OR REPLACE INTO probe_days
     (endpoint_id, day, vantage, checks, failures, degraded, latency_sum, latency_max, hist)
