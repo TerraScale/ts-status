@@ -4,7 +4,7 @@
 
 import regionMap from "../assets/region-map.svg?raw";
 import { byHour, RANGES } from "../domain/range";
-import { STATES, STATE_LABELS, type Status, type TimelineState } from "../domain/status";
+import { HEADLINES, STATES, STATE_LABELS, type TimelineState } from "../domain/status";
 import { formatClock, formatDay, formatUptime } from "../format";
 import { html, raw, type Html } from "../html";
 import {
@@ -39,14 +39,6 @@ import {
 } from "./components";
 import type { Page } from "./layout";
 import { maintenanceItems } from "./maintenance";
-
-const HEADLINES: Record<Status, string> = {
-  operational: "All systems operational",
-  maintenance: "Scheduled maintenance in progress",
-  degraded: "Some systems are degraded",
-  partial_outage: "Partial system outage",
-  major_outage: "Major system outage",
-};
 
 const LEGEND: TimelineState[] = [...STATES, "none"];
 

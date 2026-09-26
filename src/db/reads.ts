@@ -309,3 +309,36 @@ export async function loadMaintenance(
   const [found, components] = await db.batch([db.prepare(MAINTENANCE).bind(sqlTime(from)), db.prepare(COMPONENTS)]);
   return { windows: incidents(found), components: (components?.results ?? []) as Component[] };
 }
+
+// The latest incidents of every kind, by last change.
+// Both select the same incidents, so their order must be total.
+const RECENT_ORDER = "ORDER BY updated_at DESC, id DESC LIMIT ?1";
+
+const RECENT = `SELECT ${INCIDENT_COLUMNS} FROM incidents ${RECENT_ORDER}`;
+
+const RECENT_UPDATES = `SELECT id, incident_id AS incidentId, status, body, ${iso("created_at")} AS createdAt
+  FROM incident_updates WHERE incident_id IN (SELECT id FROM incidents ${RECENT_ORDER})
+  ORDER BY created_at DESC, rowid DESC`;
+
+export interface Recent {
+  incidents: Incident[];
+  /** Updates of those incidents, newest first. */
+  updates: IncidentUpdate[];
+  components: Component[];
+}
+
+/** The latest `limit` incidents, warnings and maintenance windows with
+    their updates, for feeds and APIs. */
+export async function loadRecent(env: Env, limit: number): Promise<Recent> {
+  const db = session(env);
+  const [found, updates, components] = await db.batch([
+    db.prepare(RECENT).bind(limit),
+    db.prepare(RECENT_UPDATES).bind(limit),
+    db.prepare(COMPONENTS),
+  ]);
+  return {
+    incidents: incidents(found),
+    updates: (updates?.results ?? []) as IncidentUpdate[],
+    components: (components?.results ?? []) as Component[],
+  };
+}

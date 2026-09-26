@@ -67,6 +67,21 @@ export async function loadDetails(env: Env, query: DetailQuery): Promise<Details
   };
 }
 
+/** Hourly or daily rollups of the endpoints from `from` on, per vantage and
+    for the consensus. */
+export async function loadPeriods(
+  env: Env,
+  endpointIds: readonly string[],
+  from: number,
+  hourly: boolean,
+): Promise<VantagePeriod[]> {
+  const { results } = await session(env)
+    .prepare(hourly ? periods("probe_hours", "hour") : periods("probe_days", "day"))
+    .bind(sqlTime(from), JSON.stringify(endpointIds))
+    .all<VantagePeriod>();
+  return results ?? [];
+}
+
 /** Daily consensus rollups of the endpoints from `from` on. */
 export async function loadDays(env: Env, endpointIds: readonly string[], from: number): Promise<VantagePeriod[]> {
   const { results } = await session(env)

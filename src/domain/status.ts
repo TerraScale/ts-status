@@ -68,6 +68,13 @@ export interface IncidentUpdate {
   createdAt: string;
 }
 
+/** Updates grouped by their incident, keeping their order. */
+export function updatesByIncident(updates: readonly IncidentUpdate[]): Map<string, IncidentUpdate[]> {
+  const grouped = new Map<string, IncidentUpdate[]>();
+  for (const update of updates) grouped.set(update.incidentId, [...(grouped.get(update.incidentId) ?? []), update]);
+  return grouped;
+}
+
 /** A span of time in one state. */
 export interface Segment {
   from: number;
@@ -91,6 +98,15 @@ export const STATE_LABELS: Record<TimelineState, string> = {
   partial_outage: "Partial outage",
   major_outage: "Major outage",
   none: "No data",
+};
+
+/** The headline for each overall state. */
+export const HEADLINES: Record<Status, string> = {
+  operational: "All systems operational",
+  maintenance: "Scheduled maintenance in progress",
+  degraded: "Some systems are degraded",
+  partial_outage: "Partial system outage",
+  major_outage: "Major system outage",
 };
 
 /** The state an active incident implies. */
