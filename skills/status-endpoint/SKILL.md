@@ -21,13 +21,15 @@ A component's status is measured from four vantage points: a cluster is degraded
 
 ## Launch a planned component
 
-When a planned component goes live, confirm its health check answers, then enable it:
+When a planned component goes live, confirm its health check answers, then launch it through the operator API (see the `status-warning` skill for the `api` helper and token). Launching enables its endpoints; setting it back to `planned` pauses them.
 
 ```sh
 curl -fsS -o /dev/null -w '%{http_code} %{time_total}s\n' https://auth.terrascale.tech/readyz
-npm exec -- wrangler d1 execute ts-status-db --remote --command \
-  "UPDATE components SET lifecycle = 'active' WHERE id = 'auth'; UPDATE endpoints SET enabled = 1 WHERE component_id = 'auth';"
+echo '{ "lifecycle": "active" }' > launch.json
+api PATCH /components/auth launch.json
 ```
+
+Pause or resume one endpoint with `PATCH /endpoints/ID` and `{ "enabled": false }`.
 
 ## Add a cluster
 
@@ -59,6 +61,6 @@ npm exec -- wrangler d1 execute ts-status-db --remote --command \
 
 Place the hub by eye on `src/assets/region-map.svg` (x grows east, y grows south).
 
-## Pause or remove
+## Remove
 
-Pause probing with `UPDATE endpoints SET enabled = 0 WHERE id = '…'`. Deleting an endpoint also deletes its probe history (`ON DELETE CASCADE`). Verify every change on `GET https://status.terrascale.tech/api/status`.
+Deleting an endpoint also deletes its probe history (`ON DELETE CASCADE`). Verify every change on `GET https://status.terrascale.tech/api/status`.

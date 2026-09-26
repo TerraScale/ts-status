@@ -5,6 +5,7 @@
    every CACHE_SECONDS. Its minute cron keeps the probe coordinator armed
    and rolls the probe samples up into hours and days. */
 
+import { operator } from "./api/operator";
 import { loadHistory, loadIncident, loadMaintenance, loadSnapshot } from "./db/reads";
 import type { Env } from "./env";
 import { DEFAULT_RANGE, isRange, RANGE_KEYS, type RangeKey } from "./domain/range";
@@ -143,8 +144,9 @@ async function render(route: Route, env: Env, context: RenderContext): Promise<R
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
-    const match = route(url.pathname);
     const now = Date.now();
+    if (url.pathname.startsWith("/api/operator/")) return secure(await operator(request, env, now), false);
+    const match = route(url.pathname);
 
     if (!match) return secure(await page(notFoundPage(), { now, fragment: false, params: {}, query: {} }, 404), false);
     if (request.method !== "GET" && request.method !== "HEAD") {

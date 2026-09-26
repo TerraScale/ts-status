@@ -10,12 +10,18 @@ const MIGRATIONS = join(fileURLToPath(import.meta.url), "../../../migrations");
 
 type Value = string | number | boolean | null;
 
+interface Executed {
+  results: unknown[];
+  success: true;
+  meta: { changes: number };
+}
+
 interface Statement {
   bind: (...values: Value[]) => Statement;
   all: <T>() => Promise<{ results: T[]; success: true }>;
   first: <T>() => Promise<T | null>;
-  run: () => Promise<{ results: unknown[]; success: true }>;
-  execute: () => { results: unknown[]; success: true };
+  run: () => Promise<Executed>;
+  execute: () => Executed;
 }
 
 export interface TestD1 {
@@ -35,7 +41,14 @@ export function testD1(): D1Database & TestD1 {
 
   const statement = (sql: string, values: Value[] = []): Statement => {
     const params = values.map((value): SQLInputValue => (typeof value === "boolean" ? Number(value) : value));
-    const execute = () => ({ results: sqlite.prepare(sql).all(...params) as unknown[], success: true as const });
+    const execute = () => {
+      const prepared = sqlite.prepare(sql);
+      if (prepared.columns().length > 0) {
+        return { results: prepared.all(...params) as unknown[], success: true as const, meta: { changes: 0 } };
+      }
+      const { changes } = prepared.run(...params);
+      return { results: [] as unknown[], success: true as const, meta: { changes: Number(changes) } };
+    };
     return {
       bind: (...next) => statement(sql, next),
       all: async <T>() => execute() as { results: T[]; success: true },
