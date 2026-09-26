@@ -9,7 +9,8 @@ import { SLOW_MS, type TimelineState } from "./status";
 export interface VantageResult {
   vantage: string;
   ok: boolean;
-  latencyMs: number;
+  /** Null when the time measured is not the endpoint's own. */
+  latencyMs: number | null;
   error: string | null;
 }
 
@@ -45,7 +46,7 @@ export function consensus(results: readonly VantageResult[]): Consensus {
   const passed = results.filter((result) => result.ok);
   const ok = passed.length;
   const total = results.length;
-  const latencyMs = median(passed.map((result) => result.latencyMs));
+  const latencyMs = median(passed.flatMap((result) => (result.latencyMs === null ? [] : [result.latencyMs])));
   let state: TimelineState;
   if (total < MIN_VANTAGES) state = "none";
   else if (isDown(ok, total)) state = "major_outage";

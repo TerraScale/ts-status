@@ -71,11 +71,26 @@ describe("judge", () => {
     expect(judge(spec, { status: 503, error: null, body: "" })).toMatchObject({ outcome: "fail", error: "HTTP 503" });
   });
 
+  it("reports an indirect source that does not mention the component as unknown", () => {
+    const fra = {
+      ...spec,
+      indirect: true,
+      assertions: [{ path: "regions[code=FRA].available", op: "eq" as const, value: true }],
+    };
+    expect(judge(fra, { status: 200, error: null, body })).toMatchObject({ outcome: "unknown", error: "Not reported" });
+    expect(judge({ ...spec, indirect: true }, { status: 200, error: null, body }).outcome).toBe("ok");
+  });
+
   it("checks keywords and needs JSON only for assertions", () => {
     const keyword = { ...spec, keyword: "TerraScale", assertions: [], extract: {} };
     expect(judge(keyword, { status: 200, error: null, body: "<title>TerraScale</title>" }).outcome).toBe("ok");
     expect(judge(keyword, { status: 200, error: null, body: "<title>Oops</title>" }).error).toBe("Keyword missing");
     expect(judge(spec, { status: 200, error: null, body: "not json" }).error).toBe("Invalid JSON");
+    expect(judge({ ...spec, assertions: [] }, { status: 200, error: null, body: "not json" })).toEqual({
+      outcome: "ok",
+      error: null,
+      values: {},
+    });
   });
 
   it("covers every operator", () => {
@@ -96,7 +111,8 @@ describe("parseSpec", () => {
       parseSpec({
         expectStatus: "2xx",
         keyword: "",
-        assertions: '[{"path":"status","op":"eq","value":"ok"},{"path":"a..b","op":"eq"},{"path":"x","op":"nope"}]',
+        assertions:
+          '[{"path":"status","op":"eq","value":"ok"},{"path":"a..b","op":"eq"},{"path":"x","op":"nope"},{"path":"x","op":"eq"},{"path":"x","op":"lt","value":"1"}]',
         extract: '{"version":"version","bad":"a..","n":1}',
         indirect: 0,
       }),

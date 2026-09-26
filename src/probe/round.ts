@@ -31,8 +31,9 @@ export interface Sample {
   ok: number;
   total: number;
   latencyMs: number | null;
-  /** Each vantage's result; `ok` is null where the result was unknown. */
-  results: { v: string; ok: 0 | 1 | null; ms: number; e: string | null }[];
+  /** Each vantage's result; `ok` is null where the result was unknown, and
+      `ms` is null where the time measured is not the endpoint's own. */
+  results: { v: string; ok: 0 | 1 | null; ms: number | null; e: string | null }[];
   /** Values extracted by the first passing vantage. */
   values: Record<string, unknown> | null;
 }
@@ -63,6 +64,8 @@ export function evaluate(
   const next: Record<string, number> = {};
   const samples = endpoints.map((endpoint): Sample => {
     const key = keyOf(endpoint);
+    // An indirect source's response time is the source's, not the endpoint's.
+    const latencyOf = (observation: { latencyMs: number }) => (endpoint.spec.indirect ? null : observation.latencyMs);
     const judged = answered.flatMap((response) => {
       const observation = response.results.find((entry) => entry.key === key);
       return observation
@@ -74,7 +77,7 @@ export function evaluate(
       .map((entry) => ({
         vantage: entry.vantage,
         ok: entry.judgement.outcome === "ok",
-        latencyMs: entry.observation.latencyMs,
+        latencyMs: latencyOf(entry.observation),
         error: entry.judgement.error,
       }));
     const round = consensus(known);
@@ -90,7 +93,7 @@ export function evaluate(
       results: judged.map((entry) => ({
         v: entry.vantage,
         ok: entry.judgement.outcome === "unknown" ? null : entry.judgement.outcome === "ok" ? 1 : 0,
-        ms: entry.observation.latencyMs,
+        ms: latencyOf(entry.observation),
         e: entry.judgement.error,
       })),
       values: values && Object.keys(values).length > 0 ? values : null,

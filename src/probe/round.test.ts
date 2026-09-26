@@ -64,7 +64,7 @@ describe("evaluate", () => {
     expect(samples[1]?.results[0]).toEqual({
       v: "sfo",
       ok: 0,
-      ms: 50,
+      ms: null,
       e: "Expected regions[code=SFO].available eq true",
     });
     // The first down round is a streak of one; the second confirms it.
@@ -78,8 +78,8 @@ describe("evaluate", () => {
     const { samples } = evaluate(endpoints, [answer("sfo", 503, 503), answer("fra", 503, 503)], {});
     expect(samples.map((sample) => sample.state)).toEqual(["none", "none", "degraded"]);
     expect(samples[0]?.results).toEqual([
-      { v: "sfo", ok: null, ms: 50, e: "HTTP 503" },
-      { v: "fra", ok: null, ms: 50, e: "HTTP 503" },
+      { v: "sfo", ok: null, ms: null, e: "HTTP 503" },
+      { v: "fra", ok: null, ms: null, e: "HTTP 503" },
     ]);
   });
 

@@ -137,12 +137,18 @@ export function judge(spec: CheckSpec, observation: Observation): Judgement {
   try {
     json = JSON.parse(body);
   } catch {
-    return fail("Invalid JSON");
+    // Extraction alone never fails an endpoint; only assertions need JSON.
+    return spec.assertions.length === 0 ? { outcome: "ok", error: null, values: {} } : fail("Invalid JSON");
   }
   const values: Record<string, unknown> = {};
   for (const [name, path] of Object.entries(spec.extract)) {
     const value = select(json, path);
     if (value !== undefined) values[name] = value;
+  }
+  // An indirect source that does not mention the component says nothing
+  // about it, so the result is unknown rather than a failure.
+  if (spec.indirect && spec.assertions.some((assertion) => select(json, assertion.path) === undefined)) {
+    return { outcome: "unknown", error: "Not reported", values };
   }
   const broken = spec.assertions.find((assertion) => !holds(assertion, select(json, assertion.path)));
   return broken
@@ -153,11 +159,20 @@ export function judge(spec: CheckSpec, observation: Observation): Judgement {
 function isAssertion(value: unknown): value is Assertion {
   if (typeof value !== "object" || value === null) return false;
   const entry = value as Record<string, unknown>;
-  return (
-    typeof entry.path === "string" &&
-    parsePath(entry.path) !== null &&
-    ["eq", "ne", "lt", "gt", "exists", "contains"].includes(String(entry.op))
-  );
+  if (typeof entry.path !== "string" || parsePath(entry.path) === null) return false;
+  switch (entry.op) {
+    case "exists":
+      return true;
+    case "lt":
+    case "gt":
+      return typeof entry.value === "number";
+    case "eq":
+    case "ne":
+    case "contains":
+      return entry.value !== undefined;
+    default:
+      return false;
+  }
 }
 
 /** Reads a stored check spec, dropping anything malformed. */
