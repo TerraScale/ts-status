@@ -914,3 +914,8 @@
   border-radius: var(--ts-radius);
   background: var(--ts-canvas);
 }
+
+.st-tls[data-state] {
+  color: var(--state);
+  font-weight: 600;
+}

@@ -27,6 +27,15 @@ export interface VantageSeen {
   colo: string | null;
 }
 
+/** The latest logged TLS certificate of a host. */
+export interface Certificate {
+  host: string;
+  notAfter: string | null;
+  issuer: string | null;
+  checkedAt: string;
+  error: string | null;
+}
+
 export interface Snapshot {
   groups: ComponentGroup[];
   components: Component[];
@@ -35,6 +44,7 @@ export interface Snapshot {
   endpoints: Endpoint[];
   latest: LatestSample[];
   vantages: VantageSeen[];
+  certificates: Certificate[];
   /** Consensus counts per endpoint and hour, then per endpoint and day. */
   hours: ProbePeriod[];
   days: ProbePeriod[];
@@ -83,8 +93,10 @@ const CURRENT_INCIDENTS = `SELECT ${INCIDENT_COLUMNS} FROM incidents
 const REGIONS = `SELECT code, name, country, map_x AS mapX, map_y AS mapY, ping_url AS pingUrl, ping_label AS pingLabel
   FROM regions ORDER BY position, code`;
 
-const ENDPOINTS = `SELECT id, component_id AS componentId, region_code AS regionCode, cluster, provider
+const ENDPOINTS = `SELECT id, component_id AS componentId, region_code AS regionCode, cluster, provider, url
   FROM endpoints WHERE enabled = 1 ORDER BY position, id`;
+
+const CERTIFICATES = `SELECT host, ${iso("not_after")} AS notAfter, issuer, ${iso("checked_at")} AS checkedAt, error FROM tls_certs`;
 
 // Joined from the endpoints so every lookup is a primary key seek.
 const LATEST = `SELECT s.endpoint_id AS endpointId, ${iso("s.at")} AS at, s.state, s.ok, s.total,
@@ -131,7 +143,7 @@ const HOUR_SERIES = `SELECT p.endpoint_id AS endpointId, ${iso("p.hour")} AS sta
   FROM endpoints e JOIN probe_hours p ON p.endpoint_id = e.id AND p.hour >= ?1 AND p.hour < ?2 AND p.vantage = 'all'
   WHERE e.id IN (SELECT value FROM json_each(?3))`;
 
-const ALL_ENDPOINTS = `SELECT id, component_id AS componentId, region_code AS regionCode, cluster, provider
+const ALL_ENDPOINTS = `SELECT id, component_id AS componentId, region_code AS regionCode, cluster, provider, url
   FROM endpoints ORDER BY position, id`;
 
 function parseResults(text: string): VantageSample[] {
@@ -164,17 +176,20 @@ export interface SnapshotWindow {
 /** Everything the status page and API show, in one batched round trip. */
 export async function loadSnapshot(env: Env, window: SnapshotWindow): Promise<Snapshot> {
   const db = session(env);
-  const [groups, components, current, regions, endpoints, latest, hours, days, vantages] = await db.batch([
-    db.prepare(GROUPS),
-    db.prepare(COMPONENTS),
-    db.prepare(CURRENT_INCIDENTS).bind(sqlTime(window.incidentsFrom)),
-    db.prepare(REGIONS),
-    db.prepare(ENDPOINTS),
-    db.prepare(LATEST),
-    db.prepare(periods("probe_hours", "hour")).bind(sqlTime(window.hoursFrom)),
-    db.prepare(periods("probe_days", "day")).bind(sqlTime(window.daysFrom)),
-    db.prepare(VANTAGES),
-  ]);
+  const [groups, components, current, regions, endpoints, latest, hours, days, vantages, certificates] = await db.batch(
+    [
+      db.prepare(GROUPS),
+      db.prepare(COMPONENTS),
+      db.prepare(CURRENT_INCIDENTS).bind(sqlTime(window.incidentsFrom)),
+      db.prepare(REGIONS),
+      db.prepare(ENDPOINTS),
+      db.prepare(LATEST),
+      db.prepare(periods("probe_hours", "hour")).bind(sqlTime(window.hoursFrom)),
+      db.prepare(periods("probe_days", "day")).bind(sqlTime(window.daysFrom)),
+      db.prepare(VANTAGES),
+      db.prepare(CERTIFICATES),
+    ],
+  );
   return {
     groups: (groups?.results ?? []) as ComponentGroup[],
     components: (components?.results ?? []) as Component[],
@@ -186,6 +201,7 @@ export async function loadSnapshot(env: Env, window: SnapshotWindow): Promise<Sn
       results: parseResults(sample.results),
     })),
     vantages: (vantages?.results ?? []) as VantageSeen[],
+    certificates: (certificates?.results ?? []) as Certificate[],
     hours: (hours?.results ?? []) as ProbePeriod[],
     days: (days?.results ?? []) as ProbePeriod[],
   };

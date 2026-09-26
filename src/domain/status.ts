@@ -254,6 +254,7 @@ export interface Endpoint {
   regionCode: string | null;
   cluster: string;
   provider: Provider;
+  url: string;
 }
 
 /** One vantage's result in a sample; `ok` is null where it was unknown. */

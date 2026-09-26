@@ -2,8 +2,9 @@
    before this runs; the Worker renders the pages and the JSON API from D1
    and keeps each response in the edge cache for a few seconds, so traffic
    spikes during an incident cost at most one D1 batch per URL per colo
-   every CACHE_SECONDS. Its minute cron keeps the probe coordinator armed
-   and rolls the probe samples up into hours and days. */
+   every CACHE_SECONDS. Its minute cron keeps the probe coordinator armed,
+   rolls the probe samples up into hours and days, and hourly refreshes the
+   TLS certificates of the monitored hosts. */
 
 import { operator } from "./api/operator";
 import { statuspage, type StatuspageDocument } from "./api/statuspage";
@@ -23,6 +24,7 @@ import { Measurements } from "./measure";
 import { overview, snapshotWindow } from "./overview";
 import { coordinator } from "./probe/coordinator";
 import { rollup } from "./probe/rollup";
+import { CHECK_MINUTE, checkCertificates } from "./probe/tls";
 import { createRouter } from "./router";
 import { componentPage } from "./views/component";
 import { embedPage } from "./views/embed";
@@ -330,6 +332,9 @@ export default {
   },
 
   async scheduled(controller, env, ctx): Promise<void> {
-    ctx.waitUntil(Promise.all([coordinator(env).arm(), rollup(env, controller.scheduledTime)]));
+    const now = controller.scheduledTime;
+    const work: Promise<unknown>[] = [coordinator(env).arm(), rollup(env, now)];
+    if (new Date(now).getUTCMinutes() === CHECK_MINUTE) work.push(checkCertificates(env, now));
+    ctx.waitUntil(Promise.all(work));
   },
 } satisfies ExportedHandler<Env>;

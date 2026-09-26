@@ -4,6 +4,7 @@
 import { DEFAULT_RANGE, RANGE_KEYS, RANGES, type RangeKey } from "../domain/range";
 import { html, raw, type Html } from "../html";
 import type { ClusterOverview } from "../overview";
+import { EXPIRY_WARNING_MS } from "../probe/tls";
 import { sparkline } from "./charts/sparkline";
 import { percentile } from "../domain/histogram";
 import {
@@ -254,10 +255,13 @@ export function clusterRow(
 ): Html {
   const summary = `${entry.componentName} on ${entry.cluster}: ${formatUptime(entry.uptime)} of checks up over the last ${RANGES[range].label}, currently ${STATE_LABELS[entry.status].toLowerCase()}`;
   const where = `${PROVIDERS[entry.provider]} · ${entry.cluster}${entry.regionCode ? ` · ${entry.regionCode}` : " · global"}`;
+  const certificate = entry.certificate?.notAfter
+    ? html` · <span class="st-tls" title="${entry.certificate.issuer ?? "TLS certificate"}"${Date.parse(entry.certificate.notAfter) - Date.now() < EXPIRY_WARNING_MS ? raw(' data-state="degraded"') : ""}>TLS until ${formatDay(Date.parse(entry.certificate.notAfter))}</span>`
+    : "";
   return html`<li class="ts-list-item st-service">
   <div class="ts-list-main">
     <h4 class="ts-strong">${title === "component" ? html`<a class="st-incident-link" href="${componentHref(entry.componentId)}">${entry.componentName}</a>` : entry.cluster}</h4>
-    <p class="ts-meta">${where}</p>
+    <p class="ts-meta">${where}${certificate}</p>
   </div>
   <div class="st-service-state">
     ${sparkline(entry.latency)}
