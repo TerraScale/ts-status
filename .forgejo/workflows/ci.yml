@@ -29,6 +29,12 @@ jobs:
         shell: bash
         run: npm ci --ignore-scripts
 
+      # Run the locked toolchain, not the runner's global vite-plus install,
+      # whose native binding can drift from the image.
+      - name: Use the locked toolchain
+        shell: bash
+        run: echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+
       # Tasks run through the vite-plus runner (vpr) instead of npm scripts.
       - name: Type-check the application
         shell: bash
