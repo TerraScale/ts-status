@@ -30,7 +30,12 @@ export function historyWindow(query: HistoryQuery, now: number): { from: number;
     next.setUTCMonth(next.getUTCMonth() + 1);
     return { from, to: next.getTime() };
   }
-  return { from: now - 365 * DAY, to: now + DAY };
+  // The first of the month HISTORY_MONTHS - 1 months back, like the links.
+  const start = new Date(now);
+  start.setUTCDate(1);
+  start.setUTCHours(0, 0, 0, 0);
+  start.setUTCMonth(start.getUTCMonth() - (HISTORY_MONTHS - 1));
+  return { from: start.getTime(), to: now + DAY };
 }
 
 function byMonth(incidents: readonly Incident[]): Map<string, Incident[]> {
@@ -88,8 +93,11 @@ function months(query: HistoryQuery, now: number): Html {
     date.setUTCMonth(date.getUTCMonth() - index);
     return date.toISOString().slice(0, 7);
   });
+  // The range on view is plain text; only the others link.
   const link = (month: string | undefined, label: string) =>
-    html`<a href="${href({ ...query, month })}"${query.month === month ? raw(' aria-current="true"') : ""}>${label}</a>`;
+    query.month === month
+      ? html`<span aria-current="true">${label}</span>`
+      : html`<a href="${href({ ...query, month })}">${label}</a>`;
   return html`<nav class="st-range st-months" aria-label="Months">${link(undefined, "12 months")}${list.map((month) =>
     link(month, formatMonth(`${month}-01T00:00:00Z`).replace(/ \d{4}$/, "")),
   )}</nav>`;

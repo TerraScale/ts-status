@@ -150,10 +150,6 @@ export function isClosed(incident: Incident, now: number): boolean {
     : incident.status === "resolved";
 }
 
-/** Whether an incident concerns a component: it names it, or names none. */
-export const affects = (incident: Pick<Incident, "components">, componentId: string): boolean =>
-  incident.components.length === 0 || incident.components.includes(componentId);
-
 /** The headline: the components taken together, worsened by the impact of
     every active platform-wide incident, or maintenance while a platform-wide
     window is in progress. Incidents naming components count through those

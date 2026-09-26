@@ -256,6 +256,10 @@
   transition: border-color var(--ts-fast) var(--ts-ease);
 }
 
+.ts-input:hover {
+  border-color: rgb(148 163 184 / 0.34);
+}
+
 .ts-input::placeholder {
   color: var(--ts-ink-3);
 }
@@ -276,7 +280,8 @@
   padding: 0 var(--ts-s4);
   border: 0;
   border-radius: var(--ts-radius);
-  background: var(--ts-accent);
+  /* Darkened so white labels meet 4.5:1; hover lifts it to the accent. */
+  background: color-mix(in oklab, var(--ts-accent) 84%, black);
   color: #ffffff;
   font: inherit;
   font-size: var(--ts-fs-sm);
@@ -286,5 +291,5 @@
 }
 
 .ts-button:hover {
-  background: color-mix(in oklab, var(--ts-accent) 85%, white);
+  background: var(--ts-accent);
 }

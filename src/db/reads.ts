@@ -3,6 +3,8 @@
    datetime text ("YYYY-MM-DD HH:MM:SS", UTC) and returned as ISO 8601. */
 
 import type { Env } from "../env";
+import { HOUR } from "../format";
+import { SAMPLE_RETENTION_MS } from "../probe/retention";
 import {
   countsOf,
   probeState,
@@ -55,7 +57,9 @@ function toIncident(row: IncidentRow): Incident {
     const value: unknown = JSON.parse(row.components);
     if (Array.isArray(value)) components = value.filter((item): item is string => typeof item === "string");
   } catch {
-    // No components: the whole platform.
+    // json_group_array always yields valid JSON, so this is corruption: say
+    // so rather than quietly treating the incident as platform-wide.
+    console.error("malformed incident components", row.id, row.components);
   }
   return { ...row, message: row.message ?? "", components };
 }
@@ -240,8 +244,9 @@ export interface IncidentDetail {
   window: { from: number; to: number };
 }
 
-/** Raw rounds are kept this long; older incidents chart hourly rollups. */
-const ROUNDS_KEPT_MS = 47 * 3_600_000;
+/** Raw rounds are read this far back, an hour short of their retention so
+    pruning never cuts into a window; older incidents chart hourly rollups. */
+const ROUNDS_KEPT_MS = SAMPLE_RETENTION_MS - HOUR;
 
 /** An incident with its timeline, affected components, and the latency of
     their endpoints from half an hour before to half an hour after it. */
@@ -266,10 +271,9 @@ export async function loadIncident(env: Env, id: string, now: number): Promise<I
   const start = Date.parse(incident.scheduledStart ?? incident.createdAt);
   const end = Date.parse(incident.resolvedAt ?? incident.scheduledEnd ?? new Date(now).toISOString());
   const window = { from: start - 30 * 60_000, to: Math.min(now, Math.max(end, start) + 30 * 60_000) };
-  const resolution =
-    now - window.from <= ROUNDS_KEPT_MS && window.to - window.from <= 12 * 3_600_000 ? "round" : "hour";
+  const resolution = now - window.from <= ROUNDS_KEPT_MS && window.to - window.from <= 12 * HOUR ? "round" : "hour";
   const ids = JSON.stringify(affected.map((endpoint) => endpoint.id));
-  const hourFrom = window.from - (window.from % 3_600_000);
+  const hourFrom = window.from - (window.from % HOUR);
   const { results } = await db
     .prepare(resolution === "round" ? SAMPLE_SERIES : HOUR_SERIES)
     .bind(sqlTime(resolution === "round" ? window.from : hourFrom), sqlTime(window.to), ids)

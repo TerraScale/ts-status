@@ -183,6 +183,9 @@ export function timing(incident: Incident): Html {
   return html`${started} · resolved after ${lasted}`;
 }
 
+/** An incident's page. */
+export const incidentHref = (id: string): string => `/incidents/${encodeURIComponent(id)}`;
+
 /** The names of the components an incident affects, or the platform. */
 export function affected(incident: Incident, names: ReadonlyMap<string, string>): string {
   if (incident.components.length === 0) return "All components";
@@ -194,7 +197,7 @@ export function incidentAlert(incident: Incident, now: number, names: ReadonlyMa
   const state = incident.kind === "maintenance" ? "maintenance" : IMPACT_STATUS[incident.impact];
   return html`<article class="ts-alert" data-state="${state}">
   <div class="ts-row-between">
-    <h3 class="ts-alert-title"><a class="st-incident-link" href="/incidents/${encodeURIComponent(incident.id)}">${incident.kind === "warning" ? "Warning: " : ""}${incident.title}</a></h3>
+    <h3 class="ts-alert-title"><a class="st-incident-link" href="${incidentHref(incident.id)}">${incident.kind === "warning" ? "Warning: " : ""}${incident.title}</a></h3>
     <div class="ts-row">${labels(incident, now)}</div>
   </div>
   <p class="ts-alert-body">${incident.message}</p>
@@ -207,7 +210,7 @@ export function incidentItem(incident: Incident, now: number, names: ReadonlyMap
   return html`<li class="ts-list-item">
   <article class="ts-list-main">
     <div class="ts-row">
-      <h3 class="st-incident-title"><a class="st-incident-link" href="/incidents/${encodeURIComponent(incident.id)}">${incident.title}</a></h3>
+      <h3 class="st-incident-title"><a class="st-incident-link" href="${incidentHref(incident.id)}">${incident.title}</a></h3>
       ${labels(incident, now)}
     </div>
     <p class="st-incident-body">${incident.message}</p>

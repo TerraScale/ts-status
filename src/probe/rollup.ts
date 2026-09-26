@@ -8,10 +8,7 @@ import { MIN_VANTAGES } from "../domain/consensus";
 import { histogramSql, mergedHistogramSql } from "../domain/histogram";
 import type { Env } from "../env";
 import { DAY, HOUR, startOfDay, startOfHour } from "../format";
-
-export const SAMPLE_RETENTION_MS = 2 * DAY;
-export const HOUR_RETENTION_MS = 90 * DAY;
-export const DAY_RETENTION_MS = 400 * DAY;
+import { DAY_RETENTION_MS, HOUR_RETENTION_MS, SAMPLE_RETENTION_MS } from "./retention";
 
 /** The previous hour and day are rolled once more this long after they end. */
 const SETTLE_MS = 3 * 60_000;
