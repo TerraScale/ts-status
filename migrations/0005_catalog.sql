@@ -1,8 +1,8 @@
 -- The real catalog: regions, component groups, the components customers use,
 -- and the endpoints whose health checks measure them. Status is measured
 -- now, so the hand-edited services and their status events are gone.
-DROP TABLE status_events;
-DROP TABLE services;
+DROP TABLE IF EXISTS status_events;
+DROP TABLE IF EXISTS services;
 
 CREATE TABLE regions (
   code TEXT PRIMARY KEY,
@@ -89,10 +89,10 @@ INSERT INTO components (id, group_id, name, description, lifecycle, position) VA
 -- Endpoints of planned components stay disabled until they launch.
 INSERT INTO endpoints (id, component_id, region_code, cluster, provider, url, headers, enabled, position) VALUES
   ('dashboard-fly-gru', 'dashboard', 'GRU', 'gru', 'fly', 'https://dash.terrascale.tech/health/ready', '{"fly-prefer-region":"gru"}', 1, 1),
-  ('website-pages', 'website', NULL, 'Cloudflare Pages', 'cloudflare', 'https://terrascale.tech/', '{}', 1, 1),
-  ('atlas-workers', 'atlas', NULL, 'Cloudflare Workers', 'cloudflare', 'https://atlas.terrascale.tech/api/v1/regions', '{}', 1, 1),
-  ('auth-edge', 'auth', NULL, 'Cloudflare Workers', 'cloudflare', 'https://auth.terrascale.tech/readyz', '{}', 0, 1),
+  ('website-pages', 'website', NULL, 'pages', 'cloudflare', 'https://terrascale.tech/', '{}', 1, 1),
+  ('atlas-workers', 'atlas', NULL, 'workers', 'cloudflare', 'https://atlas.terrascale.tech/api/v1/regions', '{}', 1, 1),
+  ('auth-edge', 'auth', NULL, 'workers', 'cloudflare', 'https://auth.terrascale.tech/readyz', '{}', 0, 1),
   ('data-api-oci-sfo', 'data-api', 'SFO', 'us-sanjose-1', 'oci', 'https://sfo.api.terrascale.tech/api/v1/health', '{}', 0, 1),
   ('data-api-oci-gru', 'data-api', 'GRU', 'sa-saopaulo-1', 'oci', 'https://gru.api.terrascale.tech/api/v1/health', '{}', 0, 2),
   ('data-api-oci-fra', 'data-api', 'FRA', 'eu-frankfurt-1', 'oci', 'https://fra.api.terrascale.tech/api/v1/health', '{}', 0, 3),
-  ('git-forgejo', 'git', NULL, 'git.terrascale.tech', 'other', 'https://git.terrascale.tech/api/healthz', '{}', 1, 1);
+  ('git-forgejo', 'git', NULL, 'forgejo', 'other', 'https://git.terrascale.tech/api/healthz', '{}', 1, 1);

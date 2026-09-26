@@ -107,6 +107,12 @@ describe("probes", () => {
     expect(probeState({ checks: 60, failures: 60 })).toBe("major_outage");
   });
 
+  it("calls too few failed probes degraded, not an outage", () => {
+    expect(probeState({ checks: 1, failures: 1 })).toBe("degraded");
+    expect(probeState({ checks: 2, failures: 2 })).toBe("degraded");
+    expect(probeState({ checks: 3, failures: 3 })).toBe("major_outage");
+  });
+
   it("sums counts and averages latency over successful probes only", () => {
     const counts = sumCounts([
       { checks: 2, failures: 1, latencySum: 60 },

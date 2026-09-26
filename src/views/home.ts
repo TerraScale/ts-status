@@ -131,7 +131,10 @@ function map(list: readonly RegionOverview[]) {
 
 export function homePage(view: Overview): Page {
   const active = view.groups.flatMap((entry) => entry.components).filter((entry) => entry.lifecycle === "active");
-  const operational = active.filter((entry) => entry.status === "operational").length;
+  // Components without fresh data are neither up nor down, so they count on
+  // neither side of the stat.
+  const measured = active.filter((entry) => entry.status !== "none");
+  const operational = measured.filter((entry) => entry.status === "operational").length;
   const live = view.regions.filter((entry) => entry.clusters.length > 0).length;
   const headline = HEADLINES[view.status];
   const title = view.status === "operational" ? "TerraScale Status" : `${headline} · TerraScale Status`;
@@ -147,7 +150,7 @@ export function homePage(view: Overview): Page {
   </section>
 
   <dl class="ts-stats" aria-label="Platform summary">
-    ${stat("Components", `${operational}/${active.length}`, "operational now")}
+    ${stat("Components", `${operational}/${measured.length}`, "operational now")}
     ${stat("Regions", `${live}/${view.regions.length}`, live === view.regions.length ? "all live" : `${view.regions.length - live} planned`)}
     ${stat("Uptime", formatUptime(view.uptime30d), `last ${PLATFORM_DAYS} days`)}
     ${stat("Active incidents", String(view.activeIncidents.length), view.activeIncidents.length === 0 ? "nothing to report" : "see below")}
@@ -175,7 +178,7 @@ export function homePage(view: Overview): Page {
     view.groups.length === 0
       ? empty("No components published", "Component status will appear here once components are registered.")
       : html`${view.groups.map(group)}
-  <div class="st-axis" aria-hidden="true"><span>${SERVICE_HOURS}h ago</span><span>Now</span></div>`,
+  ${active.length > 0 ? html`<div class="st-axis" aria-hidden="true"><span>${SERVICE_HOURS}h ago</span><span>Now</span></div>` : ""}`,
   )}
 
   ${card(

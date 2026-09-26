@@ -112,6 +112,15 @@ function during(counts: Counts, endpointId: string, from: number, to: number): P
   return sumCounts(list);
 }
 
+/** Every component's enabled endpoints, in catalog order. */
+function endpointsByComponent(endpoints: readonly Endpoint[]): Map<string, Endpoint[]> {
+  const byComponent = new Map<string, Endpoint[]>();
+  for (const endpoint of endpoints) {
+    byComponent.set(endpoint.componentId, [...(byComponent.get(endpoint.componentId) ?? []), endpoint]);
+  }
+  return byComponent;
+}
+
 /** Bars for a set of endpoints: every bucket shows their combined state. */
 function bars(counts: Counts, endpoints: readonly Endpoint[], start: number, count: number, size: number): Bucket[] {
   return spans(start, start + count * size, count).map((span) => ({
@@ -167,10 +176,10 @@ export function overview(snapshot: Snapshot, now: number): Overview {
   const dayStart = platformStart(now);
   const hourStart = hourlyStart(now);
   const counts = countsByEndpoint(snapshot);
+  const byComponent = endpointsByComponent(snapshot.endpoints);
 
   const components = snapshot.components.map((component): ComponentOverview => {
-    const endpoints =
-      component.lifecycle === "planned" ? [] : snapshot.endpoints.filter((e) => e.componentId === component.id);
+    const endpoints = component.lifecycle === "planned" ? [] : (byComponent.get(component.id) ?? []);
     return {
       ...component,
       status: aggregate(endpoints.map((endpoint) => endpointStatus(endpoint, now))),
@@ -180,18 +189,16 @@ export function overview(snapshot: Snapshot, now: number): Overview {
     };
   });
   const active = snapshot.components.filter((component) => component.lifecycle === "active").map((c) => c.id);
-  const measured = snapshot.endpoints.filter((endpoint) => active.includes(endpoint.componentId));
+  const measured = active.flatMap((id) => byComponent.get(id) ?? []);
   const windows = incidentWindows(snapshot.incidents, now);
 
   const days = spans(dayStart, dayStart + PLATFORM_DAYS * DAY, PLATFORM_DAYS).map((span) => {
-    const byComponent = active.map((id) =>
+    const states = active.map((id) =>
       aggregate(
-        measured
-          .filter((endpoint) => endpoint.componentId === id)
-          .map((endpoint) => probeState(during(counts, endpoint.id, span.start, span.end))),
+        (byComponent.get(id) ?? []).map((endpoint) => probeState(during(counts, endpoint.id, span.start, span.end))),
       ),
     );
-    return { ...span, state: worst(aggregate(byComponent), worstDuring(windows, span.start, span.end)) };
+    return { ...span, state: worst(aggregate(states), worstDuring(windows, span.start, span.end)) };
   });
 
   const resolvedFrom = now - RESOLVED_DAYS * DAY;

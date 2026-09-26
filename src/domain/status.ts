@@ -205,6 +205,8 @@ export function sumCounts(list: readonly ProbeCounts[]): ProbeCounts {
 export function probeState(counts: Pick<ProbeCounts, "checks" | "failures"> | undefined): TimelineState {
   if (!counts || counts.checks === 0) return "none";
   if (counts.failures === 0) return "operational";
+  // Too few probes to call an outage, like a single blip early in an hour.
+  if (counts.checks < DOWN_AFTER) return "degraded";
   if (counts.failures === counts.checks) return "major_outage";
   return counts.failures / counts.checks < 0.1 ? "degraded" : "partial_outage";
 }

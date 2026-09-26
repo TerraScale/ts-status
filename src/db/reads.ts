@@ -24,9 +24,11 @@ const GROUPS = `SELECT id, name FROM component_groups ORDER BY position, id`;
 const COMPONENTS = `SELECT id, group_id AS groupId, name, description, lifecycle
   FROM components ORDER BY position, id`;
 
-// Active incidents plus those resolved since the cutoff.
+// Active incidents plus those resolved since the cutoff. Active ones rank
+// first so the limit can only ever drop resolved history.
 const CURRENT_INCIDENTS = `SELECT ${INCIDENT_COLUMNS} FROM incidents
-  WHERE status != 'resolved' OR resolved_at >= ?1 ORDER BY created_at DESC LIMIT 50`;
+  WHERE status != 'resolved' OR resolved_at >= ?1
+  ORDER BY status != 'resolved' DESC, created_at DESC LIMIT 50`;
 
 const REGIONS = `SELECT code, name, country, map_x AS mapX, map_y AS mapY FROM regions ORDER BY position, code`;
 
