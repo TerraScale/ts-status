@@ -43,7 +43,7 @@ echo '{ "status": "resolved", "message": "Sign-ins work again." }' > update.json
 api POST /incidents/ID/updates update.json
 ```
 
-An update may also change `impact`. `PATCH /incidents/ID` edits `title`, `impact`, or `components`; `DELETE /incidents/ID` removes a record published by mistake.
+An update may also change `impact`. `PATCH /incidents/ID` edits `title`, `impact`, `components`, or a maintenance window's `scheduledStart` and `scheduledEnd`; `DELETE /incidents/ID` removes a record published by mistake.
 
 ## Schedule maintenance
 

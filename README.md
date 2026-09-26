@@ -5,7 +5,7 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 ## How it is fast
 
 - **No framework on the client.** Pages are server-rendered strings with the stylesheet, logo, and region map inlined; one small inline script (allowed by its CSP hash) localizes times and refreshes the page. A visit is one HTML request plus one preloaded 14 KB font.
-- **One D1 round trip per render.** Every query for a page runs in a single batch on a read-replica session (`withSession("first-unconstrained")`).
+- **One D1 round trip per render.** Every query for a page runs in a single batch on a read-replica session (`withSession("first-unconstrained")`); the uptime, component and region pages add one batch for their details.
 - **Edge cache.** Pages and the API are cached per URL for 10 seconds (`caches.default`), so load during an incident is bounded no matter how many people are watching.
 - **Details on demand.** Every bar, map hub, vantage and probe path carries its details (time range, state, uptime, checks, median and p95 latency, overlapping incidents) in a `data-card` attribute; the inline script shows them in one hover card on hover, keyboard focus (arrow keys move along a strip) or tap. Without scripts, bars keep a one-line tip. Charts are server-rendered SVG with their own tooltips, ported from the ts-dashboard kit.
 - **Ranges without scripts.** `?range=24h|7d|30d|90d` switches the bars; the cache key keeps only valid values.
@@ -23,18 +23,23 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 
 ## Layout
 
-| Path              | Purpose                                                         |
-| ----------------- | --------------------------------------------------------------- |
-| `src/worker.ts`   | Worker entry: re-exports the handler                            |
-| `src/app.ts`      | Routes, edge cache, cron entry point                            |
-| `src/router.ts`   | `/incidents/:id`-style path patterns                            |
-| `src/http/`       | Cache keys, content security policy, security headers           |
-| `src/db/`         | D1 queries                                                      |
-| `src/domain/`     | Status domain: states, catalog, incidents, probe maths          |
-| `src/overview.ts` | The overview shared by the page and the JSON API                |
-| `src/probe.ts`    | Minute-by-minute health probes of every endpoint                |
-| `src/views/`      | HTML views and the client script                                |
-| `src/styles/`     | Design tokens and styles, bundled and minified by Lightning CSS |
+| Path              | Purpose                                                                 |
+| ----------------- | ----------------------------------------------------------------------- |
+| `src/worker.ts`   | Worker entry: re-exports the handler and the coordinator Durable Object |
+| `src/app.ts`      | Routes, edge cache, cron entry point                                    |
+| `src/router.ts`   | `/incidents/:id`-style path patterns                                    |
+| `src/http/`       | Cache keys, content security policy, security headers, operator auth    |
+| `src/db/`         | D1 queries                                                              |
+| `src/domain/`     | Status domain: states, catalog, incidents, consensus, probe maths       |
+| `src/overview.ts` | The overview shared by the page and the JSON API                        |
+| `src/measure.ts`  | Counts, latency percentiles and series from per-vantage rollups         |
+| `src/probe/`      | Coordinator, probe rounds, rollups, retention and TLS expiry            |
+| `src/vantage/`    | The vantage Worker that probes targets for the coordinator              |
+| `src/api/`        | The v1, Statuspage-compatible and operator JSON APIs                    |
+| `src/feeds/`      | Atom, RSS and iCalendar feeds, and SVG status badges                    |
+| `src/notify/`     | Subscriptions, the outbox, email over SMTP and webhooks                 |
+| `src/views/`      | HTML views and the client script                                        |
+| `src/styles/`     | Design tokens and styles, bundled and minified by Lightning CSS         |
 
 ## Catalog
 
