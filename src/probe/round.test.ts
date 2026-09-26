@@ -122,7 +122,7 @@ describe("runRound", () => {
     } as unknown as Env;
     // The website must mention TerraScale; this stand-in answers JSON, so it fails.
     const at = Date.parse("2026-09-26T10:00:30Z");
-    const first = await runRound(env, at, { streaks: {}, colos: {}, versions: {} });
+    const first = await runRound(env, at, { streaks: {}, colos: {}, versions: {}, trackers: {} });
     // Retrying the same round stores nothing new.
     const again = await runRound(env, at, first);
     version = "1.1.0";
@@ -146,5 +146,65 @@ describe("runRound", () => {
       { endpoint_id: "dashboard-fly-gru", version: "1.1.0" },
     ]);
     expect(db.sqlite.prepare("SELECT code FROM vantages").all()).toHaveLength(3);
+  });
+});
+
+describe("automatic incidents", () => {
+  it("opens an incident for a component down for a minute and resolves it after five healthy minutes", async () => {
+    const db = testD1();
+    let up = false;
+    const vantage = (code: string) => ({
+      fetch: async (_url: string, init: RequestInit) => {
+        const body = JSON.parse(String(init.body)) as ProbeRequest;
+        return Response.json({
+          vantage: code,
+          colo: null,
+          results: body.targets.map((target) => {
+            const failing = !up && target.url.includes("git.terrascale.tech");
+            const json = { status: target.url.includes("git") ? "pass" : "ok", regions: [] };
+            return {
+              key: target.key,
+              status: failing ? 503 : 200,
+              latencyMs: 40,
+              error: null,
+              body: target.url === "https://terrascale.tech/" ? "TerraScale" : JSON.stringify(json),
+            };
+          }),
+        } satisfies ProbeResponse);
+      },
+    });
+    const env = {
+      STATUS_DB: db,
+      VANTAGE_SFO: vantage("sfo"),
+      VANTAGE_GRU: vantage("gru"),
+      VANTAGE_FRA: vantage("fra"),
+      VANTAGE_NRT: vantage("nrt"),
+    } as unknown as Env;
+
+    let state = { streaks: {}, colos: {}, versions: {}, trackers: {} };
+    const start = Date.parse("2026-09-26T10:00:00Z");
+    for (let round = 0; round < 20; round++) {
+      if (round === 6) up = true;
+      state = await runRound(env, start + round * 30_000, state);
+    }
+
+    const incidents = db.sqlite
+      .prepare("SELECT title, status, impact, source, auto_key, created_at, resolved_at FROM incidents")
+      .all();
+    expect(incidents).toEqual([
+      {
+        title: "Git and CI is down",
+        status: "resolved",
+        impact: "critical",
+        source: "auto",
+        auto_key: null,
+        // Opened a minute after the first failing round.
+        created_at: "2026-09-26 10:01:00",
+        resolved_at: "2026-09-26 10:08:00",
+      },
+    ]);
+    const updates = db.sqlite.prepare("SELECT status FROM incident_updates ORDER BY created_at").all();
+    expect(updates.map((row) => row.status)).toEqual(["investigating", "monitoring", "resolved"]);
+    expect(db.sqlite.prepare("SELECT component_id FROM incident_components").all()).toEqual([{ component_id: "git" }]);
   });
 });

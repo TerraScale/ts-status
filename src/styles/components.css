@@ -240,3 +240,56 @@
   outline: 1px solid var(--ts-accent);
   outline-offset: 0;
 }
+
+/* Text inputs, matching the selects. */
+.ts-input {
+  width: 100%;
+  min-width: 0;
+  height: var(--ts-control-h-sm);
+  padding: 0 var(--ts-s3);
+  border: 1px solid var(--ts-line-strong);
+  border-radius: var(--ts-radius);
+  background: var(--ts-surface);
+  color: var(--ts-ink);
+  font: inherit;
+  font-size: var(--ts-fs-sm);
+  transition: border-color var(--ts-fast) var(--ts-ease);
+}
+
+.ts-input:hover {
+  border-color: rgb(148 163 184 / 0.34);
+}
+
+.ts-input::placeholder {
+  color: var(--ts-ink-3);
+}
+
+.ts-input:focus-visible {
+  border-color: var(--ts-accent);
+  outline: 1px solid var(--ts-accent);
+  outline-offset: 0;
+}
+
+/* Buttons: the accent, flat. */
+.ts-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  height: var(--ts-control-h-sm);
+  padding: 0 var(--ts-s4);
+  border: 0;
+  border-radius: var(--ts-radius);
+  /* Darkened so white labels meet 4.5:1; hover lifts it to the accent. */
+  background: color-mix(in oklab, var(--ts-accent) 84%, black);
+  color: #ffffff;
+  font: inherit;
+  font-size: var(--ts-fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--ts-fast) var(--ts-ease);
+}
+
+.ts-button:hover {
+  background: var(--ts-accent);
+}

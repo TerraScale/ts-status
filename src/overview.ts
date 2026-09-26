@@ -8,10 +8,13 @@ import { byHour, RANGES, rangeStart, type RangeKey } from "./domain/range";
 import { median } from "./domain/consensus";
 import {
   aggregate,
+  componentState,
   countsOf,
   endpointStatus,
   incidentWindows,
   isActive,
+  isClosed,
+  maintenancePhase,
   meanLatency,
   overallStatus,
   PROBE_STALE_MS,
@@ -99,6 +102,8 @@ export interface Overview {
   regions: RegionOverview[];
   activeIncidents: Incident[];
   resolvedIncidents: Incident[];
+  /** Maintenance windows in progress or scheduled, soonest first. */
+  maintenance: Incident[];
   days: PlatformDay[];
   /** Platform uptime over the range, and over the platform history. */
   uptime: number | null;
@@ -209,13 +214,40 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
   const components = new Map(snapshot.components.map((component) => [component.id, component]));
   const status = (endpoint: Endpoint) => endpointStatus(latest.get(endpoint.id), now);
   const endpointsOf = endpointsByComponent(snapshot.endpoints);
+  const windows = incidentWindows(snapshot.incidents, now);
+  // Every incident paired once with the window it was open.
+  const opened = snapshot.incidents.flatMap((incident, index) => {
+    const window = windows[index];
+    return window ? [{ incident, window }] : [];
+  });
+  // A component's bars show incidents naming it, and maintenance windows
+  // covering it in place of what was measured during them.
+  const withIncidents = (list: Bucket[], componentId: string): Bucket[] => {
+    const own = opened.filter(({ incident }) => incident.components.includes(componentId)).map(({ window }) => window);
+    return list.map((bucket) => {
+      const during = worstDuring(own, bucket.start, bucket.end);
+      if (during === "none") return bucket;
+      const maintenance = own.some(
+        (window) => window.state === "maintenance" && window.from < bucket.end && window.to > bucket.start,
+      );
+      const outage = worstDuring(
+        own.filter((window) => window.state !== "maintenance"),
+        bucket.start,
+        bucket.end,
+      );
+      return { ...bucket, state: maintenance ? worst("maintenance", outage) : worst(bucket.state, during) };
+    });
+  };
 
   const componentList = snapshot.components.map((component): ComponentOverview => {
     const endpoints = component.lifecycle === "planned" ? [] : (endpointsOf.get(component.id) ?? []);
-    const list = bars(counter, endpoints, range, now);
+    const list = withIncidents(bars(counter, endpoints, range, now), component.id);
     return {
       ...component,
-      status: aggregate(endpoints.map(status)),
+      status:
+        component.lifecycle === "planned"
+          ? "none"
+          : componentState(aggregate(endpoints.map(status)), component.id, snapshot.incidents, now),
       bars: list,
       latency: latencyOf(list),
       uptime: uptimeOf(list),
@@ -223,7 +255,6 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
   });
   const active = componentList.filter((component) => component.lifecycle === "active");
   const measured = active.flatMap((component) => endpointsOf.get(component.id) ?? []);
-  const windows = incidentWindows(snapshot.incidents, now);
 
   const regions = snapshot.regions.map((region): RegionOverview => {
     const endpoints = measured.filter((endpoint) => endpoint.regionCode === region.code);
@@ -264,12 +295,9 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
       ...span,
       state: worst(aggregate(states), worstDuring(windows, span.start, span.end)),
       counts: sumCounts(perComponent.flat()),
-      incidents: snapshot.incidents
-        .filter((incident, index) => {
-          const window = windows[index];
-          return window !== undefined && window.from < span.end && window.to > span.start;
-        })
-        .map(({ id, title, impact }) => ({ id, title, impact })),
+      incidents: opened
+        .filter(({ window }) => window.from < span.end && window.to > span.start)
+        .map(({ incident: { id, title, impact } }) => ({ id, title, impact })),
     };
   });
 
@@ -283,6 +311,7 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
     status: overallStatus(
       active.map((component) => component.status),
       snapshot.incidents,
+      now,
     ),
     monitoring: {
       lastRoundAt,
@@ -293,10 +322,18 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
       .map((group) => ({ ...group, components: componentList.filter((component) => component.groupId === group.id) }))
       .filter((group) => group.components.length > 0),
     regions,
-    activeIncidents: snapshot.incidents.filter(isActive),
-    resolvedIncidents: snapshot.incidents.filter(
-      (incident) => !isActive(incident) && Date.parse(incident.resolvedAt ?? incident.updatedAt) >= resolvedFrom,
+    activeIncidents: snapshot.incidents.filter(
+      (incident) => incident.kind !== "maintenance" && isActive(incident, now),
     ),
+    resolvedIncidents: snapshot.incidents.filter(
+      (incident) =>
+        incident.kind !== "maintenance" &&
+        isClosed(incident, now) &&
+        Date.parse(incident.resolvedAt ?? incident.updatedAt) >= resolvedFrom,
+    ),
+    maintenance: snapshot.incidents
+      .filter((incident) => incident.kind === "maintenance" && maintenancePhase(incident, now) !== "completed")
+      .sort((a, b) => Date.parse(a.scheduledStart ?? a.createdAt) - Date.parse(b.scheduledStart ?? b.createdAt)),
     days,
     // One past now, so the half-filled period holding now is counted.
     uptime: probeUptime(counter.all(measured, rangeFrom, now + 1, byHour(range))),

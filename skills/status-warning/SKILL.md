@@ -1,30 +1,55 @@
-# TerraScale status incidents and warnings
+# TerraScale status incidents, warnings and maintenance
 
-Use this repo skill when the human asks to publish, update, or resolve a TerraScale incident or status warning. Incidents are D1 records written by the human through an AI agent; component status itself is measured by the health probes and needs no manual edits.
+Use this repo skill when the human asks to publish, update, or resolve a TerraScale incident or status warning, or to schedule maintenance. Records live in D1; component status itself is measured by the health probes and needs no manual edits.
 
-## Publish a warning or incident
+## Model
 
-Ask the human for the title and customer-facing message if they have not supplied both. Validate that the message is factual and specific, then insert it directly into the production D1 database with Wrangler. Keep the generated id so it can be resolved later.
+- `incidents`: `kind` is `incident`, `warning`, or `maintenance`. `impact` is `none`, `minor` (degraded), `major` (partial outage), or `critical` (major outage). Incidents move `investigating` → `identified` → `monitoring` → `resolved`; maintenance is `scheduled` → `in_progress` → `completed`, and follows its `scheduled_start`/`scheduled_end` unless completed early.
+- `incident_updates`: the timeline. Every change of status gets an update with a customer-facing `body`; the latest body is what the page shows.
+- `incident_components`: the components an incident affects (`dashboard`, `website`, `atlas`, `auth`, `docs`, `data-api`, `sync`, `git`). With none, it concerns the whole platform and colors the headline directly.
 
-```sh
-incident_id=$(openssl rand -hex 16)
-npm exec -- wrangler d1 execute ts-status-db --remote --command \
-  "INSERT INTO incidents (id, kind, title, status, impact, message) VALUES ('$incident_id', 'warning', 'TITLE', 'monitoring', 'minor', 'MESSAGE');"
+The probe coordinator opens incidents on its own (`source = 'auto'`) when a component stays down for a minute or degraded for ten, and resolves them after five healthy minutes. To take one over, set `operator_touched = 1`; the coordinator then leaves it alone. During a maintenance window covering a component, the component shows as under maintenance and no automatic incident opens for it.
+
+## Publish an incident or warning
+
+Ask the human for the title, the customer-facing message, the impact, and the affected components if they have not supplied them. Validate that the message is factual and specific. Write a temporary SQL file (it handles quotes and newlines) and apply it:
+
+```sql
+-- incident.sql; replace ID, UPDATE_ID, TITLE, MESSAGE.
+INSERT INTO incidents (id, kind, title, status, impact) VALUES ('ID', 'incident', 'TITLE', 'investigating', 'major');
+INSERT INTO incident_components (incident_id, component_id) VALUES ('ID', 'dashboard');
+INSERT INTO incident_updates (id, incident_id, status, body) VALUES ('UPDATE_ID', 'ID', 'investigating', 'MESSAGE');
 ```
 
-`kind` is `incident` or `warning`; `impact` is `minor` (degraded), `major` (partial outage), or `critical` (major outage), and colors the headline and the daily platform bars while the incident is open.
-
-Timestamps default to SQLite `datetime('now')` (`YYYY-MM-DD HH:MM:SS`, UTC). Never write ISO 8601 text such as `2026-09-26T10:00:00Z`: it sorts differently and breaks every time-window query.
-
-Replace `TITLE` and `MESSAGE` only after shell-quoting them safely; never interpolate untrusted text into SQL. Prefer a temporary SQL file and `--file` for quotes or newlines. Never print or commit credentials. Verify with `GET https://status.terrascale.tech/api/status` after the command.
-
-## Resolve
-
-Only when the human asks to resolve it, update the record directly:
-
 ```sh
-npm exec -- wrangler d1 execute ts-status-db --remote --command \
-  "UPDATE incidents SET status = 'resolved', resolved_at = datetime('now'), updated_at = datetime('now') WHERE id = 'INCIDENT_ID';"
+npm exec -- wrangler d1 execute ts-status-db --remote --file incident.sql
 ```
 
-Verify the response and the public API. Do not publish speculative incidents, and do not expose a database credential in output.
+Generate ids with `openssl rand -hex 16`. Use `kind = 'warning'` and `status = 'monitoring'` for an operational warning.
+
+## Post an update or resolve
+
+```sql
+UPDATE incidents SET status = 'resolved', resolved_at = datetime('now'), updated_at = datetime('now'),
+  operator_touched = 1 WHERE id = 'ID';
+INSERT INTO incident_updates (id, incident_id, status, body) VALUES ('UPDATE_ID', 'ID', 'resolved', 'MESSAGE');
+```
+
+For an update without resolving, set `status` to `identified` or `monitoring` and leave `resolved_at` null.
+
+## Schedule maintenance
+
+```sql
+INSERT INTO incidents (id, kind, title, status, impact, scheduled_start, scheduled_end)
+  VALUES ('ID', 'maintenance', 'TITLE', 'scheduled', 'none', '2026-10-01 02:00:00', '2026-10-01 03:00:00');
+INSERT INTO incident_components (incident_id, component_id) VALUES ('ID', 'git');
+INSERT INTO incident_updates (id, incident_id, status, body) VALUES ('UPDATE_ID', 'ID', 'scheduled', 'MESSAGE');
+```
+
+To end it early, set `status = 'completed'` and `resolved_at = datetime('now')`.
+
+## Rules
+
+Timestamps are SQLite datetime text in UTC (`YYYY-MM-DD HH:MM:SS`, as `datetime('now')` writes). Never write ISO 8601 text such as `2026-09-26T10:00:00Z`: it sorts differently and breaks every time-window query.
+
+Never interpolate untrusted text into SQL without quoting it safely; never print or commit credentials. Only resolve an incident when the human asks. Verify every change on `https://status.terrascale.tech/incidents/ID` and `GET /api/status`.

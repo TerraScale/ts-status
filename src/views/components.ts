@@ -5,10 +5,12 @@ import { html, type Html } from "../html";
 import { percentile } from "../domain/histogram";
 import {
   IMPACT_STATUS,
+  maintenancePhase,
   probeUptime,
   STATE_LABELS,
   type Bucket,
   type Incident,
+  type MaintenancePhase,
   type ProbeCounts,
   type TimelineState,
 } from "../domain/status";
@@ -132,45 +134,87 @@ export function legend(states: readonly TimelineState[]): Html {
   )}</ul>`;
 }
 
-const STATUS_TEXT: Record<Incident["status"], string> = {
+export const STATUS_TEXT: Record<Incident["status"], string> = {
   investigating: "Investigating",
   identified: "Identified",
   monitoring: "Monitoring",
   resolved: "Resolved",
+  scheduled: "Scheduled",
+  in_progress: "In progress",
+  completed: "Completed",
 };
 
-/** When an incident started and, once resolved, how long it lasted. */
-function timing(incident: Incident): Html {
+const PHASE_STATE: Record<MaintenancePhase, TimelineState> = {
+  scheduled: "maintenance",
+  in_progress: "maintenance",
+  completed: "operational",
+};
+
+/** An incident's status text and the state coloring its badge. */
+export function incidentBadge(incident: Incident, now: number): Html {
+  if (incident.kind === "maintenance") {
+    const phase = maintenancePhase(incident, now);
+    return badge(STATUS_TEXT[phase], PHASE_STATE[phase]);
+  }
+  return badge(
+    STATUS_TEXT[incident.status],
+    incident.status === "resolved" ? "operational" : IMPACT_STATUS[incident.impact],
+  );
+}
+
+/** The labels beside an incident's title. */
+function labels(incident: Incident, now: number): Html {
+  return html`${incident.kind === "warning" ? badge("Warning") : ""}${incident.kind === "maintenance" ? badge("Maintenance") : ""}${
+    incident.source === "auto"
+      ? html`<span class="ts-badge" title="Opened by automated health checks">Auto-detected</span>`
+      : ""
+  }${incidentBadge(incident, now)}`;
+}
+
+/** When an incident started and, once resolved, how long it lasted; for
+    maintenance, its window. */
+export function timing(incident: Incident): Html {
+  if (incident.kind === "maintenance" && incident.scheduledStart && incident.scheduledEnd) {
+    return html`Scheduled ${time(incident.scheduledStart, "datetime")} to ${time(incident.scheduledEnd, "datetime")}`;
+  }
   const started = html`Started ${time(incident.createdAt, "datetime")}`;
   if (!incident.resolvedAt) return html`${started} · updated ${time(incident.updatedAt, "datetime")}`;
   const lasted = formatDuration(Date.parse(incident.resolvedAt) - Date.parse(incident.createdAt));
   return html`${started} · resolved after ${lasted}`;
 }
 
+/** An incident's page. */
+export const incidentHref = (id: string): string => `/incidents/${encodeURIComponent(id)}`;
+
+/** The names of the components an incident affects, or the platform. */
+export function affected(incident: Incident, names: ReadonlyMap<string, string>): string {
+  if (incident.components.length === 0) return "All components";
+  return incident.components.map((id) => names.get(id) ?? id).join(", ");
+}
+
 /** An active incident as an alert, colored by its impact. */
-export function incidentAlert(incident: Incident): Html {
-  return html`<article class="ts-alert" data-state="${IMPACT_STATUS[incident.impact]}">
+export function incidentAlert(incident: Incident, now: number, names: ReadonlyMap<string, string>): Html {
+  const state = incident.kind === "maintenance" ? "maintenance" : IMPACT_STATUS[incident.impact];
+  return html`<article class="ts-alert" data-state="${state}">
   <div class="ts-row-between">
-    <h3 class="ts-alert-title">${incident.kind === "warning" ? "Warning: " : ""}${incident.title}</h3>
-    ${badge(STATUS_TEXT[incident.status], IMPACT_STATUS[incident.impact])}
+    <h3 class="ts-alert-title"><a class="st-incident-link" href="${incidentHref(incident.id)}">${incident.kind === "warning" ? "Warning: " : ""}${incident.title}</a></h3>
+    <div class="ts-row">${labels(incident, now)}</div>
   </div>
   <p class="ts-alert-body">${incident.message}</p>
-  <p class="ts-meta">${timing(incident)}</p>
+  <p class="ts-meta">${affected(incident, names)} · ${timing(incident)}</p>
 </article>`;
 }
 
-/** An incident as a divided list row. */
-export function incidentItem(incident: Incident): Html {
-  const resolved = incident.status === "resolved";
+/** An incident as a divided list row; `extra` follows its timing. */
+export function incidentItem(incident: Incident, now: number, names: ReadonlyMap<string, string>, extra?: Html): Html {
   return html`<li class="ts-list-item">
   <article class="ts-list-main">
     <div class="ts-row">
-      <h3 class="st-incident-title">${incident.title}</h3>
-      ${incident.kind === "warning" ? badge("Warning") : ""}
-      ${badge(STATUS_TEXT[incident.status], resolved ? "operational" : IMPACT_STATUS[incident.impact])}
+      <h3 class="st-incident-title"><a class="st-incident-link" href="${incidentHref(incident.id)}">${incident.title}</a></h3>
+      ${labels(incident, now)}
     </div>
     <p class="st-incident-body">${incident.message}</p>
-    <p class="ts-meta">${timing(incident)}</p>
+    <p class="ts-meta">${affected(incident, names)} · ${timing(incident)}${extra ? html` · ${extra}` : ""}</p>
   </article>
 </li>`;
 }

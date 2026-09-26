@@ -84,11 +84,23 @@ export const CLIENT_SCRIPT = `(() => {
   }
   localize(document);
 
-  // "Last round 12s ago" counters.
+  // "Last round 12s ago" counters, and "starts in 2h 5m" countdowns.
+  const span = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 1) return seconds + "s";
+    if (minutes < 60) return minutes + "m";
+    const hours = Math.floor(minutes / 60);
+    if (hours < 48) return hours + "h " + (minutes % 60) + "m";
+    return Math.floor(hours / 24) + "d " + (hours % 24) + "h";
+  };
   const ago = () => {
     for (const element of document.querySelectorAll("[data-ago]")) {
       const seconds = Math.max(0, Math.round((Date.now() - Number(element.dataset.ago)) / 1000));
       element.textContent = seconds < 90 ? seconds + "s ago" : Math.round(seconds / 60) + "m ago";
+    }
+    for (const element of document.querySelectorAll("[data-until]")) {
+      const seconds = Math.round((Number(element.dataset.until) - Date.now()) / 1000);
+      element.textContent = seconds > 0 ? element.dataset.prefix + " in " + span(seconds) : "";
     }
   };
   ago();

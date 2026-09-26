@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import { emptyHistogram } from "./histogram";
 import {
   aggregate,
+  componentState,
   endpointStatus,
   incidentWindows,
+  isActive,
+  isClosed,
+  maintenancePhase,
   meanLatency,
   overallStatus,
   probeState,
@@ -26,44 +30,100 @@ describe("aggregate", () => {
   });
 });
 
+const NOW = 10 * H;
+
+const incident = (overrides: Partial<Incident> = {}): Incident => ({
+  id: "i",
+  kind: "incident",
+  title: "",
+  status: "resolved",
+  impact: "major",
+  source: "manual",
+  message: "",
+  components: [],
+  scheduledStart: null,
+  scheduledEnd: null,
+  createdAt: "1970-01-01T02:00:00Z",
+  updatedAt: "1970-01-01T03:00:00Z",
+  resolvedAt: "1970-01-01T03:00:00Z",
+  ...overrides,
+});
+
+const maintenance = (from: number, to: number, components: string[] = []): Incident =>
+  incident({
+    kind: "maintenance",
+    status: "scheduled",
+    impact: "none",
+    components,
+    scheduledStart: new Date(from).toISOString(),
+    scheduledEnd: new Date(to).toISOString(),
+    resolvedAt: null,
+  });
+
 describe("overallStatus", () => {
   it("reports operational when components and incidents are clear", () => {
-    expect(overallStatus(["operational", "none"], [])).toBe("operational");
-    expect(overallStatus([], [])).toBe("operational");
+    expect(overallStatus(["operational", "none"], [], NOW)).toBe("operational");
+    expect(overallStatus([], [], NOW)).toBe("operational");
   });
 
   it("treats one component down as a partial platform outage", () => {
-    expect(overallStatus(["major_outage", "operational"], [])).toBe("partial_outage");
-    expect(overallStatus(["major_outage"], [])).toBe("major_outage");
+    expect(overallStatus(["major_outage", "operational"], [], NOW)).toBe("partial_outage");
+    expect(overallStatus(["major_outage"], [], NOW)).toBe("major_outage");
   });
 
   it("maps active incident impact onto the headline", () => {
-    expect(overallStatus(["operational"], [{ status: "investigating", impact: "minor" }])).toBe("degraded");
-    expect(overallStatus(["operational"], [{ status: "monitoring", impact: "critical" }])).toBe("major_outage");
-    expect(overallStatus(["operational"], [{ status: "resolved", impact: "critical" }])).toBe("operational");
+    expect(
+      overallStatus(["operational"], [incident({ status: "investigating", impact: "minor", resolvedAt: null })], NOW),
+    ).toBe("degraded");
+    expect(
+      overallStatus(["operational"], [incident({ status: "monitoring", impact: "critical", resolvedAt: null })], NOW),
+    ).toBe("major_outage");
+    expect(overallStatus(["operational"], [incident({ impact: "critical" })], NOW)).toBe("operational");
+  });
+
+  it("counts incidents naming components through those components only", () => {
+    const outage = incident({ status: "investigating", impact: "critical", resolvedAt: null, components: ["git"] });
+    expect(overallStatus(["major_outage", "operational"], [outage], NOW)).toBe("partial_outage");
+  });
+
+  it("shows maintenance while a window is in progress", () => {
+    expect(overallStatus(["operational"], [maintenance(9 * H, 11 * H)], NOW)).toBe("maintenance");
+    expect(overallStatus(["operational"], [maintenance(11 * H, 12 * H)], NOW)).toBe("operational");
+  });
+});
+
+describe("maintenance", () => {
+  it("moves through its phases by schedule, or ends early when completed", () => {
+    const window = maintenance(9 * H, 11 * H);
+    expect(maintenancePhase(window, 8 * H)).toBe("scheduled");
+    expect(maintenancePhase(window, NOW)).toBe("in_progress");
+    expect(maintenancePhase(window, 11 * H)).toBe("completed");
+    expect(maintenancePhase({ ...window, status: "completed" }, NOW)).toBe("completed");
+    expect(isActive(window, NOW)).toBe(true);
+    expect(isClosed(window, 12 * H)).toBe(true);
+  });
+
+  it("overrides what was measured for the components it covers", () => {
+    const window = maintenance(9 * H, 11 * H, ["git"]);
+    expect(componentState("major_outage", "git", [window], NOW)).toBe("maintenance");
+    expect(componentState("major_outage", "dashboard", [window], NOW)).toBe("major_outage");
+    const outage = incident({ status: "investigating", impact: "critical", resolvedAt: null, components: ["git"] });
+    expect(componentState("operational", "git", [outage], NOW)).toBe("major_outage");
+    expect(componentState("operational", "git", [window, outage], NOW)).toBe("major_outage");
   });
 });
 
 describe("incident windows", () => {
-  const incident: Incident = {
-    id: "i",
-    kind: "incident",
-    title: "",
-    status: "resolved",
-    impact: "major",
-    message: "",
-    createdAt: "1970-01-01T02:00:00Z",
-    updatedAt: "1970-01-01T03:00:00Z",
-    resolvedAt: "1970-01-01T03:00:00Z",
-  };
-
   it("spans an incident from its start to its resolution, or now", () => {
-    expect(incidentWindows([incident], 10 * H)).toEqual([{ from: 2 * H, to: 3 * H, state: "partial_outage" }]);
-    expect(incidentWindows([{ ...incident, resolvedAt: null }], 10 * H)[0]?.to).toBe(10 * H);
+    expect(incidentWindows([incident()], NOW)).toEqual([{ from: 2 * H, to: 3 * H, state: "partial_outage" }]);
+    expect(incidentWindows([incident({ resolvedAt: null })], NOW)[0]?.to).toBe(NOW);
+    expect(incidentWindows([maintenance(9 * H, 12 * H)], NOW)).toEqual([
+      { from: 9 * H, to: NOW, state: "maintenance" },
+    ]);
   });
 
   it("takes the worst overlapping window", () => {
-    const windows = incidentWindows([incident], 10 * H);
+    const windows = incidentWindows([incident()], NOW);
     expect(worstDuring(windows, 0, 2 * H)).toBe("none");
     expect(worstDuring(windows, 2.5 * H, 4 * H)).toBe("partial_outage");
   });

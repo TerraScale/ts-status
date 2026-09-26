@@ -4,7 +4,9 @@
 
 import { sqlTime } from "../db/reads";
 import { judge, needsBody, parseSpec, type CheckSpec } from "../domain/assertions";
+import { adopt, step, type Action, type Observation, type Tracker } from "../domain/auto-incident";
 import { consensus, settle, type VantageResult } from "../domain/consensus";
+import { aggregate, type IncidentImpact, type TimelineState } from "../domain/status";
 import type { Env } from "../env";
 import type { ProbeResponse, Target } from "./protocol";
 import { VANTAGES, type Vantage } from "./vantages";
@@ -23,6 +25,7 @@ export interface RoundEndpoint {
   url: string;
   headers: string;
   spec: CheckSpec;
+  componentId?: string;
 }
 
 export interface Sample {
@@ -125,8 +128,31 @@ async function ask(vantage: Vantage, fetcher: Fetcher, list: readonly Target[]):
   }
 }
 
-const ENDPOINTS = `SELECT id, url, headers, expect_status AS expectStatus, keyword, assertions, extract, indirect
+const ENDPOINTS = `SELECT id, url, headers, expect_status AS expectStatus, keyword, assertions, extract, indirect,
+    component_id AS componentId
   FROM endpoints WHERE enabled = 1`;
+
+const COMPONENTS = "SELECT id, name FROM components WHERE lifecycle = 'active'";
+
+// Maintenance in progress at ?1, with the components it covers (null: all).
+const MAINTENANCE = `SELECT ic.component_id AS componentId FROM incidents i
+  LEFT JOIN incident_components ic ON ic.incident_id = i.id
+  WHERE i.kind = 'maintenance' AND i.status != 'completed' AND i.scheduled_start <= ?1
+    AND coalesce(i.resolved_at, i.scheduled_end) > ?1`;
+
+const OPEN_AUTO = `SELECT id, auto_key AS componentId, impact, operator_touched AS touched,
+    strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS createdAt
+  FROM incidents WHERE source = 'auto' AND status NOT IN ('resolved', 'completed')`;
+
+const OPEN_INCIDENT = `INSERT INTO incidents (id, kind, title, status, impact, source, auto_key, created_at, updated_at)
+  VALUES (?1, 'incident', ?2, 'investigating', ?3, 'auto', ?4, ?5, ?5)`;
+const AFFECTS = "INSERT OR IGNORE INTO incident_components (incident_id, component_id) VALUES (?1, ?2)";
+const UPDATE_INCIDENT = `UPDATE incidents SET status = ?2, impact = coalesce(?3, impact), updated_at = ?4
+  WHERE id = ?1 AND operator_touched = 0`;
+const RESOLVE_INCIDENT = `UPDATE incidents SET status = 'resolved', resolved_at = ?2, updated_at = ?2, auto_key = NULL
+  WHERE id = ?1 AND operator_touched = 0`;
+const POST_UPDATE = `INSERT INTO incident_updates (id, incident_id, status, body, created_at)
+  SELECT ?1, ?2, ?3, ?4, ?5 WHERE EXISTS (SELECT 1 FROM incidents WHERE id = ?2 AND operator_touched = 0)`;
 
 const INSERT_SAMPLE = `INSERT OR IGNORE INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results, "values")
   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`;
@@ -136,6 +162,61 @@ const DEPLOYED = "INSERT OR IGNORE INTO deploys (endpoint_id, version, detected_
 const SEEN = `INSERT INTO vantages (code, colo, seen_at) VALUES (?1, ?2, ?3)
   ON CONFLICT (code) DO UPDATE SET colo = excluded.colo, seen_at = excluded.seen_at`;
 
+/** Each active component's state this round, for automatic incidents. */
+export function observe(
+  endpoints: readonly RoundEndpoint[],
+  samples: readonly Sample[],
+  components: readonly { id: string; name: string }[],
+  maintenance: readonly (string | null)[],
+): Observation[] {
+  const byId = new Map(samples.map((sample) => [sample.endpointId, sample]));
+  return components.flatMap((component) => {
+    const own = endpoints.flatMap((endpoint) =>
+      endpoint.componentId === component.id ? (byId.get(endpoint.id) ?? []) : [],
+    );
+    if (own.length === 0) return [];
+    const failing = own.reduce((sum, sample) => sum + sample.total - sample.ok, 0);
+    const total = own.reduce((sum, sample) => sum + sample.total, 0);
+    const errors = [
+      ...new Set(
+        own.flatMap((sample) => sample.results.flatMap((result) => (result.ok === 0 && result.e ? [result.e] : []))),
+      ),
+    ];
+    return [
+      {
+        componentId: component.id,
+        name: component.name,
+        state: aggregate(own.map((sample) => sample.state as TimelineState)),
+        detail: `${failing} of ${total} checks failing${errors.length > 0 ? ` (${errors.slice(0, 3).join(", ")})` : ""}`,
+        suppressed: maintenance.includes(null) || maintenance.includes(component.id),
+      },
+    ];
+  });
+}
+
+/** The statements carrying out automatic incident actions at `time`. */
+export function actionStatements(db: D1Database, actions: readonly Action[], time: string): D1PreparedStatement[] {
+  return actions.flatMap((action) => {
+    const update = (status: string, body: string) =>
+      db.prepare(POST_UPDATE).bind(crypto.randomUUID(), action.incidentId, status, body, time);
+    switch (action.type) {
+      case "open":
+        return [
+          db.prepare(OPEN_INCIDENT).bind(action.incidentId, action.title, action.impact, action.componentId, time),
+          db.prepare(AFFECTS).bind(action.incidentId, action.componentId),
+          update("investigating", action.body),
+        ];
+      case "update":
+        return [
+          db.prepare(UPDATE_INCIDENT).bind(action.incidentId, action.status, action.impact, time),
+          update(action.status, action.body),
+        ];
+      case "resolve":
+        return [db.prepare(RESOLVE_INCIDENT).bind(action.incidentId, time), update("resolved", action.body)];
+    }
+  });
+}
+
 /** What a round remembers for the next one. */
 export interface RoundState {
   /** Consecutive down rounds per endpoint. */
@@ -144,28 +225,45 @@ export interface RoundState {
   colos: Record<string, string | null>;
   /** The last version seen per endpoint. */
   versions: Record<string, string>;
+  /** Automatic incident trackers per component. */
+  trackers: Record<string, Tracker>;
 }
 
 type EndpointRow = Omit<RoundEndpoint, "spec"> & Parameters<typeof parseSpec>[0];
+
+interface OpenAuto {
+  id: string;
+  componentId: string;
+  impact: IncidentImpact;
+  touched: number;
+  createdAt: string;
+}
 
 /** Runs the round starting at `at` and stores its samples. Vantage
     locations are written when they change, and a version that differs
     from the last one seen is recorded as a deploy. */
 export async function runRound(env: Env, at: number, previous: RoundState): Promise<RoundState> {
-  const { results: rows } = await env.STATUS_DB.prepare(ENDPOINTS).all<EndpointRow>();
-  if (!rows?.length) return { ...previous, streaks: {} };
+  const time = sqlTime(at);
+  const [rowsResult, componentsResult, maintenanceResult, openResult] = await env.STATUS_DB.batch([
+    env.STATUS_DB.prepare(ENDPOINTS),
+    env.STATUS_DB.prepare(COMPONENTS),
+    env.STATUS_DB.prepare(MAINTENANCE).bind(time),
+    env.STATUS_DB.prepare(OPEN_AUTO),
+  ]);
+  const rows = (rowsResult?.results ?? []) as EndpointRow[];
+  if (rows.length === 0) return { ...previous, streaks: {} };
   const endpoints = rows.map((row): RoundEndpoint => ({
     id: row.id,
     url: row.url,
     headers: row.headers,
     spec: parseSpec(row),
+    componentId: row.componentId,
   }));
 
   const list = targets(endpoints);
   const responses = await Promise.all(VANTAGES.map((vantage) => ask(vantage, env[vantage.binding], list)));
   const evaluated = evaluate(endpoints, responses, previous.streaks);
 
-  const time = sqlTime(at);
   const statements = evaluated.samples.map((sample) =>
     env.STATUS_DB.prepare(INSERT_SAMPLE).bind(
       sample.endpointId,
@@ -195,5 +293,26 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
     statements.push(env.STATUS_DB.prepare(SEEN).bind(response.vantage, response.colo, time));
   }
   await env.STATUS_DB.batch(statements);
-  return { streaks: evaluated.streaks, colos: seen, versions };
+
+  // Incidents go in their own batch, so a failure there never loses samples.
+  const open = (openResult?.results ?? []) as OpenAuto[];
+  const stepped = step(
+    adopt(
+      previous.trackers,
+      open.map((incident) => ({ ...incident, createdAt: Date.parse(incident.createdAt) })),
+    ),
+    observe(
+      endpoints,
+      evaluated.samples,
+      (componentsResult?.results ?? []) as { id: string; name: string }[],
+      ((maintenanceResult?.results ?? []) as { componentId: string | null }[]).map((row) => row.componentId),
+    ),
+    at,
+    {
+      newId: () => crypto.randomUUID(),
+      touched: new Set(open.filter((row) => row.touched === 1).map((row) => row.id)),
+    },
+  );
+  if (stepped.actions.length > 0) await env.STATUS_DB.batch(actionStatements(env.STATUS_DB, stepped.actions, time));
+  return { streaks: evaluated.streaks, colos: seen, versions, trackers: stepped.trackers };
 }
