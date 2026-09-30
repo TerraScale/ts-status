@@ -87,12 +87,15 @@ INSERT INTO components (id, group_id, name, description, lifecycle, position) VA
   ('git', 'developer', 'Git and CI', 'Forgejo at git.terrascale.tech', 'active', 1);
 
 -- Endpoints of planned components stay disabled until they launch.
+-- The data-api seeds match their final Atlas health URL. Migration 0007 adds
+-- indirect checks and per-region assertions; it already gives deployed databases
+-- this same URL, so normalizing this seed requires no forward migration.
 INSERT INTO endpoints (id, component_id, region_code, cluster, provider, url, headers, enabled, position) VALUES
   ('dashboard-fly-gru', 'dashboard', 'GRU', 'gru', 'fly', 'https://dash.terrascale.tech/health/ready', '{"fly-prefer-region":"gru"}', 1, 1),
   ('website-pages', 'website', NULL, 'pages', 'cloudflare', 'https://terrascale.tech/', '{}', 1, 1),
   ('atlas-workers', 'atlas', NULL, 'workers', 'cloudflare', 'https://atlas.terrascale.tech/api/v1/regions', '{}', 1, 1),
   ('auth-edge', 'auth', NULL, 'workers', 'cloudflare', 'https://auth.terrascale.tech/readyz', '{}', 0, 1),
-  ('data-api-oci-sfo', 'data-api', 'SFO', 'us-sanjose-1', 'oci', 'https://sfo.api.terrascale.tech/api/v1/health', '{}', 0, 1),
-  ('data-api-oci-gru', 'data-api', 'GRU', 'sa-saopaulo-1', 'oci', 'https://gru.api.terrascale.tech/api/v1/health', '{}', 0, 2),
-  ('data-api-oci-fra', 'data-api', 'FRA', 'eu-frankfurt-1', 'oci', 'https://fra.api.terrascale.tech/api/v1/health', '{}', 0, 3),
+  ('data-api-oci-sfo', 'data-api', 'SFO', 'us-sanjose-1', 'oci', 'https://atlas.terrascale.tech/api/v1/regions', '{}', 0, 1),
+  ('data-api-oci-gru', 'data-api', 'GRU', 'sa-saopaulo-1', 'oci', 'https://atlas.terrascale.tech/api/v1/regions', '{}', 0, 2),
+  ('data-api-oci-fra', 'data-api', 'FRA', 'eu-frankfurt-1', 'oci', 'https://atlas.terrascale.tech/api/v1/regions', '{}', 0, 3),
   ('git-forgejo', 'git', NULL, 'forgejo', 'other', 'https://git.terrascale.tech/api/healthz', '{}', 1, 1);
