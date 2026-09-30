@@ -87,6 +87,9 @@ INSERT INTO components (id, group_id, name, description, lifecycle, position) VA
   ('git', 'developer', 'Git and CI', 'Forgejo at git.terrascale.tech', 'active', 1);
 
 -- Endpoints of planned components stay disabled until they launch.
+-- The data-api seeds match their final Atlas health URL. Migration 0007 adds
+-- indirect checks and per-region assertions; it already gives deployed databases
+-- this same URL, so normalizing this seed requires no forward migration.
 INSERT INTO endpoints (id, component_id, region_code, cluster, provider, url, headers, enabled, position) VALUES
   ('dashboard-fly-gru', 'dashboard', 'GRU', 'gru', 'fly', 'https://dash.terrascale.tech/health/ready', '{"fly-prefer-region":"gru"}', 1, 1),
   ('website-pages', 'website', NULL, 'pages', 'cloudflare', 'https://terrascale.tech/', '{}', 1, 1),
