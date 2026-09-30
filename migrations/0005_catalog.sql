@@ -92,7 +92,7 @@ INSERT INTO endpoints (id, component_id, region_code, cluster, provider, url, he
   ('website-pages', 'website', NULL, 'pages', 'cloudflare', 'https://terrascale.tech/', '{}', 1, 1),
   ('atlas-workers', 'atlas', NULL, 'workers', 'cloudflare', 'https://atlas.terrascale.tech/api/v1/regions', '{}', 1, 1),
   ('auth-edge', 'auth', NULL, 'workers', 'cloudflare', 'https://auth.terrascale.tech/readyz', '{}', 0, 1),
-  ('data-api-oci-sfo', 'data-api', 'SFO', 'us-sanjose-1', 'oci', 'https://sfo.api.terrascale.tech/api/v1/health', '{}', 0, 1),
-  ('data-api-oci-gru', 'data-api', 'GRU', 'sa-saopaulo-1', 'oci', 'https://gru.api.terrascale.tech/api/v1/health', '{}', 0, 2),
-  ('data-api-oci-fra', 'data-api', 'FRA', 'eu-frankfurt-1', 'oci', 'https://fra.api.terrascale.tech/api/v1/health', '{}', 0, 3),
+  ('data-api-oci-sfo', 'data-api', 'SFO', 'us-sanjose-1', 'oci', 'https://sfo.terrascale.tech/api/v1/health', '{}', 0, 1),
+  ('data-api-oci-gru', 'data-api', 'GRU', 'sa-saopaulo-1', 'oci', 'https://gru.terrascale.tech/api/v1/health', '{}', 0, 2),
+  ('data-api-oci-fra', 'data-api', 'FRA', 'eu-frankfurt-1', 'oci', 'https://fra.terrascale.tech/api/v1/health', '{}', 0, 3),
   ('git-forgejo', 'git', NULL, 'forgejo', 'other', 'https://git.terrascale.tech/api/healthz', '{}', 1, 1);

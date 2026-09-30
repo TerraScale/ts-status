@@ -6,7 +6,7 @@ const atlas = {
     { code: "GRU", available: true, lag_ms: 12 },
     { code: "SFO", available: false },
   ],
-  hosts: { GRU: "gru.api.terrascale.tech" },
+  hosts: { GRU: "gru.terrascale.tech" },
 };
 
 describe("paths", () => {
@@ -25,7 +25,7 @@ describe("paths", () => {
   it("selects values and misses gracefully", () => {
     expect(select(atlas, "regions[code=GRU].lag_ms")).toBe(12);
     expect(select(atlas, "regions[1].available")).toBe(false);
-    expect(select(atlas, "hosts.GRU")).toBe("gru.api.terrascale.tech");
+    expect(select(atlas, "hosts.GRU")).toBe("gru.terrascale.tech");
     expect(select(atlas, "regions[code=FRA].available")).toBeUndefined();
     expect(select(atlas, "hosts.GRU.deeper")).toBeUndefined();
   });
