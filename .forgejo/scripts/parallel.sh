@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
 # Runs every argument as a shell command at the same time, then prints each
-# command's output as its own log group, in argument order. Fails when any
-# command fails.
+# command's output as its own log group, in argument order. Cancellation
+# flushes pending logs; failures preserve the first nonzero command status.
 set -uo pipefail
 
+commands=("$@")
+printed=()
 pids=()
+print_log() {
+	local index=$1 status=$2
+	echo "::group::${commands[$index]} (exit $status)"
+	cat "$logs/$index"
+	echo "::endgroup::"
+	printed[index]=1
+}
 logs=$(mktemp -d) || exit 1
 # shellcheck disable=SC2329 # Invoked by the EXIT trap.
 cleanup() {
@@ -18,6 +27,11 @@ cleanup() {
 			wait "$pid" 2>/dev/null || true
 		done
 	fi
+	for index in "${!commands[@]}"; do
+		if [[ ${printed[$index]:-0} != 1 && -f $logs/$index ]]; then
+			print_log "$index" interrupted
+		fi
+	done
 	rm -rf -- "$logs"
 }
 trap 'cleanup' EXIT
@@ -43,12 +57,10 @@ for command in "$@"; do
 		kill -KILL -- "-${pids[$index]}" 2>/dev/null || true
 	fi
 	unset 'pids[index]'
-	echo "::group::$command (exit $status)"
-	cat "$logs/$index"
-	echo "::endgroup::"
+	print_log "$index" "$status"
 	if ((status != 0)); then
 		echo "::error::$command failed with exit status $status"
-		failed=1
+		if ((failed == 0)); then failed=$status; fi
 	fi
 	index=$((index + 1))
 done
