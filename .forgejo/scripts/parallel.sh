@@ -4,13 +4,29 @@
 # command fails.
 set -uo pipefail
 
-logs=$(mktemp -d)
-trap 'rm -rf "$logs"' EXIT
-
 pids=()
+logs=$(mktemp -d) || exit 1
+# shellcheck disable=SC2329 # Invoked by the EXIT trap.
+cleanup() {
+	if ((${#pids[@]})); then
+		for pid in "${pids[@]}"; do
+			kill -TERM -- "-$pid" "$pid" 2>/dev/null || true
+		done
+		sleep 2
+		for pid in "${pids[@]}"; do
+			kill -KILL -- "-$pid" "$pid" 2>/dev/null || true
+			wait "$pid" 2>/dev/null || true
+		done
+	fi
+	rm -rf -- "$logs"
+}
+trap 'cleanup' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 index=0
 for command in "$@"; do
-	bash -c "$command" >"$logs/$index" 2>&1 &
+	setsid bash -c "$command" >"$logs/$index" 2>&1 &
 	pids+=("$!")
 	index=$((index + 1))
 done
@@ -20,6 +36,7 @@ index=0
 for command in "$@"; do
 	status=0
 	wait "${pids[$index]}" || status=$?
+	unset 'pids[index]'
 	echo "::group::$command (exit $status)"
 	cat "$logs/$index"
 	echo "::endgroup::"
