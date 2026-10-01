@@ -12,6 +12,6 @@ bash -o pipefail -c "$command" &
 worker=$!
 status=0
 wait "$worker" || status=$?
-printf '%s\n' "$status" > "$status_file.tmp"
-mv -- "$status_file.tmp" "$status_file"
+printf '%s\n' "$status" > "$status_file.tmp" || exit 1
+mv -- "$status_file.tmp" "$status_file" || exit 1
 while :; do read -r < "$control" || true; done

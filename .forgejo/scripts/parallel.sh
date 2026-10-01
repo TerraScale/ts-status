@@ -62,8 +62,17 @@ done
 failed=0
 index=0
 for command in "$@"; do
-	while [[ ! -f $logs/$index.status ]]; do sleep 0.02; done
-	read -r status < "$logs/$index.status"
+	status=0
+	while [[ ! -f $logs/$index.status ]]; do
+		if ! kill -0 "${pids[$index]}" 2>/dev/null; then
+			wait "${pids[$index]}" || status=$?
+			if ((status == 0)); then status=1; fi
+			echo "supervisor exited before publishing command status" >> "$logs/$index"
+			break
+		fi
+		sleep 0.02
+	done
+	if [[ -f $logs/$index.status ]]; then read -r status < "$logs/$index.status"; fi
 	# The supervisor remains alive after command completion. Stop its group
 	# before reaping it, so its numeric group ID cannot be reused meanwhile.
 	kill -KILL -- "-${pids[$index]}" "${pids[$index]}" 2>/dev/null || true
