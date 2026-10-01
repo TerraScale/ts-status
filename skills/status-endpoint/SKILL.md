@@ -59,7 +59,7 @@ npm exec -- wrangler d1 execute ts-status-db --remote --command \
   "INSERT INTO regions (code, name, country, map_x, map_y, position) VALUES ('NRT', 'Tokyo', 'Japan', 118.5, 30.2, 4);"
 ```
 
-Set `ping_url` (and a short `ping_label`) on a region once a host there answers quickly, so the ping page's browser test can time it; any HTTPS URL under `*.terrascale.tech` works, e.g. `https://gru.terrascale.tech/ping` once TerraBase serves it.
+Set `ping_url` (and a short `ping_label`) on a region once a host there answers quickly, so the ping page's browser test can time it; any HTTPS URL under `*.terrascale.tech` works, e.g. `https://gru.api.terrascale.tech/ping` once TerraBase serves it.
 
 Place the hub by eye on `src/assets/region-map.svg` (x grows east, y grows south).
 
