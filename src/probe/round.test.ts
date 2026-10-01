@@ -103,11 +103,16 @@ describe("runRound", () => {
           colo: code.toUpperCase(),
           results: body.targets.map((target) => ({
             key: target.key,
-            status: 200,
+            status: target.url.includes("gru.api.terrascale.tech") ? 401 : 200,
             latencyMs: 40,
             error: null,
             body: target.body
-              ? JSON.stringify({ status: target.url.includes("git") ? "pass" : "ok", version, regions: [] })
+              ? JSON.stringify({
+                  status: target.url.includes("git") ? "pass" : "ok",
+                  version,
+                  regions: [],
+                  error: { code: "invalid_key" },
+                })
               : undefined,
           })),
         } satisfies ProbeResponse);
@@ -139,6 +144,7 @@ describe("runRound", () => {
     expect(samples).toEqual([
       { endpoint_id: "atlas-workers", state: "operational", ok: 3, total: 3, values: null },
       { endpoint_id: "dashboard-fly-gru", state: "operational", ok: 3, total: 3, values: '{"version":"1.0.0"}' },
+      { endpoint_id: "data-api-oci-gru", state: "operational", ok: 3, total: 3, values: null },
       { endpoint_id: "git-forgejo", state: "operational", ok: 3, total: 3, values: null },
       { endpoint_id: "website-pages", state: "degraded", ok: 0, total: 3, values: null },
     ]);
@@ -161,10 +167,14 @@ describe("automatic incidents", () => {
           colo: null,
           results: body.targets.map((target) => {
             const failing = !up && target.url.includes("git.terrascale.tech");
-            const json = { status: target.url.includes("git") ? "pass" : "ok", regions: [] };
+            const json = {
+              status: target.url.includes("git") ? "pass" : "ok",
+              regions: [],
+              error: { code: "invalid_key" },
+            };
             return {
               key: target.key,
-              status: failing ? 503 : 200,
+              status: failing ? 503 : target.url.includes("gru.api.terrascale.tech") ? 401 : 200,
               latencyMs: 40,
               error: null,
               body: target.url === "https://terrascale.tech/" ? "TerraScale" : JSON.stringify(json),

@@ -226,7 +226,7 @@ describe("app", () => {
     const response = await app.fetch(request("/ping"), seededEnv(), ctx);
     const body = await response.text();
     expect(response.headers.get("content-security-policy")).toContain("connect-src 'self' https://*.terrascale.tech");
-    expect(body).toContain('data-ping-url="https://dash.terrascale.tech/health/live"');
+    expect(body).toContain('data-ping-url="https://gru.api.terrascale.tech/openapi.json"');
     expect(body).toContain('data-ping-url="/api/ping"');
     expect(body).toContain("Not yet live");
     expect(body.match(/class="st-ping-cell"/g)?.length).toBeGreaterThanOrEqual(4);
