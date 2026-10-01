@@ -40,21 +40,11 @@ jobs:
         run: echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
       # Tasks run through the vite-plus runner (vpr) instead of npm scripts.
-      - name: Type-check the application
+      # They are independent (the build writes only the ignored dist/ and
+      # .wrangler/), so they run concurrently; each one's output is grouped.
+      - name: Type-check, lint, test and build the Worker bundle
         shell: bash
-        run: vpr check
-
-      - name: Lint the sources
-        shell: bash
-        run: vpr lint
-
-      - name: Run the unit tests
-        shell: bash
-        run: vpr test
-
-      - name: Build the Worker bundle
-        shell: bash
-        run: vpr build
+        run: .forgejo/scripts/parallel.sh "vpr check" "vpr lint" "vpr test" "vpr build"
 
       # This validates the generated deployment plans of the status Worker
       # and its vantage Workers only. It never applies D1 migrations and
@@ -62,7 +52,8 @@ jobs:
       - name: Validate the Wrangler deployment plans
         shell: bash
         run: |
-          wrangler deploy --dry-run
+          plans=("wrangler deploy --dry-run")
           for config in dist/ts_status_vantage_*/wrangler.json; do
-            wrangler deploy --dry-run -c "$config"
+            plans+=("wrangler deploy --dry-run -c $config")
           done
+          .forgejo/scripts/parallel.sh "${plans[@]}"
