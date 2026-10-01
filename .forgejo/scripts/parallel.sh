@@ -26,7 +26,7 @@ trap 'exit 143' TERM
 
 index=0
 for command in "$@"; do
-	setsid bash -c "$command" >"$logs/$index" 2>&1 &
+	setsid bash -o pipefail -c "$command" >"$logs/$index" 2>&1 &
 	pids+=("$!")
 	index=$((index + 1))
 done
@@ -36,6 +36,12 @@ index=0
 for command in "$@"; do
 	status=0
 	wait "${pids[$index]}" || status=$?
+	# A command can finish while its background workers still own the group.
+	kill -TERM -- "-${pids[$index]}" 2>/dev/null || true
+	if kill -0 -- "-${pids[$index]}" 2>/dev/null; then
+		sleep 2
+		kill -KILL -- "-${pids[$index]}" 2>/dev/null || true
+	fi
 	unset 'pids[index]'
 	echo "::group::$command (exit $status)"
 	cat "$logs/$index"
