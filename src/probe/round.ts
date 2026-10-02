@@ -8,6 +8,7 @@ import { adopt, step, type Action, type Observation, type Tracker } from "../dom
 import { consensus, settle, type VantageResult } from "../domain/consensus";
 import { aggregate, type IncidentImpact, type TimelineState } from "../domain/status";
 import type { Env } from "../env";
+import { canarySample, parseCanaries, runCanary, type CanaryResult } from "./canary";
 import type { ProbeResponse, Target } from "./protocol";
 import { VANTAGES, type Vantage } from "./vantages";
 
@@ -129,7 +130,7 @@ async function ask(vantage: Vantage, fetcher: Fetcher, list: readonly Target[]):
 }
 
 const ENDPOINTS = `SELECT id, url, headers, expect_status AS expectStatus, keyword, assertions, extract, indirect,
-    component_id AS componentId
+    component_id AS componentId, kind
   FROM endpoints WHERE enabled = 1`;
 
 const COMPONENTS = "SELECT id, name FROM components WHERE lifecycle = 'active'";
@@ -229,7 +230,7 @@ export interface RoundState {
   trackers: Record<string, Tracker>;
 }
 
-type EndpointRow = Omit<RoundEndpoint, "spec"> & Parameters<typeof parseSpec>[0];
+type EndpointRow = Omit<RoundEndpoint, "spec"> & Parameters<typeof parseSpec>[0] & { kind: "http" | "canary" };
 
 interface OpenAuto {
   id: string;
@@ -252,17 +253,44 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
   ]);
   const rows = (rowsResult?.results ?? []) as EndpointRow[];
   if (rows.length === 0) return { ...previous, streaks: {} };
-  const endpoints = rows.map((row): RoundEndpoint => ({
+  const toEndpoint = (row: EndpointRow): RoundEndpoint => ({
     id: row.id,
     url: row.url,
     headers: row.headers,
     spec: parseSpec(row),
     componentId: row.componentId,
-  }));
+  });
+  const probed = rows.filter((row) => row.kind !== "canary").map(toEndpoint);
+  // An enabled canary whose secret entry is missing or malformed fails
+  // rather than going quiet, so it never strands an incident it opened.
+  const canaries = parseCanaries(env.DATA_API_CANARY);
+  const canaryRows = rows.filter((row) => row.kind === "canary").map((row) => ({ row, config: canaries[row.id] }));
+  const endpoints = [...probed, ...canaryRows.map(({ row }) => toEndpoint(row))];
 
-  const list = targets(endpoints);
-  const responses = await Promise.all(VANTAGES.map((vantage) => ask(vantage, env[vantage.binding], list)));
-  const evaluated = evaluate(endpoints, responses, previous.streaks);
+  const list = targets(probed);
+  // Fresh per attempt: a replayed round must not pass on an earlier write.
+  const marker = `ts-status canary ${new Date(at).toISOString()} ${crypto.randomUUID()}`;
+  const [responses, canaryResults] = await Promise.all([
+    probed.length === 0 ? [] : Promise.all(VANTAGES.map((vantage) => ask(vantage, env[vantage.binding], list))),
+    Promise.all(
+      canaryRows.map(({ row, config }) =>
+        config
+          ? runCanary(config, marker).catch((error: unknown): CanaryResult => {
+              console.error("canary failed", row.id, error);
+              return { ok: false, latencyMs: null, error: "Canary error" };
+            })
+          : ({ ok: false, latencyMs: null, error: "Canary not configured" } satisfies CanaryResult),
+      ),
+    ),
+  ]);
+  const evaluated = evaluate(probed, responses, previous.streaks);
+  canaryRows.forEach(({ row }, index) => {
+    const result = canaryResults[index];
+    if (!result) return;
+    const { sample, streak } = canarySample(row.id, result, previous.streaks[row.id] ?? 0);
+    evaluated.samples.push(sample);
+    if (streak > 0) evaluated.streaks[row.id] = streak;
+  });
 
   const statements = evaluated.samples.map((sample) =>
     env.STATUS_DB.prepare(INSERT_SAMPLE).bind(

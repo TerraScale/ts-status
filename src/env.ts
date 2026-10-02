@@ -21,6 +21,9 @@ export interface Env {
   SMTP_USERNAME?: string;
   SMTP_PASSWORD?: string;
   SMTP_FROM?: string;
+  /** The data API canary's documents and scoped keys, as JSON keyed by
+      canary endpoint id (a Worker secret; see src/probe/canary.ts). */
+  DATA_API_CANARY?: string;
   /** Limits subscription requests per client. */
   SUBSCRIBE_LIMITER?: RateLimit;
 }

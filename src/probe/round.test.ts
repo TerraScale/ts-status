@@ -103,7 +103,7 @@ describe("runRound", () => {
           colo: code.toUpperCase(),
           results: body.targets.map((target) => ({
             key: target.key,
-            status: target.url.includes("gru.api.terrascale.tech") ? 401 : 200,
+            status: target.url.includes("api.terrascale.tech/v1/") ? 401 : 200,
             latencyMs: 40,
             error: null,
             body: target.body
@@ -142,6 +142,7 @@ describe("runRound", () => {
       )
       .all();
     expect(samples).toEqual([
+      { endpoint_id: "api-workers", state: "operational", ok: 3, total: 3, values: null },
       { endpoint_id: "atlas-workers", state: "operational", ok: 3, total: 3, values: null },
       { endpoint_id: "dashboard-fly-gru", state: "operational", ok: 3, total: 3, values: '{"version":"1.0.0"}' },
       { endpoint_id: "data-api-oci-gru", state: "operational", ok: 3, total: 3, values: null },
@@ -174,7 +175,7 @@ describe("automatic incidents", () => {
             };
             return {
               key: target.key,
-              status: failing ? 503 : target.url.includes("gru.api.terrascale.tech") ? 401 : 200,
+              status: failing ? 503 : target.url.includes("api.terrascale.tech/v1/") ? 401 : 200,
               latencyMs: 40,
               error: null,
               body: target.url === "https://terrascale.tech/" ? "TerraScale" : JSON.stringify(json),

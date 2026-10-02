@@ -16,7 +16,8 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 - **Four vantage points.** Small Workers placed near `aws:us-west-1`, `aws:sa-east-1`, `aws:eu-central-1` and `aws:ap-northeast-1` probe every endpoint; each reports the data center it ran in.
 - **30-second rounds.** A single coordinator Durable Object, next to the D1 primary, runs a round on every half minute through the vantages' service bindings and stores one sample per endpoint.
 - **Consensus.** A round needs two answering vantages; an endpoint is down only when most of them fail, degraded when some do or it is slower than 1.5 s, and shown down only after two down rounds in a row. A vantage that does not answer is left out, never counted as a failure.
-- **Deep checks.** Besides answering, an endpoint can be required to return an expected status, contain a keyword, or satisfy JSON assertions such as `regions[code=GRU].available eq true`; extracted values (a version, replication lag) are stored with each sample, and a new version becomes a deploy marker. GRU's public TerraBase API is checked directly with an unauthenticated document read: the expected `401 invalid_key` proves the document handler is reachable. This does not verify authenticated reads/writes or database readiness. Other cells remain disabled until they launch.
+- **Deep checks.** Besides answering, an endpoint can be required to return an expected status, contain a keyword, or satisfy JSON assertions such as `regions[code=GRU].available eq true`; extracted values (a version, replication lag) are stored with each sample, and a new version becomes a deploy marker. GRU's public TerraBase API is checked directly with an unauthenticated document read: the expected `401 invalid_key` proves the document handler is reachable. The global API router at `api.terrascale.tech` is checked the same way. These checks do not verify authenticated reads/writes; the data API canary below does. SFO, FRA, auth, docs and sync are seeded disabled until they answer.
+- **Data API canary.** With the `DATA_API_CANARY` secret set and the `data-api-canary-gru` endpoint enabled, the coordinator writes each round's marker into a dedicated canary document with a scoped key and reads it back (`src/probe/canary.ts`). A rejected key, a failed commit, an unreadable write, or an enabled canary the secret does not configure fails the round; two in a row are an outage.
 - **TLS expiry.** A Worker cannot see a served certificate, so once an hour the cron refreshes, from certificate transparency logs (Cert Spotter), the latest valid certificate of every monitored host not checked in a day. A latest certificate expiring within two weeks means renewal has stalled: the page warns, and cluster rows show every host's expiry.
 - **Automatic incidents.** After every round the coordinator steps a state machine per component: down for a minute (or degraded for ten) opens an incident with its timeline, a worse state raises its impact, passing checks move it to monitoring, and five healthy minutes resolve it. Maintenance windows suppress it, and incidents operators take over are left alone.
 - **Rollups.** The minute cron rebuilds hourly rollups (per vantage and for the consensus, with latency histograms) from the samples and daily rollups from the hours. Samples are kept 48 hours, hours 90 days and days 400 days.
@@ -122,7 +123,18 @@ npx wrangler secret put SMTP_PASSWORD
 npx wrangler secret put SMTP_FROM       # noreply@terrascale.tech, an approved sender
 ```
 
-Build, apply migrations, deploy the four vantage Workers, then the status Worker with:
+The data API canary needs a tbk1 key scoped to read and write one canary collection only, and the document it may overwrite. Set it as JSON keyed by endpoint id, then enable the endpoint:
+
+```sh
+npx wrangler secret put DATA_API_CANARY
+# {"data-api-canary-gru": {"origin": "https://gru.api.terrascale.tech", "tenant": "…", "database": "…",
+#   "shard": "0", "collection": "…", "document": "…", "schemaGeneration": "1",
+#   "schemaDigest": "<64 hex>", "fieldId": 1, "key": "tbk1_…"}}
+curl -X PATCH -H "authorization: Bearer $OPERATOR_TOKEN" -H 'content-type: application/json' \
+  -d '{"enabled": true}' https://status.terrascale.tech/api/operator/endpoints/data-api-canary-gru
+```
+
+Every push to `main` deploys from CI once the checks and tests pass: it applies the D1 migrations, deploys the four vantage Workers, then the status Worker, with the organization's `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` Forgejo secrets. To deploy by hand, build, apply migrations, deploy the four vantage Workers, then the status Worker with:
 
 ```sh
 npm run deploy

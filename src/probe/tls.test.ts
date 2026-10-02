@@ -39,6 +39,7 @@ describe("certificates", () => {
 
     const now = Date.parse("2026-09-26T10:17:00Z");
     expect((await checkCertificates(env, now, fetcher)).sort()).toEqual([
+      "api.terrascale.tech",
       "atlas.terrascale.tech",
       "dash.terrascale.tech",
       "git.terrascale.tech",
@@ -53,8 +54,8 @@ describe("certificates", () => {
       not_after: "2026-12-01 00:00:00",
       error: "Cert Spotter HTTP 429",
     });
-    expect(asked).toHaveLength(10);
-    expect(await checkCertificates(env, now + 3 * 86_400_000, fetcher)).toHaveLength(5);
+    expect(asked).toHaveLength(12);
+    expect(await checkCertificates(env, now + 3 * 86_400_000, fetcher)).toHaveLength(6);
   });
 
   it("reads every page, where the newest certificates come last", async () => {

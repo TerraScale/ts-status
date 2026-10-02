@@ -15,7 +15,7 @@ jobs:
   verify:
     name: Verify ts-status
     runs-on: terrascale-builder
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       CI: "true"
     steps:
@@ -57,3 +57,42 @@ jobs:
             plans+=("wrangler deploy --dry-run -c $config")
           done
           .forgejo/scripts/parallel.sh "${plans[@]}"
+
+      # A merged push ships what verification just approved: the build above
+      # left dist/ populated, so the exact verified bundles are deployed.
+      # Pull requests never take this step. Migrations go first, so the new
+      # code never reads a schema it does not know; then the vantage Workers
+      # the status Worker binds to, then the status Worker itself.
+      - name: Apply D1 migrations and deploy to Cloudflare
+        if: forgejo.event_name == 'push' && forgejo.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          # Fail closed: a missing credential must never let a main push
+          # report green without deploying.
+          : "${CLOUDFLARE_API_TOKEN:?deploy: CLOUDFLARE_API_TOKEN is required}"
+          : "${CLOUDFLARE_ACCOUNT_ID:?deploy: CLOUDFLARE_ACCOUNT_ID is required}"
+          wrangler d1 migrations apply ts-status-db --remote
+          for config in dist/ts_status_vantage_*/wrangler.json; do
+            wrangler deploy -c "$config"
+          done
+          wrangler deploy
+
+      - name: Smoke check the production status page
+        if: forgejo.event_name == 'push' && forgejo.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -eu
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsS -o /dev/null -H 'Cache-Control: no-cache' https://status.terrascale.tech/api/v1/status; then
+              echo "deploy: https://status.terrascale.tech answers"
+              exit 0
+            fi
+            echo "deploy: waiting for the status page (attempt ${attempt}/6)" >&2
+            sleep 10
+          done
+          echo "deploy: https://status.terrascale.tech is not answering" >&2
+          exit 1

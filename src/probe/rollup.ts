@@ -17,8 +17,10 @@ const SETTLE_MS = 3 * 60_000;
 const DAY_EVERY_MINUTES = 10;
 
 // The rule of isDown in domain/consensus: a round is judged with enough
-// answers, and down when most of them failed.
-const JUDGED = `total >= ${MIN_VANTAGES}`;
+// answers, and down when most of them failed. A canary (src/probe/canary.ts)
+// is one authenticated check run by the coordinator, so its every round is
+// judged on its own.
+const JUDGED = `(total >= ${MIN_VANTAGES} OR (SELECT kind FROM endpoints WHERE id = ?1) = 'canary')`;
 const DOWN = "(total - ok) * 2 > total";
 
 const ROLL_ALL = `INSERT OR REPLACE INTO probe_hours

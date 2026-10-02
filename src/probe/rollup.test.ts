@@ -59,6 +59,31 @@ describe("rollupStatements", () => {
     expect(JSON.parse(String(days[0]?.hist)).slice(0, 3)).toEqual([0, 1, 1]);
   });
 
+  it("judges every canary round, though a canary is a single check", async () => {
+    const db = testD1();
+    const insert = db.sqlite.prepare(
+      "INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES ('data-api-canary-gru', ?, ?, ?, 1, ?, ?)",
+    );
+    insert.run(sqlTime(at("2026-09-26T10:00:00Z")), "operational", 1, 200, '[{"v":"canary","ok":1,"ms":200,"e":null}]');
+    insert.run(
+      sqlTime(at("2026-09-26T10:00:30Z")),
+      "degraded",
+      0,
+      null,
+      '[{"v":"canary","ok":0,"ms":null,"e":"HTTP 401"}]',
+    );
+    await db.batch(rollupStatements(db, ["data-api-canary-gru"], at("2026-09-26T10:10:00Z")));
+
+    expect(
+      db.sqlite
+        .prepare("SELECT vantage, checks, failures, degraded, latency_sum FROM probe_hours ORDER BY vantage")
+        .all(),
+    ).toEqual([
+      { vantage: "all", checks: 2, failures: 1, degraded: 1, latency_sum: 200 },
+      { vantage: "canary", checks: 2, failures: 1, degraded: 0, latency_sum: 200 },
+    ]);
+  });
+
   it("settles the previous hour and day, and prunes once a day", () => {
     const db = testD1();
     const count = (now: string) => rollupStatements(db, ["a"], at(now)).length;
