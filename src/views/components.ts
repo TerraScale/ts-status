@@ -266,7 +266,7 @@ export function clusterRow(
   <div class="st-service-state">
     ${sparkline(entry.latency)}
     <span class="ts-meta ts-num" title="Latest ping · mean over the range">${ms(entry.pingMs)} · ${ms(entry.meanLatency)}</span>
-    ${statusBadge(entry.status)}
+    ${statusBadge(entry.status, entry.note ?? undefined)}
   </div>
   ${bars(entry.bars, { label: summary })}
 </li>`;

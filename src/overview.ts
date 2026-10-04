@@ -17,6 +17,7 @@ import {
   isClosed,
   maintenancePhase,
   meanLatency,
+  NOT_CONFIGURED,
   overallStatus,
   PROBE_STALE_MS,
   probeState,
@@ -51,6 +52,8 @@ export interface ComponentOverview extends Component {
   clusters: ClusterOverview[];
   /** Each vantage's latest median latency to the component's clusters. */
   vantagePings: Record<string, number | null>;
+  /** Shown in place of the status label, e.g. "Not configured". */
+  note: string | null;
   bars: Bucket[];
   /** Median latency per bar. */
   latency: (number | null)[];
@@ -69,6 +72,8 @@ export interface ClusterOverview {
   cluster: string;
   provider: Provider;
   status: TimelineState;
+  /** Shown in place of the status label, e.g. "Not configured". */
+  note: string | null;
   /** Median latency of the latest round. */
   pingMs: number | null;
   meanLatency: number | null;
@@ -231,6 +236,15 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
     const sample = latest.get(endpoint.id);
     return sample && endpointStatus(sample, now) !== "none" ? sample : undefined;
   };
+  // The latest round could not probe it: its secret does not name it.
+  const unconfigured = (endpoint: Endpoint): boolean => {
+    const sample = latest.get(endpoint.id);
+    return (
+      sample !== undefined &&
+      now - Date.parse(sample.at) <= PROBE_STALE_MS &&
+      sample.results.some((result) => result.e === NOT_CONFIGURED)
+    );
+  };
   const components = new Map(snapshot.components.map((component) => [component.id, component]));
   const status = (endpoint: Endpoint) => endpointStatus(latest.get(endpoint.id), now);
   const endpointsOf = endpointsByComponent(snapshot.endpoints);
@@ -275,6 +289,7 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
       cluster: endpoint.cluster,
       provider: endpoint.provider,
       status: status(endpoint),
+      note: unconfigured(endpoint) ? NOT_CONFIGURED : null,
       pingMs: fresh(endpoint)?.latencyMs ?? null,
       meanLatency: meanLatency(total),
       uptime: uptimeOf(list),
@@ -292,12 +307,15 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
   const componentList = snapshot.components.map((component): ComponentOverview => {
     const endpoints = component.lifecycle === "planned" ? [] : (endpointsOf.get(component.id) ?? []);
     const list = withIncidents(bars(counter, endpoints, range, now), component.id);
+    const state =
+      component.lifecycle === "planned"
+        ? "none"
+        : componentState(aggregate(endpoints.map(status)), component.id, snapshot.incidents, now);
     return {
       ...component,
-      status:
-        component.lifecycle === "planned"
-          ? "none"
-          : componentState(aggregate(endpoints.map(status)), component.id, snapshot.incidents, now),
+      status: state,
+      // An incident or maintenance window outranks the note.
+      note: state === "none" && endpoints.length > 0 && endpoints.every(unconfigured) ? NOT_CONFIGURED : null,
       bars: list,
       latency: latencyOf(list),
       uptime: uptimeOf(list),

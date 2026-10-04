@@ -18,6 +18,14 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 - **Consensus.** A round needs two answering vantages; an endpoint is down only when most of them fail, degraded when some do or it is slower than 1.5 s, and shown down only after two down rounds in a row. A vantage that does not answer is left out, never counted as a failure.
 - **Deep checks.** Besides answering, an endpoint can be required to return an expected status, contain a keyword, or satisfy JSON assertions such as `regions[code=GRU].available eq true`; extracted values (a version, replication lag) are stored with each sample, and a new version becomes a deploy marker. GRU's public TerraBase API is checked directly with an unauthenticated document read: the expected `401 invalid_key` proves the document handler is reachable. The global API router at `api.terrascale.tech` is checked the same way. These checks do not verify authenticated reads/writes; the data API canary below does. SFO, FRA, auth, docs and sync are seeded disabled until they answer.
 - **Data API canary.** With the `DATA_API_CANARY` secret set and the `data-api-canary-gru` endpoint enabled, the coordinator writes each round's marker into a dedicated canary document with a scoped key and reads it back (`src/probe/canary.ts`). A rejected key, a failed commit, an unreadable write, or an enabled canary the secret does not configure fails the round; two in a row are an outage.
+- **TerraBase probes.** The coordinator also probes TerraBase per region against its v1 contract (terrabase-rust `docs/api-v1.md`, `docs/control-plane-v1.md`, `docs/query-v1.md`; `src/probe/terrabase.ts`), with origins and keys from the `TERRABASE_PROBES` secret. An endpoint the secret does not name shows "Not configured": it is neither up nor down and counts toward no uptime. A secret that is not a JSON object, a malformed entry, a timeout (5 s per request), a non-2xx answer or an unexpected payload fails the round; two in a row are an outage.
+
+  | Component        | Requests, in order                                                                                                                                                                                                                  | Key                                                      |
+  | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+  | TerraBase health | `GET /v1/readyz` answers `200` with `ready`                                                                                                                                                                                         | optional                                                 |
+  | Document API     | `PUT /v1/databases/{db}/collections/{c}/documents/{id}` `{canary}` on one fixed id → `GET …/documents/{id}` holds it → `POST …/collections/{c}/query` `{"filter":{"eq":["$id",id]},"limit":1}` finds it → `DELETE …/documents/{id}` | `data` role: `read` and `write` on the canary collection |
+  | Management API   | `GET /v1/dashboard/tenants?limit=1` → `GET /v1/dashboard/tenants/{tenant}/databases?limit=1`, each `{items, next_cursor}`                                                                                                           | `control` role, used for `GET`s only                     |
+
 - **TLS expiry.** A Worker cannot see a served certificate, so once an hour the cron refreshes, from certificate transparency logs (Cert Spotter), the latest valid certificate of every monitored host not checked in a day. A latest certificate expiring within two weeks means renewal has stalled: the page warns, and cluster rows show every host's expiry.
 - **Automatic incidents.** After every round the coordinator steps a state machine per component: down for a minute (or degraded for ten) opens an incident with its timeline, a worse state raises its impact, passing checks move it to monitoring, and five healthy minutes resolve it. Maintenance windows suppress it, and incidents operators take over are left alone.
 - **Rollups.** The minute cron rebuilds hourly rollups (per vantage and for the consensus, with latency histograms) from the samples and daily rollups from the hours. Samples are kept 48 hours, hours 90 days and days 400 days.
@@ -132,6 +140,15 @@ npx wrangler secret put DATA_API_CANARY
 #   "schemaDigest": "<64 hex>", "fieldId": 1, "key": "tbk1_…"}}
 curl -X PATCH -H "authorization: Bearer $OPERATOR_TOKEN" -H 'content-type: application/json' \
   -d '{"enabled": true}' https://status.terrascale.tech/api/operator/endpoints/data-api-canary-gru
+```
+
+The TerraBase probes take one JSON secret keyed by endpoint id (`terrabase-health-gru`, `document-api-gru`, `management-api-gru`; the SFO and FRA ones are seeded disabled). Leave an endpoint out to show it as not configured. The document canary writes one fixed document id, so a lost create answer or a failed delete leaves at most one document: each round deletes it, even after a failed or unanswered write, and the next round overwrites and deletes any left; give each document endpoint its own collection. Resolve any automatic incident before removing an entry: a not configured round never resolves one.
+
+```sh
+npx wrangler secret put TERRABASE_PROBES
+# {"terrabase-health-gru": {"origin": "https://…"},
+#  "document-api-gru": {"origin": "https://gru.api.terrascale.tech", "key": "tbk1.…", "database": "status_canary", "collection": "canary"},
+#  "management-api-gru": {"origin": "https://…", "key": "tbk1.…", "tenant": "<tenant uuid>"}}
 ```
 
 Every push to `main` deploys from CI once the checks and tests pass: it applies the D1 migrations, deploys the four vantage Workers, then the status Worker, with the organization's `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` Forgejo secrets. To deploy by hand, build, apply migrations, deploy the four vantage Workers, then the status Worker with:

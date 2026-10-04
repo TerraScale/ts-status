@@ -100,6 +100,10 @@ export const STATE_LABELS: Record<TimelineState, string> = {
   none: "No data",
 };
 
+/** The note of an endpoint the latest round found not configured, and of a
+    component whose every endpoint it found so (see src/probe/terrabase.ts). */
+export const NOT_CONFIGURED = "Not configured";
+
 /** The headline for each overall state. */
 export const HEADLINES: Record<Status, string> = {
   operational: "All systems operational",

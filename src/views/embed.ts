@@ -17,7 +17,7 @@ export function embedPage(view: Overview, origin: string): Page {
     <span class="ts-meta">TerraScale Status ↗</span>
   </a>
   <ul class="st-embed-list">${components.map(
-    (entry) => html`<li><span>${entry.name}</span>${statusBadge(entry.status)}</li>`,
+    (entry) => html`<li><span>${entry.name}</span>${statusBadge(entry.status, entry.note ?? undefined)}</li>`,
   )}</ul>
   ${
     view.activeIncidents.length > 0

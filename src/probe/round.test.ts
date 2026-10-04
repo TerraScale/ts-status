@@ -146,7 +146,11 @@ describe("runRound", () => {
       { endpoint_id: "atlas-workers", state: "operational", ok: 3, total: 3, values: null },
       { endpoint_id: "dashboard-fly-gru", state: "operational", ok: 3, total: 3, values: '{"version":"1.0.0"}' },
       { endpoint_id: "data-api-oci-gru", state: "operational", ok: 3, total: 3, values: null },
+      // Without TERRABASE_PROBES the TerraBase probes are not configured, never down.
+      { endpoint_id: "document-api-gru", state: "none", ok: 0, total: 0, values: null },
       { endpoint_id: "git-forgejo", state: "operational", ok: 3, total: 3, values: null },
+      { endpoint_id: "management-api-gru", state: "none", ok: 0, total: 0, values: null },
+      { endpoint_id: "terrabase-health-gru", state: "none", ok: 0, total: 0, values: null },
       { endpoint_id: "website-pages", state: "degraded", ok: 0, total: 3, values: null },
     ]);
     expect(db.sqlite.prepare("SELECT endpoint_id, version FROM deploys").all()).toEqual([

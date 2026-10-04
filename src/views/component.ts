@@ -42,7 +42,7 @@ export function componentPage(view: Overview, entry: ComponentOverview, details:
     <p class="ts-eyebrow"><a class="ts-link" href="/">Status</a> · ${group?.name ?? "Component"}</p>
     <div class="ts-row">
       <h1 class="st-title">${entry.name}</h1>
-      ${statusBadge(entry.status, planned ? "Planned" : undefined)}
+      ${statusBadge(entry.status, planned ? "Planned" : (entry.note ?? undefined))}
     </div>
     <p class="ts-muted">${entry.description}</p>
   </header>

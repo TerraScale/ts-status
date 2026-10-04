@@ -109,7 +109,12 @@ export function step(
       delete next[id];
       continue;
     }
-    if (observation.state === "none") continue;
+    if (observation.state === "none") {
+      // An unmeasured round is not a healthy one: a recovery being
+      // monitored counts its five minutes from the last of them.
+      if (tracker !== undefined && tracker.healthySince !== null) next[id] = { ...tracker, healthySince: now };
+      continue;
+    }
     if (observation.suppressed) {
       if (!tracker?.incidentId) delete next[id];
       continue;

@@ -251,7 +251,11 @@ const route = createRouter<Route>({
       const component = view.groups.flatMap((group) => group.components).find((entry) => entry.id === params.id);
       if (!component) return text(badge("TerraScale", "none", "Unknown component"), "image/svg+xml", {}, 404);
       return text(
-        badge(component.name, component.status, component.lifecycle === "planned" ? "Planned" : undefined),
+        badge(
+          component.name,
+          component.status,
+          component.lifecycle === "planned" ? "Planned" : (component.note ?? undefined),
+        ),
         "image/svg+xml",
       );
     },

@@ -126,7 +126,7 @@ export function uptimePage(view: Overview, periods: readonly VantagePeriod[], no
     html`<ul class="ts-list">${components.map(
       (component) => html`<li class="ts-list-item st-service">
     <div class="ts-list-main"><h3 class="ts-strong"><a class="st-incident-link" href="${componentHref(component.id)}">${component.name}</a></h3></div>
-    <div class="st-service-state"><span class="ts-meta ts-num">${formatUptime(component.uptime)}</span>${statusBadge(component.status)}</div>
+    <div class="st-service-state"><span class="ts-meta ts-num">${formatUptime(component.uptime)}</span>${statusBadge(component.status, component.note ?? undefined)}</div>
     ${bars(component.bars, { label: `${component.name}: ${formatUptime(component.uptime)} uptime over the last 90 days` })}
   </li>`,
     )}</ul>`,

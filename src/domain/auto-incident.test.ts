@@ -82,6 +82,22 @@ describe("step", () => {
     expect(trackers).toEqual({});
   });
 
+  it("counts no unmeasured round toward a recovery's five healthy minutes", () => {
+    const { actions } = run([
+      ...Array.from({ length: 3 }, () => seen("major_outage")),
+      seen("operational"),
+      // Unconfigured, or too few vantages, for five minutes.
+      ...Array.from({ length: 10 }, () => seen("none")),
+      ...Array.from({ length: 11 }, () => seen("operational")),
+    ]);
+    expect(actions.map((action) => [action.at / 1000, action.type, "status" in action ? action.status : ""])).toEqual([
+      [60, "open", ""],
+      [90, "update", "monitoring"],
+      // Five minutes after the last unmeasured round (390 s), not at the first check back.
+      [690, "resolve", ""],
+    ]);
+  });
+
   it("keeps its memory while nothing is measured", () => {
     const { trackers } = run([seen("major_outage"), seen("none")]);
     expect(trackers.dashboard?.since).toBe(0);

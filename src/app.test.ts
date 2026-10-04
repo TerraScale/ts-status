@@ -144,6 +144,36 @@ describe("app", () => {
     expect(data.regions[1]?.clusters[0]).toMatchObject({ pingMs: 42, uptime: 1 });
   });
 
+  it("shows TerraBase probes the secret does not name as not configured, not down", async () => {
+    const env = seededEnv();
+    env.STATUS_DB.sqlite.exec(`
+      INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES
+        ('terrabase-health-gru', '2026-09-26 10:14:30', 'none', 0, 0, NULL,
+          '[{"v":"canary","ok":null,"ms":null,"e":"Not configured"}]'),
+        ('management-api-gru', '2026-09-26 10:14:30', 'none', 0, 0, NULL,
+          '[{"v":"canary","ok":null,"ms":null,"e":"Not configured"}]'),
+        ('document-api-gru', '2026-09-26 10:14:30', 'operational', 1, 1, 120,
+          '[{"v":"canary","ok":1,"ms":120,"e":null}]');
+      -- An incident outranks the note.
+      INSERT INTO incidents (id, kind, title, status, impact, created_at, updated_at) VALUES
+        ('i3', 'incident', 'Control plane down', 'investigating', 'critical', '2026-09-26 10:10:00', '2026-09-26 10:10:00');
+      INSERT INTO incident_components (incident_id, component_id) VALUES ('i3', 'management-api');
+    `);
+    const data = (await (await app.fetch(request("/api/v1/status"), env, ctx)).json()) as {
+      groups: { components: { id: string; status: string; note: string | null }[] }[];
+    };
+    const terrabase = data.groups[1]?.components.filter((entry) => entry.id !== "data-api" && entry.id !== "sync");
+    expect(terrabase?.map(({ id, status, note }) => ({ id, status, note }))).toEqual([
+      { id: "api", status: "none", note: null },
+      { id: "terrabase-health", status: "none", note: "Not configured" },
+      { id: "document-api", status: "operational", note: null },
+      { id: "management-api", status: "major_outage", note: null },
+    ]);
+    const page = await (await app.fetch(request("/?fragment=main"), env, ctx)).text();
+    expect(page).toContain("TerraBase health: No data uptime over the last 90 days, currently not configured");
+    expect(page).toMatch(/data-state="none"><span class="ts-dot" aria-hidden="true"><\/span>Not configured/);
+  });
+
   it("switches the bars' range, caching each range apart", async () => {
     const env = seededEnv();
     const day = (await (await app.fetch(request("/api/v1/status?range=24h"), env, ctx)).json()) as {

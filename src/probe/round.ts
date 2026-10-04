@@ -10,6 +10,14 @@ import { aggregate, type IncidentImpact, type TimelineState } from "../domain/st
 import type { Env } from "../env";
 import { canarySample, parseCanaries, runCanary, type CanaryResult } from "./canary";
 import type { ProbeResponse, Target } from "./protocol";
+import {
+  isConfigured,
+  isTerraBaseConfig,
+  notConfiguredSample,
+  parseTerraBase,
+  runTerraBase,
+  type TerraBaseProbe,
+} from "./terrabase";
 import { VANTAGES, type Vantage } from "./vantages";
 
 export const ROUND_MS = 30_000;
@@ -130,7 +138,7 @@ async function ask(vantage: Vantage, fetcher: Fetcher, list: readonly Target[]):
 }
 
 const ENDPOINTS = `SELECT id, url, headers, expect_status AS expectStatus, keyword, assertions, extract, indirect,
-    component_id AS componentId, kind
+    component_id AS componentId, kind, probe
   FROM endpoints WHERE enabled = 1`;
 
 const COMPONENTS = "SELECT id, name FROM components WHERE lifecycle = 'active'";
@@ -230,7 +238,8 @@ export interface RoundState {
   trackers: Record<string, Tracker>;
 }
 
-type EndpointRow = Omit<RoundEndpoint, "spec"> & Parameters<typeof parseSpec>[0] & { kind: "http" | "canary" };
+type EndpointRow = Omit<RoundEndpoint, "spec"> &
+  Parameters<typeof parseSpec>[0] & { kind: "http" | "canary"; probe: TerraBaseProbe | null };
 
 interface OpenAuto {
   id: string;
@@ -261,11 +270,13 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
     componentId: row.componentId,
   });
   const probed = rows.filter((row) => row.kind !== "canary").map(toEndpoint);
-  // An enabled canary whose secret entry is missing or malformed fails
-  // rather than going quiet, so it never strands an incident it opened.
+  // An enabled data API canary whose secret entry is missing or malformed
+  // fails rather than going quiet, so it never strands an incident it
+  // opened. A TerraBase probe the secret does not name is not configured.
   const canaries = parseCanaries(env.DATA_API_CANARY);
-  const canaryRows = rows.filter((row) => row.kind === "canary").map((row) => ({ row, config: canaries[row.id] }));
-  const endpoints = [...probed, ...canaryRows.map(({ row }) => toEndpoint(row))];
+  const terrabase = parseTerraBase(env.TERRABASE_PROBES);
+  const canaryRows = rows.filter((row) => row.kind === "canary");
+  const endpoints = [...probed, ...canaryRows.map(toEndpoint)];
 
   const list = targets(probed);
   // Fresh per attempt: a replayed round must not pass on an earlier write.
@@ -273,20 +284,33 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
   const [responses, canaryResults] = await Promise.all([
     probed.length === 0 ? [] : Promise.all(VANTAGES.map((vantage) => ask(vantage, env[vantage.binding], list))),
     Promise.all(
-      canaryRows.map(({ row, config }) =>
-        config
-          ? runCanary(config, marker).catch((error: unknown): CanaryResult => {
-              console.error("canary failed", row.id, error);
-              return { ok: false, latencyMs: null, error: "Canary error" };
-            })
-          : ({ ok: false, latencyMs: null, error: "Canary not configured" } satisfies CanaryResult),
-      ),
+      canaryRows.map(async (row): Promise<CanaryResult | null> => {
+        const failed = (error: string): CanaryResult => ({ ok: false, latencyMs: null, error });
+        try {
+          if (row.probe) {
+            if (terrabase === null) return failed("Invalid probe config");
+            const config = terrabase[row.id];
+            if (!isConfigured(row.probe, config)) return null;
+            if (!isTerraBaseConfig(row.probe, config)) return failed("Invalid probe config");
+            return await runTerraBase(row.probe, config, marker);
+          }
+          const config = canaries[row.id];
+          return config ? await runCanary(config, marker) : failed("Canary not configured");
+        } catch (error) {
+          console.error("canary failed", row.id, error);
+          return failed("Canary error");
+        }
+      }),
     ),
   ]);
   const evaluated = evaluate(probed, responses, previous.streaks);
-  canaryRows.forEach(({ row }, index) => {
+  canaryRows.forEach((row, index) => {
     const result = canaryResults[index];
-    if (!result) return;
+    if (result === undefined) return;
+    if (result === null) {
+      evaluated.samples.push(notConfiguredSample(row.id));
+      return;
+    }
     const { sample, streak } = canarySample(row.id, result, previous.streaks[row.id] ?? 0);
     evaluated.samples.push(sample);
     if (streak > 0) evaluated.streaks[row.id] = streak;

@@ -90,7 +90,7 @@ export function parseCanaries(secret: string | undefined): Record<string, Canary
   );
 }
 
-class CanaryError extends Error {}
+export class CanaryError extends Error {}
 
 interface Point {
   state: "absent" | "deleted" | "value" | "conflict";
@@ -163,6 +163,117 @@ async function readBounded(response: Response): Promise<string> {
   }
 }
 
+/** TerraBase's documented error codes (terrabase-rust docs/api-v1.md and
+    control-plane-v1.md, "Errors"); any other code is not stored. */
+const ERROR_CODES = new Set([
+  "invalid_request",
+  "invalid_query",
+  "invalid_cursor",
+  "invalid_patch",
+  "ttl_invalid",
+  "sort_requires_index",
+  "assert_requires_index",
+  "idempotency_key_required",
+  "invalid_schema",
+  "invalid_key",
+  "invalid_token",
+  "forbidden_scope",
+  "not_found",
+  "unknown_database",
+  "unknown_collection",
+  "unknown_route",
+  "method_not_allowed",
+  "conflict_unresolved",
+  "unique_violation",
+  "patch_conflict",
+  "index_limit_exceeded",
+  "idempotency_conflict",
+  "idempotency_expired",
+  "schema_changed",
+  "must_refetch",
+  "name_taken",
+  "index_protected",
+  "codec_conversion_unsupported",
+  "limit_exceeded",
+  "precondition_failed",
+  "payload_too_large",
+  "transaction_too_large",
+  "unsupported_media_type",
+  "home_region_required",
+  "rate_limited",
+  "internal_error",
+  "upstream_unavailable",
+  "capacity",
+  "storage_unavailable",
+  "stored_corruption",
+  "commit_uncertain",
+  "dependencies_unavailable",
+]);
+
+/** One canary request: the body of a 2xx response (or of one of
+    `statuses`) as text. Anything else throws a CanaryError naming it, with the API's
+    error code when it sent one. */
+export async function canaryText(
+  url: string,
+  init: RequestInit,
+  fetcher: typeof fetch,
+  statuses?: readonly number[],
+): Promise<string> {
+  // The timer covers the body too, so a stalled response cannot hold the round.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CANARY_TIMEOUT_MS);
+  try {
+    let response: Response;
+    try {
+      response = await fetcher(url, {
+        ...init,
+        // A followed redirect would forward the key to its destination.
+        redirect: "manual",
+        signal: controller.signal,
+      });
+    } catch {
+      throw new CanaryError(controller.signal.aborted ? "Timed out" : "Unreachable");
+    }
+    const text = await readBounded(response).catch((error: unknown) => {
+      if (error instanceof CanaryError) throw error;
+      throw new CanaryError(controller.signal.aborted ? "Timed out" : "Unreachable");
+    });
+    if (!response.ok || (statuses !== undefined && !statuses.includes(response.status))) {
+      let code = "";
+      try {
+        const body = JSON.parse(text) as { error?: { code?: unknown } } | null;
+        // Only a documented code is kept: an echoed key must never reach a
+        // public sample or incident.
+        if (typeof body?.error?.code === "string" && ERROR_CODES.has(body.error.code)) code = ` ${body.error.code}`;
+      } catch {
+        // Not JSON: the status alone names it.
+      }
+      throw new CanaryError(`HTTP ${response.status}${code}`);
+    }
+    return text;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** One canary request whose 2xx response must be a JSON object. */
+export async function canaryJson(
+  url: string,
+  init: RequestInit,
+  fetcher: typeof fetch,
+  statuses?: readonly number[],
+): Promise<unknown> {
+  let body: unknown;
+  try {
+    body = JSON.parse(await canaryText(url, init, fetcher, statuses));
+  } catch (error) {
+    if (error instanceof CanaryError) throw error;
+    throw new CanaryError("Invalid JSON");
+  }
+  if (body === null || typeof body !== "object") throw new CanaryError("Invalid JSON");
+  return body;
+}
+
 const hex = (bytes: Uint8Array): string => [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 
 /** Writes `marker` into the canary document and reads it back. */
@@ -175,43 +286,8 @@ export async function runCanary(
   const point = `${shard}/collections/${config.collection}/documents/${config.document}`;
   const headers = { authorization: `Bearer ${config.key}`, "user-agent": USER_AGENT };
 
-  const call = async (url: string, init: RequestInit = {}): Promise<unknown> => {
-    // The timer covers the body too, so a stalled response cannot hold the round.
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), CANARY_TIMEOUT_MS);
-    try {
-      let response: Response;
-      try {
-        response = await fetcher(url, {
-          ...init,
-          headers: { ...headers, ...init.headers },
-          // A followed redirect would forward the key to its destination.
-          redirect: "manual",
-          signal: controller.signal,
-        });
-      } catch {
-        throw new CanaryError(controller.signal.aborted ? "Timed out" : "Unreachable");
-      }
-      const text = await readBounded(response).catch((error: unknown) => {
-        if (error instanceof CanaryError) throw error;
-        throw new CanaryError(controller.signal.aborted ? "Timed out" : "Unreachable");
-      });
-      let body: { error?: { code?: unknown } } | null = null;
-      try {
-        body = JSON.parse(text) as { error?: { code?: unknown } } | null;
-      } catch {
-        // Judged below by status first.
-      }
-      if (!response.ok) {
-        const code = typeof body?.error?.code === "string" ? ` ${body.error.code}` : "";
-        throw new CanaryError(`HTTP ${response.status}${code}`);
-      }
-      if (body === null || typeof body !== "object") throw new CanaryError("Invalid JSON");
-      return body;
-    } finally {
-      clearTimeout(timer);
-    }
-  };
+  const call = (url: string, init: RequestInit = {}): Promise<unknown> =>
+    canaryJson(url, { ...init, headers: { ...headers, ...init.headers } }, fetcher);
 
   try {
     // Updating needs the current context as observed.

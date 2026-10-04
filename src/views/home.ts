@@ -59,7 +59,7 @@ function component(entry: ComponentOverview, view: Overview) {
 </li>`;
   }
   const range = RANGES[view.range].label;
-  const summary = `${entry.name}: ${formatUptime(entry.uptime)} uptime over the last ${range}, currently ${lower(entry.status)}`;
+  const summary = `${entry.name}: ${formatUptime(entry.uptime)} uptime over the last ${range}, currently ${entry.note?.toLowerCase() ?? lower(entry.status)}`;
   return html`<li class="ts-list-item st-service">
   <div class="ts-list-main">
     <h4 class="ts-strong"><a class="st-incident-link" href="${componentHref(entry.id)}">${entry.name}</a></h4>
@@ -68,7 +68,7 @@ function component(entry: ComponentOverview, view: Overview) {
   <div class="st-service-state">
     ${sparkline(entry.latency)}
     <span class="ts-meta ts-num" title="Uptime over the last ${range}">${formatUptime(entry.uptime)}</span>
-    ${statusBadge(entry.status)}
+    ${statusBadge(entry.status, entry.note ?? undefined)}
   </div>
   ${bars(entry.bars, { label: summary })}
 </li>`;
