@@ -75,7 +75,7 @@ nice -n 19 npm test
 
 The TerraBase probe suites launch the actual `terrabase-linux-amd64` release pinned by tag and SHA256 in `src/testing/terrabase-release.json`. They verify the executable before running it, provision an isolated organization/project/database through its real APIs, and use a temporary TLS certificate and data directory. Only ts-status's own D1 storage is substituted. Linux x64 and OpenSSL are required. The harness downloads through authenticated `fj` or `FORGEJO_READ_TOKEN` and caches the verified binary; `TERRABASE_BINARY=/path/to/terrabase-linux-amd64` supplies an existing copy, which must match the same SHA256. CI reads `ORG_READ_TOKEN`, which must have access to the private release; no credential is stored in the repo.
 
-The current published pin predates [terrabase#16](https://git.terrascale.tech/TerraScale/terrabase/pulls/16). Only the `/readyz` integration test is gated for that exact release tag, with a `TODO(TS-483)`; every other real-binary check runs. After a readiness-capable release is published, update both its tag and SHA256 and remove the gate. A different pin automatically enables the readiness assertion. Never replace the release with a fake server.
+The pinned release includes client-listener `/readyz` and region identity. The readiness integration test runs unconditionally and verifies `status: "ready"`, the configured `region`, and `X-TerraBase-Region` against the real binary.
 
 ## API
 
@@ -166,7 +166,7 @@ npx wrangler secret put TERRABASE_PROBES
 #    "userId": "<authorized user id>", "organization": "<organization UUID>", "project": "<project UUID>"}}
 ```
 
-The TerraBase health probe requires an origin exposing `/readyz`. The checked `terrabase` `origin/main` currently implements `/healthz` only; keep that probe unconfigured until the real server's readiness contract is verified. `/healthz` is liveness and cannot replace readiness.
+The TerraBase health probe requires an origin exposing `/readyz`. The pinned release exposes `/readyz` on its HTTPS client listener; configure the probe only after verifying the deployed origin's readiness contract. `/healthz` is liveness and cannot replace readiness.
 
 Every push to `main` deploys from CI once the checks and tests pass: it applies the D1 migrations, deploys the four vantage Workers, then the status Worker, with the organization's `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` Forgejo secrets. To deploy by hand, build, apply migrations, deploy the four vantage Workers, then the status Worker with:
 

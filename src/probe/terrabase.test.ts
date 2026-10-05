@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Env } from "../env";
 import { testD1 } from "../testing/d1";
-import { release, startTerraBase } from "../testing/terrabase";
+import { startTerraBase, testRegion } from "../testing/terrabase";
 import { documentPath, runCanary } from "./canary";
 import { runRound, type RoundState } from "./round";
 import { isConfigured, isTerraBaseConfig, notConfiguredSample, parseTerraBase, runTerraBase } from "./terrabase";
@@ -58,14 +58,14 @@ describe("published TerraBase probes", () => {
     await expect(api.fetcher(`${api.origin}/healthz`)).rejects.toBe(error);
   });
 
-  // TODO(TS-483): bump the published release pin and remove this gate after terrabase#16 ships.
-  it.skipIf(release.tag === "ci-ff256067015433c8c40b59879f1282d2a40480ce-run-13258")(
-    "serves /readyz with JSON status ready on the HTTPS client listener",
-    async () => {
-      const result = await runTerraBase("health", { origin: api.origin }, "round", api.fetcher);
-      expect(result).toMatchObject({ ok: true, error: null });
-    },
-  );
+  it("serves /readyz with JSON status ready and region on the HTTPS client listener", async () => {
+    const response = await api.fetcher(`${api.origin}/readyz`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-TerraBase-Region")).toBe(testRegion);
+    expect(await response.json()).toMatchObject({ status: "ready", region: testRegion });
+    const result = await runTerraBase("health", { origin: api.origin }, "round", api.fetcher);
+    expect(result).toMatchObject({ ok: true, error: null });
+  });
 
   it("writes, reads, queries by $id, and deletes the fixed document each round", async () => {
     const calls: { path: string; method: string; body: unknown }[] = [];
