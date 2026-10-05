@@ -9,6 +9,19 @@ AI IS NOT ALLOWED TO EDIT THIS FILE ONLY HUMANS CAN!
 - Cloudflare D1
 - Plain CSS with the ts-dashboard design system tokens, bundled by Lightning CSS
 
+## Status storage and discovery
+
+- ts-status is the sole Ouroboros exception: keep status history, incidents,
+  subscriptions and probe coordination on Cloudflare D1/Durable Objects so a
+  TerraBase outage cannot take down its status page. Other TerraScale products
+  use TerraBase under the Ouroboros rule.
+- Atlas is authoritative for regional origins. Resolve an admitted healthy
+  region (currently `gru-1`) through Atlas before pinning a static probe origin
+  in a secret; re-resolve when placement changes. Display region `GRU` is not
+  the Atlas region identifier. Production TerraBase is served by Caddy on
+  OCI `gru-1` at `https://gru.api.terrascale.tech`; region identity does not
+  imply a DNS hostname. Never invent a route or hostname from it.
+
 ## Local CPU Priority
 
 - When building or testing locally, run every build, test, lint, and benchmark

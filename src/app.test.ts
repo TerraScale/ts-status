@@ -246,7 +246,7 @@ describe("app", () => {
     expect(component).toContain("From each vantage point");
     expect(component).toContain('<a href="/components/dashboard?range=24h" aria-current="true">24h</a>');
     expect(await (await app.fetch(request("/components/website"), env, ctx)).text()).toContain("Website is down");
-    expect(await (await app.fetch(request("/components/auth"), env, ctx)).text()).toContain("Not launched yet");
+    expect(await (await app.fetch(request("/components/docs"), env, ctx)).text()).toContain("Not launched yet");
     expect(await (await app.fetch(request("/regions/gru"), env, ctx)).text()).toContain("São Paulo");
     expect((await app.fetch(request("/components/nope"), env, ctx)).status).toBe(404);
     expect((await app.fetch(request("/regions/XYZ"), env, ctx)).status).toBe(404);
@@ -256,7 +256,7 @@ describe("app", () => {
     const response = await app.fetch(request("/ping"), seededEnv(), ctx);
     const body = await response.text();
     expect(response.headers.get("content-security-policy")).toContain("connect-src 'self' https://*.terrascale.tech");
-    expect(body).toContain('data-ping-url="https://gru.api.terrascale.tech/openapi.json"');
+    expect(body).toContain('data-ping-url="https://gru.api.terrascale.tech/healthz"');
     expect(body).toContain('data-ping-url="/api/ping"');
     expect(body).toContain("Not yet live");
     expect(body.match(/class="st-ping-cell"/g)?.length).toBeGreaterThanOrEqual(4);
@@ -276,7 +276,8 @@ describe("app", () => {
     expect(summary.page.url).toBe("https://status.test");
     expect(summary.status.indicator).toBe("minor");
     expect(summary.components.find((entry) => entry.id === "git")?.status).toBe("under_maintenance");
-    expect(summary.components.some((entry) => entry.id === "auth")).toBe(false);
+    expect(summary.components.some((entry) => entry.id === "auth")).toBe(true);
+    expect(summary.components.some((entry) => entry.id === "docs")).toBe(false);
     expect(summary.incidents.map((entry) => entry.name)).toEqual(["Slow <queries>"]);
     expect(summary.incidents[0]?.incident_updates).toHaveLength(2);
     // Both were last updated in the same second; the id breaks the tie.
@@ -324,7 +325,7 @@ describe("app", () => {
     expect(await type("/maintenance.ics")).toBe("text/calendar; charset=utf-8");
     const status = await (await app.fetch(request("/badge/status.svg"), env, ctx)).text();
     expect(status).toContain("Some systems are degraded");
-    expect(await (await app.fetch(request("/badge/auth.svg"), env, ctx)).text()).toContain("Planned");
+    expect(await (await app.fetch(request("/badge/docs.svg"), env, ctx)).text()).toContain("Planned");
     expect((await app.fetch(request("/badge/nope.svg"), env, ctx)).status).toBe(404);
   });
 

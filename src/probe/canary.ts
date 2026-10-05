@@ -16,25 +16,17 @@ import type { Sample } from "./round";
 /** Each canary request slower than this fails. */
 export const CANARY_TIMEOUT_MS = 5_000;
 
-/** How long a canary commit's transaction id stays valid. */
-const TRANSACTION_TTL_MS = 60_000;
-
 /** The `v` a canary result is stored under: it is not a vantage. */
 export const CANARY_VANTAGE = "canary";
 
 export interface CanaryConfig {
   /** The regional API origin, e.g. https://gru.api.terrascale.tech. */
   origin: string;
-  tenant: string;
+  project: string;
   database: string;
-  shard: string;
   collection: string;
   document: string;
-  schemaGeneration: string;
-  schemaDigest: string;
-  /** The utf8 field the marker is written to. */
-  fieldId: number;
-  /** A tbk1 key scoped to read and write the canary collection only. */
+  /** A tb_ API key with documents:read and documents:write. */
   key: string;
 }
 
@@ -47,28 +39,66 @@ export interface CanaryResult {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-function isConfig(value: unknown): value is CanaryConfig {
-  if (typeof value !== "object" || value === null) return false;
+const NAME = /^[a-z][a-z0-9_-]{0,62}$/;
+const VERSION = /^tbv1-[0-9a-f]{32}$/;
+
+export function isCanaryConfig(value: unknown): value is CanaryConfig {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const entry = value as Record<string, unknown>;
-  return (
-    typeof entry.origin === "string" &&
-    /^https:\/\/[^/]+$/.test(entry.origin) &&
-    [entry.tenant, entry.database, entry.collection, entry.document].every(
-      (id) => typeof id === "string" && UUID.test(id),
-    ) &&
-    typeof entry.shard === "string" &&
-    /^(0|[1-9][0-9]*)$/.test(entry.shard) &&
-    typeof entry.schemaGeneration === "string" &&
-    /^[1-9][0-9]*$/.test(entry.schemaGeneration) &&
-    typeof entry.schemaDigest === "string" &&
-    /^[0-9a-f]{64}$/.test(entry.schemaDigest) &&
-    typeof entry.fieldId === "number" &&
-    Number.isInteger(entry.fieldId) &&
-    entry.fieldId >= 1 &&
-    typeof entry.key === "string" &&
-    entry.key.length > 0
-  );
+  try {
+    const url = new URL(String(entry.origin));
+    return (
+      url.protocol === "https:" &&
+      url.origin === entry.origin &&
+      typeof entry.project === "string" &&
+      UUID.test(entry.project) &&
+      typeof entry.database === "string" &&
+      NAME.test(entry.database) &&
+      typeof entry.collection === "string" &&
+      NAME.test(entry.collection) &&
+      typeof entry.document === "string" &&
+      UUID.test(entry.document) &&
+      typeof entry.key === "string" &&
+      entry.key.startsWith("tb_") &&
+      entry.key.length > 3
+    );
+  } catch {
+    return false;
+  }
 }
+
+export const collectionPath = (config: Pick<CanaryConfig, "project" | "database" | "collection">): string =>
+  `/v1/projects/${config.project}/databases/${config.database}/collections/${config.collection}`;
+
+export const documentPath = (config: CanaryConfig): string => `${collectionPath(config)}/documents/${config.document}`;
+
+/** Validate the C# document write acknowledgement, including durability. */
+export function written(value: unknown): string {
+  const body = value as { id?: unknown; version?: unknown; offset?: unknown; durability?: unknown } | null;
+  if (
+    !body ||
+    typeof body.id !== "string" ||
+    !UUID.test(body.id) ||
+    typeof body.version !== "string" ||
+    !VERSION.test(body.version) ||
+    typeof body.offset !== "string" ||
+    !/^(0|[1-9][0-9]*)$/.test(body.offset) ||
+    body.durability !== "local_durable"
+  )
+    throw new CanaryError("Invalid response");
+  return body.id;
+}
+
+export const holdsDocument = (value: unknown, id: string, marker: string): boolean => {
+  const body = value as { id?: unknown; version?: unknown; state?: unknown; document?: { canary?: unknown } } | null;
+  return (
+    body?.id === id &&
+    typeof body.version === "string" &&
+    VERSION.test(body.version) &&
+    body.state === "value" &&
+    body.document?.canary === marker
+  );
+};
 
 /** Reads the canary secret, dropping malformed entries; empty when unset. */
 export function parseCanaries(secret: string | undefined): Record<string, CanaryConfig> {
@@ -83,7 +113,7 @@ export function parseCanaries(secret: string | undefined): Record<string, Canary
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
   return Object.fromEntries(
     Object.entries(value).filter((entry): entry is [string, CanaryConfig] => {
-      const valid = isConfig(entry[1]);
+      const valid = isCanaryConfig(entry[1]);
       if (!valid) console.error("malformed DATA_API_CANARY entry", entry[0]);
       return valid;
     }),
@@ -91,58 +121,6 @@ export function parseCanaries(secret: string | undefined): Record<string, Canary
 }
 
 export class CanaryError extends Error {}
-
-interface Point {
-  state: "absent" | "deleted" | "value" | "conflict";
-  context: unknown[];
-  siblings: { kind: string; fields?: { id: number; value: { type: string; value?: unknown } }[] }[];
-}
-
-const isObserved = (value: unknown): boolean => {
-  if (typeof value !== "object" || value === null) return false;
-  const entry = value as Record<string, unknown>;
-  return (
-    typeof entry.replica === "string" && typeof entry.incarnation === "string" && typeof entry.sequence === "string"
-  );
-};
-
-const isSibling = (value: unknown): boolean => {
-  if (typeof value !== "object" || value === null) return false;
-  const sibling = value as Record<string, unknown>;
-  if (typeof sibling.kind !== "string") return false;
-  if (sibling.fields === undefined) return sibling.kind !== "live";
-  return (
-    Array.isArray(sibling.fields) &&
-    sibling.fields.every((field: unknown) => {
-      if (typeof field !== "object" || field === null) return false;
-      const entry = field as Record<string, unknown>;
-      return (
-        typeof entry.id === "number" &&
-        typeof entry.value === "object" &&
-        entry.value !== null &&
-        typeof (entry.value as Record<string, unknown>).type === "string"
-      );
-    })
-  );
-};
-
-/** A point read as the API documents it; anything else fails the canary
-    before it writes, so a malformed context never makes a blind write. */
-function asPoint(value: unknown): Point {
-  const point = value as Partial<Point> | null;
-  if (
-    typeof point !== "object" ||
-    point === null ||
-    !["absent", "deleted", "value", "conflict"].includes(String(point.state)) ||
-    !Array.isArray(point.context) ||
-    !point.context.every(isObserved) ||
-    !Array.isArray(point.siblings) ||
-    !point.siblings.every(isSibling)
-  ) {
-    throw new CanaryError("Invalid point");
-  }
-  return point as Point;
-}
 
 /** The body as text, failing beyond MAX_BODY_BYTES: a canary response is small. */
 async function readBounded(response: Response): Promise<string> {
@@ -163,8 +141,7 @@ async function readBounded(response: Response): Promise<string> {
   }
 }
 
-/** TerraBase's documented error codes (terrabase-rust docs/api-v1.md and
-    control-plane-v1.md, "Errors"); any other code is not stored. */
+/** Only known error codes reach public samples; never echoed credentials. */
 const ERROR_CODES = new Set([
   "invalid_request",
   "invalid_query",
@@ -274,58 +251,30 @@ export async function canaryJson(
   return body;
 }
 
-const hex = (bytes: Uint8Array): string => [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-
-/** Writes `marker` into the canary document and reads it back. */
+/** Writes the round marker to one dedicated document and verifies it immediately. */
 export async function runCanary(
   config: CanaryConfig,
   marker: string,
   fetcher: typeof fetch = fetch,
 ): Promise<CanaryResult> {
-  const shard = `${config.origin}/v1/tenants/${config.tenant}/databases/${config.database}/shards/${config.shard}`;
-  const point = `${shard}/collections/${config.collection}/documents/${config.document}`;
+  const url = config.origin + documentPath(config);
   const headers = { authorization: `Bearer ${config.key}`, "user-agent": USER_AGENT };
-
-  const call = (url: string, init: RequestInit = {}): Promise<unknown> =>
-    canaryJson(url, { ...init, headers: { ...headers, ...init.headers } }, fetcher);
-
+  const started = Date.now();
   try {
-    // Updating needs the current context as observed.
-    const before = asPoint(await call(point, { cache: "no-store" }));
-    const started = Date.now();
-    const nonce = hex(crypto.getRandomValues(new Uint8Array(16)));
-    await call(`${shard}/transactions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        version: 1,
-        transaction_id: { expires_at_unix_ms: String(Date.now() + TRANSACTION_TTL_MS), nonce },
-        writes: [
-          {
-            collection: config.collection,
-            document: config.document,
-            schema_generation: config.schemaGeneration,
-            schema_digest: config.schemaDigest,
-            observed: before.context,
-            value: { kind: "live", fields: [{ id: config.fieldId, value: { type: "utf8", value: marker } }] },
-          },
-        ],
-      }),
-    });
-    const after = asPoint(await call(point, { cache: "no-store" }));
-    const latencyMs = Date.now() - started;
-    // Only a settled value holding the utf8 marker proves the write; a
-    // conflict means another writer raced it.
-    const read =
-      after.state === "value" &&
-      after.siblings.some(
-        (sibling) =>
-          sibling.kind === "live" &&
-          sibling.fields?.some(
-            (field) => field.id === config.fieldId && field.value.type === "utf8" && field.value.value === marker,
-          ),
-      );
-    return read ? { ok: true, latencyMs, error: null } : { ok: false, latencyMs: null, error: "Write not readable" };
+    const write = await canaryJson(
+      url,
+      {
+        method: "PUT",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ canary: marker }),
+      },
+      fetcher,
+      [200, 201],
+    );
+    if (written(write) !== config.document) throw new CanaryError("Invalid response");
+    const read = await canaryJson(url, { headers, cache: "no-store" }, fetcher, [200]);
+    if (!holdsDocument(read, config.document, marker)) throw new CanaryError("Write not readable");
+    return { ok: true, latencyMs: Date.now() - started, error: null };
   } catch (error) {
     if (error instanceof CanaryError) return { ok: false, latencyMs: null, error: error.message };
     throw error;

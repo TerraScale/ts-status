@@ -103,14 +103,19 @@ describe("runRound", () => {
           colo: code.toUpperCase(),
           results: body.targets.map((target) => ({
             key: target.key,
-            status: target.url.includes("api.terrascale.tech/v1/") ? 401 : 200,
+            status: target.url.includes("openid-configuration")
+              ? 404
+              : target.url.includes("api.terrascale.tech/v1/")
+                ? 401
+                : 200,
             latencyMs: 40,
             error: null,
             body: target.body
               ? JSON.stringify({
-                  status: target.url.includes("git") ? "pass" : "ok",
+                  status: target.url.includes("git") ? "pass" : target.url.includes("auth") ? "ready" : "ok",
                   version,
-                  regions: [],
+                  regions: [{ code: "GRU-1", available: true }],
+                  hosts: { "GRU-1": "gru.api.terrascale.tech" },
                   error: { code: "invalid_key" },
                 })
               : undefined,
@@ -135,7 +140,7 @@ describe("runRound", () => {
 
     expect(asked).toHaveLength(9);
     expect(first.colos).toEqual({ sfo: "SFO", gru: "GRU", fra: "FRA" });
-    expect(first.versions).toEqual({ "dashboard-fly-gru": "1.0.0" });
+    expect(first.versions).toEqual({ "auth-edge": "1.0.0", "dashboard-fly-gru": "1.0.0" });
     const samples = db.sqlite
       .prepare(
         `SELECT endpoint_id, state, ok, total, "values" FROM probe_samples WHERE at = '2026-09-26 10:00:30' ORDER BY endpoint_id`,
@@ -144,6 +149,8 @@ describe("runRound", () => {
     expect(samples).toEqual([
       { endpoint_id: "api-workers", state: "operational", ok: 3, total: 3, values: null },
       { endpoint_id: "atlas-workers", state: "operational", ok: 3, total: 3, values: null },
+      { endpoint_id: "auth-edge", state: "operational", ok: 3, total: 3, values: '{"version":"1.0.0"}' },
+      { endpoint_id: "auth-oidc-edge", state: "none", ok: 0, total: 0, values: null },
       { endpoint_id: "dashboard-fly-gru", state: "operational", ok: 3, total: 3, values: '{"version":"1.0.0"}' },
       { endpoint_id: "data-api-oci-gru", state: "operational", ok: 3, total: 3, values: null },
       // Without TERRABASE_PROBES the TerraBase probes are not configured, never down.
@@ -154,6 +161,7 @@ describe("runRound", () => {
       { endpoint_id: "website-pages", state: "degraded", ok: 0, total: 3, values: null },
     ]);
     expect(db.sqlite.prepare("SELECT endpoint_id, version FROM deploys").all()).toEqual([
+      { endpoint_id: "auth-edge", version: "1.1.0" },
       { endpoint_id: "dashboard-fly-gru", version: "1.1.0" },
     ]);
     expect(db.sqlite.prepare("SELECT code FROM vantages").all()).toHaveLength(3);
@@ -173,13 +181,20 @@ describe("automatic incidents", () => {
           results: body.targets.map((target) => {
             const failing = !up && target.url.includes("git.terrascale.tech");
             const json = {
-              status: target.url.includes("git") ? "pass" : "ok",
-              regions: [],
+              status: target.url.includes("git") ? "pass" : target.url.includes("auth") ? "ready" : "ok",
+              regions: [{ code: "GRU-1", available: true }],
+              hosts: { "GRU-1": "gru.api.terrascale.tech" },
               error: { code: "invalid_key" },
             };
             return {
               key: target.key,
-              status: failing ? 503 : target.url.includes("api.terrascale.tech/v1/") ? 401 : 200,
+              status: failing
+                ? 503
+                : target.url.includes("openid-configuration")
+                  ? 404
+                  : target.url.includes("api.terrascale.tech/v1/")
+                    ? 401
+                    : 200,
               latencyMs: 40,
               error: null,
               body: target.url === "https://terrascale.tech/" ? "TerraScale" : JSON.stringify(json),

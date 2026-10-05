@@ -44,6 +44,8 @@ jobs:
       # .wrangler/), so they run concurrently; each one's output is grouped.
       - name: Type-check, lint, test and build the Worker bundle
         shell: bash
+        env:
+          FORGEJO_READ_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
         run: .forgejo/scripts/parallel.sh "vpr check" "vpr lint" "vpr test" "vpr build"
 
       # This validates the generated deployment plans of the status Worker

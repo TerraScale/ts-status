@@ -15,6 +15,8 @@ export interface Assertion {
 export interface CheckSpec {
   /** "2xx", "200", or a list such as "200,204". */
   expectStatus: string;
+  /** A not-yet-published contract: label this response without judging uptime. */
+  pendingStatus?: number | null;
   keyword: string | null;
   assertions: Assertion[];
   /** Named paths whose values are recorded with every sample. */
@@ -123,6 +125,9 @@ const describe = (assertion: Assertion): string =>
 export function judge(spec: CheckSpec, observation: Observation): Judgement {
   const fail = (error: string): Judgement => ({ outcome: spec.indirect ? "unknown" : "fail", error, values: {} });
   if (observation.status === null) return fail(observation.error ?? "Unreachable");
+  if (observation.status === spec.pendingStatus) {
+    return { outcome: "unknown", error: `Not available yet (HTTP ${observation.status})`, values: {} };
+  }
   if (!statusMatches(spec.expectStatus, observation.status)) return fail(`HTTP ${observation.status}`);
 
   const body = observation.body ?? "";
@@ -178,6 +183,7 @@ function isAssertion(value: unknown): value is Assertion {
 /** Reads a stored check spec, dropping anything malformed. */
 export function parseSpec(row: {
   expectStatus: string;
+  pendingStatus?: number | null;
   keyword: string | null;
   assertions: string;
   extract: string;
@@ -194,6 +200,7 @@ export function parseSpec(row: {
   const extract = parse(row.extract);
   return {
     expectStatus: row.expectStatus,
+    ...(row.pendingStatus !== null && row.pendingStatus !== undefined ? { pendingStatus: row.pendingStatus } : {}),
     keyword: row.keyword || null,
     assertions: Array.isArray(assertions) ? assertions.filter(isAssertion) : [],
     extract:

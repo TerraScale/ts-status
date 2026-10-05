@@ -1,22 +1,19 @@
-/* TerraBase probes, run by the coordinator like the data API canary, each
-   against the v1 contract (terrabase-rust docs/api-v1.md and
-   control-plane-v1.md):
-
-   - health: `GET /v1/readyz` must answer `200 ready`.
-   - documents: with a data key holding read and write on one canary
-     collection, create (PUT) the canary document, read it back, find it by
-     query, then delete it.
-   - management: with a control key, list tenants (one per dashboard
-     project) and the databases of one tenant. Reads only.
-
-   Origins and keys come from the TERRABASE_PROBES Worker secret, a JSON
-   object keyed by endpoint id. An endpoint the secret does not name is not
-   configured, and so is a documents or management entry without its key:
-   its samples carry no state, so it shows as such and never counts as
-   down. Any other malformed entry fails, so a typo is never silent. */
+/* Coordinator probes of the C# TerraBase contract. Unconfigured secrets
+   remain unjudged; malformed configuration and contract failures fail closed. */
 
 import { NOT_CONFIGURED } from "../domain/status";
-import { CANARY_VANTAGE, CanaryError, canaryJson, canaryText, type CanaryResult } from "./canary";
+import {
+  CANARY_VANTAGE,
+  CanaryError,
+  canaryJson,
+  collectionPath,
+  documentPath,
+  holdsDocument,
+  isCanaryConfig,
+  written,
+  type CanaryConfig,
+  type CanaryResult,
+} from "./canary";
 import { USER_AGENT } from "./check";
 import type { Sample } from "./round";
 
@@ -25,14 +22,14 @@ export type TerraBaseProbe = "health" | "documents" | "management";
 export interface TerraBaseConfig {
   /** The probed origin, e.g. https://gru.api.terrascale.tech. */
   origin: string;
-  /** A tbk1 key: optional for health, a data key for documents and a
-      control key for management. */
+  /** Document API key, or dashboard service credential for management. */
   key?: string;
-  /** documents: the canary database and collection names. */
+  project?: string;
   database?: string;
   collection?: string;
-  /** management: the tenant whose databases are listed. */
-  tenant?: string;
+  /** Management identity: an authorized user in the dedicated canary org. */
+  userId?: string;
+  organization?: string;
 }
 
 /** A not configured endpoint's sample: unjudged, so it is neither up nor
@@ -47,9 +44,7 @@ export const notConfiguredSample = (endpointId: string): Sample => ({
   values: null,
 });
 
-const NAME = /^[a-z][a-z0-9_-]{0,62}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const VERSION = /^tbv1-[0-9a-f]{32}$/;
 
 const isString = (value: unknown): value is string => typeof value === "string" && value.length > 0;
 
@@ -61,14 +56,20 @@ const PAGE_SIZE = 1;
     behind, and the next round overwrites and deletes it. */
 const CANARY_DOCUMENT = "7d8f6b0e-4c1a-4f2e-9a63-746572726173";
 
-/** The v1 routes probed: api-v1.md, query-v1.md and control-plane-v1.md. */
+const documentConfig = (config: TerraBaseConfig): CanaryConfig =>
+  ({
+    ...config,
+    document: CANARY_DOCUMENT,
+  }) as CanaryConfig;
+
 const ROUTES = {
-  readyz: "/v1/readyz",
-  document: (config: TerraBaseConfig) =>
-    `/v1/databases/${config.database}/collections/${config.collection}/documents/${CANARY_DOCUMENT}`,
-  query: (config: TerraBaseConfig) => `/v1/databases/${config.database}/collections/${config.collection}/query`,
-  tenants: `/v1/dashboard/tenants?limit=${PAGE_SIZE}`,
-  databases: (config: TerraBaseConfig) => `/v1/dashboard/tenants/${config.tenant}/databases?limit=${PAGE_SIZE}`,
+  readyz: "/readyz",
+  document: (config: TerraBaseConfig) => documentPath(documentConfig(config)),
+  query: (config: TerraBaseConfig) => `${collectionPath(documentConfig(config))}/query`,
+  projects: (config: TerraBaseConfig) =>
+    `/v1/management/organizations/${config.organization}/projects?limit=${PAGE_SIZE}`,
+  databases: (config: TerraBaseConfig) =>
+    `/v1/management/organizations/${config.organization}/projects/${config.project}/databases?limit=${PAGE_SIZE}`,
 };
 
 /** Whether the secret configures an endpoint: it names it, with the key
@@ -104,15 +105,22 @@ export function isTerraBaseConfig(probe: TerraBaseProbe, value: unknown): value 
     case "health":
       return entry.key === undefined || isString(entry.key);
     case "documents":
+      return isCanaryConfig(documentConfig(entry as unknown as TerraBaseConfig));
+    case "management":
       return (
         isString(entry.key) &&
-        typeof entry.database === "string" &&
-        NAME.test(entry.database) &&
-        typeof entry.collection === "string" &&
-        NAME.test(entry.collection)
+        typeof entry.organization === "string" &&
+        UUID.test(entry.organization) &&
+        typeof entry.project === "string" &&
+        UUID.test(entry.project) &&
+        typeof entry.userId === "string" &&
+        entry.userId.length >= 1 &&
+        entry.userId.length <= 256 &&
+        ![...entry.userId].some(
+          (character) =>
+            character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127 || character.charCodeAt(0) > 255,
+        )
       );
-    case "management":
-      return isString(entry.key) && typeof entry.tenant === "string" && UUID.test(entry.tenant);
   }
 }
 
@@ -135,40 +143,18 @@ const invalid = (): never => {
   throw new CanaryError("Invalid response");
 };
 
-/** A document write's answer: `{id, version, offset, durability}`. */
-function written(value: unknown): string {
-  const body = value as { id?: unknown; version?: unknown; offset?: unknown; durability?: unknown };
-  if (typeof body.id !== "string" || !UUID.test(body.id)) invalid();
-  if (typeof body.version !== "string" || !VERSION.test(body.version)) invalid();
-  if (typeof body.offset !== "string" || !/^(0|[1-9][0-9]*)$/.test(body.offset)) invalid();
-  if (body.durability !== "local_durable" && body.durability !== "object_durable") invalid();
-  return body.id as string;
-}
-
 const isCursor = (value: unknown): boolean => value === null || typeof value === "string";
 
-/** A list route's answer: `{items: [{id}, …], next_cursor}`. */
+/** C# management pagination uses `next`, not document query's `next_cursor`. */
 function listed(value: unknown): void {
-  const body = value as { items?: unknown; next_cursor?: unknown };
-  if (!Array.isArray(body.items)) invalid();
-  if (!isCursor(body.next_cursor)) invalid();
+  const body = value as { items?: unknown; next?: unknown } | null;
+  if (!body) throw new CanaryError("Invalid response");
+  if (!Array.isArray(body.items) || !isCursor(body.next)) invalid();
   for (const item of body.items as unknown[]) {
     const id = (item as { id?: unknown } | null)?.id;
     if (typeof id !== "string" || !UUID.test(id)) invalid();
   }
 }
-
-/** Holds the marker the canary wrote. */
-const holds = (item: unknown, id: string, marker: string): boolean => {
-  const entry = item as { id?: unknown; version?: unknown; state?: unknown; document?: { canary?: unknown } } | null;
-  return (
-    entry?.id === id &&
-    typeof entry.version === "string" &&
-    VERSION.test(entry.version) &&
-    entry.state === "value" &&
-    entry.document?.canary === marker
-  );
-};
 
 async function documents(
   config: TerraBaseConfig,
@@ -186,7 +172,7 @@ async function documents(
     // 201 creates it; 200 replaces one a failed round left behind.
     const created = await call(ROUTES.document(config), json("PUT", { canary: marker }), [200, 201]);
     if (written(created) !== id) invalid();
-    if (!holds(await call(ROUTES.document(config), { cache: "no-store" }), id, marker)) invalid();
+    if (!holdsDocument(await call(ROUTES.document(config), { cache: "no-store" }), id, marker)) invalid();
     const found = (await call(
       ROUTES.query(config),
       json("POST", { filter: { eq: ["$id", id] }, limit: PAGE_SIZE }),
@@ -195,7 +181,7 @@ async function documents(
       next_cursor?: unknown;
     };
     if (!Array.isArray(found.items) || !isCursor(found.next_cursor)) invalid();
-    if (!(found.items as unknown[]).some((item) => holds(item, id, marker)))
+    if (!(found.items as unknown[]).some((item) => holdsDocument(item, id, marker)))
       throw new CanaryError("Query missed the document");
   } catch (error) {
     failure = error;
@@ -220,6 +206,10 @@ export async function runTerraBase(
 ): Promise<CanaryResult> {
   const headers: Record<string, string> = { "user-agent": USER_AGENT };
   if (config.key) headers.authorization = `Bearer ${config.key}`;
+  if (probe === "management") {
+    headers["X-TerraBase-User-Id"] = config.userId!;
+    headers["X-TerraBase-Organization-Id"] = config.organization!;
+  }
   const init = (extra: RequestInit = {}): RequestInit => ({ ...extra, headers: { ...headers, ...extra.headers } });
   // Every request answers 200 unless it says otherwise.
   const call = (path: string, extra?: RequestInit, statuses: readonly number[] = [200]) =>
@@ -227,19 +217,16 @@ export async function runTerraBase(
   const started = Date.now();
   try {
     switch (probe) {
-      case "health":
-        if (
-          (await canaryText(config.origin + ROUTES.readyz, init({ cache: "no-store" }), fetcher, [200])).trim() !==
-          "ready"
-        ) {
-          invalid();
-        }
+      case "health": {
+        const ready = (await call(ROUTES.readyz, { cache: "no-store" })) as { status?: unknown; version?: unknown };
+        if (ready.status !== "ready" || !isString(ready.version)) invalid();
         break;
+      }
       case "documents":
         await documents(config, marker, call);
         break;
       case "management":
-        listed(await call(ROUTES.tenants, { cache: "no-store" }));
+        listed(await call(ROUTES.projects(config), { cache: "no-store" }));
         listed(await call(ROUTES.databases(config), { cache: "no-store" }));
         break;
     }
