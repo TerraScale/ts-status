@@ -168,7 +168,7 @@ npx wrangler secret put TERRABASE_PROBES
 
 The TerraBase health probe requires an origin exposing `/readyz`. The pinned release exposes `/readyz` on its HTTPS client listener; configure the probe only after verifying the deployed origin's readiness contract. `/healthz` is liveness and cannot replace readiness.
 
-Every push to `main` deploys from CI once the checks and tests pass: it applies the D1 migrations, deploys the four vantage Workers, then the status Worker, with the organization's `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` Forgejo secrets. To deploy by hand, build, apply migrations, deploy the four vantage Workers, then the status Worker with:
+Every push to `main` deploys from CI once the checks and tests pass: it applies the D1 migrations, deploys the four vantage Workers, then the status Worker, with the repository's `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` Forgejo secrets (they override the organization's). The token is supplied by the account owner and needs Workers Scripts Write, D1 Edit and Account Settings Read on the account, and Workers Routes Write on `terrascale.tech` for the custom domain. Each deployed version carries its commit as its tag and message, so `npx wrangler deployments list` shows what production runs. To deploy by hand, build, apply migrations, deploy the four vantage Workers, then the status Worker with:
 
 ```sh
 nice -n 19 npm run deploy

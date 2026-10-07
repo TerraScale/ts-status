@@ -22,6 +22,18 @@ AI IS NOT ALLOWED TO EDIT THIS FILE ONLY HUMANS CAN!
   OCI `gru-1` at `https://gru.api.terrascale.tech`; region identity does not
   imply a DNS hostname. Never invent a route or hostname from it.
 
+## D1 data and the CI deploy token
+
+- ts-status MUST keep its data in Cloudflare D1 (`STATUS_DB`), a deliberate
+  exception to the TerraScale rule that all service data lives in TerraBase.
+  User decision 2026-10-07: the status page must keep working while TerraBase
+  is down. Never move ts-status data to TerraBase or add a TerraBase dependency
+  to the data path.
+- CI deploys with the repo secret `CLOUDFLARE_API_TOKEN`, a user-supplied token
+  used only for ts-status (Workers scripts and routes, D1 Edit). Never print it,
+  never copy it to other repos, and if a deploy gets D1 error 7403, check this
+  token's scope first.
+
 ## Cloudflare: use the `cf` CLI
 The Cloudflare CLI `cf` (npm package `cf`, v1.0.0-beta.10, installed through the mise Node toolchain) is installed and logged in on all 3 T3 hosts (delta, beta, mariogk-dev) as `mariogk01@gmail.com`, whose account owns the `terrascale.tech` zone.
 - Use `cf` for Cloudflare work: DNS records, zones, origin CA / client certificates, SSL/TLS and cache settings, rules, analytics, API tokens. Workers deploys keep using `wrangler`.
