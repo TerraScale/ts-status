@@ -14,6 +14,9 @@
     "db:migrate:local": "wrangler d1 migrations apply ts-status-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply ts-status-db --remote"
   },
+  "dependencies": {
+    "@terrascale/sdk": "0.0.2"
+  },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.54.7",
     "@cloudflare/workers-types": "^5.20260911.1",
