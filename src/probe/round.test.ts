@@ -83,6 +83,17 @@ describe("evaluate", () => {
     ]);
   });
 
+  it("never counts a known blocked probe as down, and keeps the streak", () => {
+    const blocked = ["sfo", "gru", "fra", "nrt"].map((code) => answer(code, 200, 403));
+    const known = endpoints.map((endpoint) =>
+      endpoint.id === "web" ? { ...endpoint, spec: { ...plain, blockedStatus: 403 } } : endpoint,
+    );
+    const { samples, streaks } = evaluate(known, blocked, { web: 1 });
+    expect(samples[2]?.state).toBe("none");
+    expect(samples[2]?.results[0]).toEqual({ v: "sfo", ok: null, ms: 30, e: "Probe blocked (HTTP 403)" });
+    expect(streaks.web).toBe(1);
+  });
+
   it("cannot judge when only one vantage answered", () => {
     const { samples } = evaluate(endpoints, [answer("sfo", 200, 503), null, null, null], {});
     expect(samples.every((sample) => sample.state === "none")).toBe(true);

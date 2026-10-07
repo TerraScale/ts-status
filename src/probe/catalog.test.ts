@@ -136,15 +136,32 @@ describe("probe catalog", () => {
     expect(judge(spec, { status: 503, error: null }).outcome).toBe("fail");
   });
 
+  it("treats Cloudflare's 403 as a blocked probe only on dash and git", () => {
+    expect(
+      sql.prepare("SELECT id, blocked_status FROM endpoints WHERE blocked_status IS NOT NULL ORDER BY id").all(),
+    ).toEqual([
+      { id: "dashboard-fly-gru", blocked_status: 403 },
+      { id: "git-forgejo", blocked_status: 403 },
+    ]);
+    expect(judge(parseSpec(endpoint("git-forgejo")), { status: 403, error: null })).toEqual({
+      outcome: "unknown",
+      error: "Probe blocked (HTTP 403)",
+      values: {},
+    });
+    expect(judge(parseSpec(endpoint("git-forgejo")), { status: 503, error: null }).outcome).toBe("fail");
+    expect(judge(parseSpec(endpoint("auth-edge")), { status: 403, error: null }).outcome).toBe("fail");
+  });
+
   const endpoint = (id: string) =>
     sql
       .prepare(
-        "SELECT url, expect_status AS expectStatus, pending_status AS pendingStatus, keyword, assertions, extract, indirect FROM endpoints WHERE id = ?",
+        "SELECT url, expect_status AS expectStatus, pending_status AS pendingStatus, blocked_status AS blockedStatus, keyword, assertions, extract, indirect FROM endpoints WHERE id = ?",
       )
       .get(id) as {
       url: string;
       expectStatus: string;
       pendingStatus: number | null;
+      blockedStatus: number | null;
       keyword: string | null;
       assertions: string;
       extract: string;

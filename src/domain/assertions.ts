@@ -17,6 +17,10 @@ export interface CheckSpec {
   expectStatus: string;
   /** A not-yet-published contract: label this response without judging uptime. */
   pendingStatus?: number | null;
+  /** A status something in front of the service (such as Cloudflare's bot
+      protection) is known to refuse the probe with: a probe error, not an
+      outage. Any other unexpected status still fails. */
+  blockedStatus?: number | null;
   keyword: string | null;
   assertions: Assertion[];
   /** Named paths whose values are recorded with every sample. */
@@ -128,6 +132,9 @@ export function judge(spec: CheckSpec, observation: Observation): Judgement {
   if (observation.status === spec.pendingStatus) {
     return { outcome: "unknown", error: `Not available yet (HTTP ${observation.status})`, values: {} };
   }
+  if (observation.status === spec.blockedStatus) {
+    return { outcome: "unknown", error: `Probe blocked (HTTP ${observation.status})`, values: {} };
+  }
   if (!statusMatches(spec.expectStatus, observation.status)) return fail(`HTTP ${observation.status}`);
 
   const body = observation.body ?? "";
@@ -184,6 +191,7 @@ function isAssertion(value: unknown): value is Assertion {
 export function parseSpec(row: {
   expectStatus: string;
   pendingStatus?: number | null;
+  blockedStatus?: number | null;
   keyword: string | null;
   assertions: string;
   extract: string;
@@ -201,6 +209,7 @@ export function parseSpec(row: {
   return {
     expectStatus: row.expectStatus,
     ...(row.pendingStatus !== null && row.pendingStatus !== undefined ? { pendingStatus: row.pendingStatus } : {}),
+    ...(row.blockedStatus !== null && row.blockedStatus !== undefined ? { blockedStatus: row.blockedStatus } : {}),
     keyword: row.keyword || null,
     assertions: Array.isArray(assertions) ? assertions.filter(isAssertion) : [],
     extract:

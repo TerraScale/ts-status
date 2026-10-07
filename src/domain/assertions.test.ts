@@ -142,6 +142,31 @@ describe("parseSpec", () => {
   });
 });
 
+describe("blocked probes", () => {
+  const spec: CheckSpec = {
+    expectStatus: "200",
+    keyword: null,
+    indirect: false,
+    assertions: [{ path: "status", op: "eq", value: "ok" }],
+    extract: {},
+  };
+
+  it("classifies a configured refusal as a probe error, not an outage", () => {
+    const blocked = { ...spec, blockedStatus: 403 };
+    expect(judge(blocked, { status: 403, error: null, body: "error code: 1010" })).toEqual({
+      outcome: "unknown",
+      error: "Probe blocked (HTTP 403)",
+      values: {},
+    });
+    expect(judge(blocked, { status: 401, error: null }).outcome).toBe("fail");
+    expect(judge(blocked, { status: 503, error: null }).outcome).toBe("fail");
+  });
+
+  it("still fails an unexpected 403 on endpoints not known to be blocked", () => {
+    expect(judge(spec, { status: 403, error: null })).toEqual({ outcome: "fail", error: "HTTP 403", values: {} });
+  });
+});
+
 describe("pending contracts", () => {
   it("labels unpublished OIDC discovery, but validates it as soon as it is served", () => {
     const spec: CheckSpec = {

@@ -137,7 +137,8 @@ async function ask(vantage: Vantage, fetcher: Fetcher, list: readonly Target[]):
   }
 }
 
-const ENDPOINTS = `SELECT id, url, headers, expect_status AS expectStatus, pending_status AS pendingStatus, keyword, assertions, extract, indirect,
+const ENDPOINTS = `SELECT id, url, headers, expect_status AS expectStatus, pending_status AS pendingStatus,
+    blocked_status AS blockedStatus, keyword, assertions, extract, indirect,
     component_id AS componentId, kind, probe
   FROM endpoints WHERE enabled = 1`;
 
