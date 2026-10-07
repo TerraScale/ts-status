@@ -16,15 +16,17 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 - **Four vantage points.** Small Workers placed near `aws:us-west-1`, `aws:sa-east-1`, `aws:eu-central-1` and `aws:ap-northeast-1` probe every endpoint; each reports the data center it ran in.
 - **30-second rounds.** A single coordinator Durable Object, next to the D1 primary, runs a round on every half minute through the vantages' service bindings and stores one sample per endpoint.
 - **Consensus.** A round needs two answering vantages; an endpoint is down only when most of them fail, degraded when some do or it is slower than 1.5 s, and shown down only after two down rounds in a row. A vantage that does not answer is left out, never counted as a failure. An endpoint's `blocked_status` names the status its probe is known to be refused with by something in front of the service: that result is a probe error ("Probe blocked"), also left out. Cloudflare answers the vantages' requests to dash and git, which answer everyone else, with 403, so only those two set it; any other unexpected status, 403 included, still fails.
-- **Deep checks.** Besides answering, an endpoint can be required to return an expected status, contain a keyword, or satisfy JSON assertions. The global API router and GRU's public C# document handler are checked with an unauthenticated `GET /v1/projects/{project}/databases/{database}/collections/{collection}/documents/{id}`: `401 invalid_key` proves the handler is reachable, not that authenticated reads/writes work. Atlas's `GET /api/v1/regions` must report admitted `GRU-1` as `available: true` and include a corresponding `hosts.GRU-1` entry; Atlas normalizes region codes to uppercase. Region identity is separate from DNS: production TerraBase is `https://gru.api.terrascale.tech`, served by Caddy on OCI `gru-1`, and the display region is `GRU`. Dashboard readiness at `https://dash.terrascale.tech/health/ready` returns `200 {"status":"ok","version":…}`. Authentication readiness at `https://auth.terrascale.tech/readyz` returns `200 {"status":"ready","version":…}`; an unavailable storage authority returns 503. Both checks record version changes. OIDC discovery at `/.well-known/openid-configuration` is labeled **pending** in the active authentication component: its `pending_status=404` observation is unknown ("Not available yet"), so it counts as neither healthy nor an outage. A 200 must be JSON with `issuer: "https://auth.terrascale.tech"` and a present `jwks_uri`. Readiness continues to drive authentication status while discovery is pending; any non-404 discovery failure or invalid 200 payload also affects authentication and automatic incidents. SFO, FRA, docs and sync remain disabled until launch.
-- **Data API canary.** With the `DATA_API_CANARY` secret set and `data-api-canary-gru` enabled, the coordinator writes each round's marker into a dedicated canary document with a scoped `tb_` key and reads it back (`src/probe/canary.ts`). A rejected key, a failed commit, an unreadable write, or an enabled canary missing its secret fails the round; two failures in a row are an outage.
-- **TerraBase probes.** The coordinator uses the C# contracts in `terrabase` `origin/main` (`Features/Documents`, `Features/Management`, `Features/ApiKeys`; `src/probe/terrabase.ts`), with origins and credentials from `TERRABASE_PROBES`. An endpoint omitted from the secret shows "Not configured", with no uptime contribution. Malformed configuration, a timeout (5 seconds per request), an unexpected status or an invalid payload fails the round.
+- **Deep checks.** Besides answering, an endpoint can be required to return an expected status, contain a keyword, or satisfy JSON assertions. The global API router and GRU's public C# document handler are checked with an unauthenticated `GET /v1/projects/{project}/databases/{database}/collections/{collection}/documents/{id}`: `401 invalid_key` proves the handler is reachable, not that authenticated reads/writes work. Atlas's `GET /api/v1/regions` must report admitted `GRU-1` as `available: true` and include a corresponding `hosts.GRU-1` entry; Atlas normalizes region codes to uppercase. Region identity is separate from DNS: production TerraBase is `https://gru.api.terrascale.tech`, served by Caddy on OCI `gru-1`, and the display region is `GRU`. Dashboard readiness at `https://dash.terrascale.tech/health/ready` returns `200 {"status":"ok","version":…}`. Authentication readiness at `https://auth.terrascale.tech/readyz` returns `200 {"status":"ready","version":…}`; an unavailable storage authority returns 503. Both checks record version changes. The draft TS-598 target for OIDC discovery is `https://gru.auth.terrascale.tech/terrascale/.well-known/openid-configuration`: a 200 must name the exact regional `/terrascale` issuer and its JWKS. The global auth origin is an Atlas proxy, not the issuer. The active catalog's pending discovery observation remains unknown ("Not available yet") on its configured 404; readiness continues to drive authentication status until the upstream contract ships. SFO, FRA, docs and sync remain disabled until launch.
+- **Data API canary (draft target).** With `DATA_API_CANARY` configured and `data-api-canary-gru` enabled, the coordinator will write each round's marker into a dedicated canary document and read it back through the TS-592 SDK. Authentication uses a project-scoped, database-restricted ts-auth key with `documents:read documents:write`, exchanged for a short-lived bearer token; the key itself is not a bearer token. A rejected exchange, a failed commit, an unreadable write, or an enabled canary missing its secret fails the round; two failures in a row are an outage.
+- **TerraBase probes (draft target).** TS-598 defines identity and token exchange; TS-589 defines TerraBase's project-scoped resource authorization, and TS-592 must expose those contracts through `@terrascale/sdk`. Origins and credentials come from `TERRABASE_PROBES`. An endpoint omitted from the secret shows "Not configured", with no uptime contribution. Malformed configuration, a timeout (5 seconds per request), an unexpected status or an invalid payload fails the round.
 
-  | Component        | Requests, in order                                                                                                                                                                                                                             | Credential                                                                                            |
-  | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-  | TerraBase health | `GET /readyz` must return `200` with `status: "ready"`                                                                                                                                                                                         | optional                                                                                              |
-  | Document API     | `PUT /v1/projects/{project}/databases/{database}/collections/{collection}/documents/{id}` with `{canary}` → `GET` the document → `POST …/collections/{collection}/query` with `{"filter":{"eq":["$id",id]},"limit":1}` → `DELETE` the document | `tb_` key scoped to the dedicated org/project/database, with `documents:read` and `documents:write`   |
-  | Management API   | `GET /v1/management/organizations/{organization}/projects?limit=1` → `GET …/projects/{project}/databases?limit=1`, each returning `{items, next}`                                                                                              | C# dashboard service credential plus `X-TerraBase-User-Id` and matching `X-TerraBase-Organization-Id` |
+  | Component        | Requests, in order                                                                 | Credential                                                                       |
+  | ---------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+  | TerraBase health | `GET /readyz` must return `200` with `status: "ready"`                             | None; readiness is unauthenticated                                               |
+  | Document API     | Write → read → query → delete a dedicated document through the TS-592 SDK          | Project key restricted to `status_canary`, with `documents:read documents:write` |
+  | Management API   | Read/list the dedicated project's databases through the TS-589/TS-592 resource API | Separate project key with only `databases:read`; no identity-management calls    |
+
+  **Draft blocker:** `src/probe/sdk.ts` prepares credential validation, platform-grant arguments and SDK document operations against the published TS-598/TS-589 contract. It is deliberately not connected to `round.ts`: `@terrascale/sdk@0.0.2` supports only legacy `tb_` document CRUD and has no platform-grant, management or readiness SDK surface. Keep this PR draft until TS-589 and TS-592 ship. Production wiring, token exchange/cache/refresh, management/readiness SDK calls, catalog changes and a JWT-capable real fixture remain merge gates. The target configuration below is not ready to deploy; no TS-598/TS-589/TS-592 interoperability tests have been run.
 
 - **TLS expiry.** A Worker cannot see a served certificate, so once an hour the cron refreshes, from certificate transparency logs (Cert Spotter), the latest valid certificate of every monitored host not checked in a day. A latest certificate expiring within two weeks means renewal has stalled: the page warns, and cluster rows show every host's expiry.
 - **Automatic incidents.** After every round the coordinator steps a state machine per component: down for a minute (or degraded for ten) opens an incident with its timeline, a worse state raises its impact, passing checks move it to monitoring, and five healthy minutes resolve it. Maintenance windows suppress it, and incidents operators take over are left alone.
@@ -73,9 +75,9 @@ nice -n 19 npm run build
 nice -n 19 npm test
 ```
 
-The TerraBase probe suites launch the actual `terrabase-linux-amd64` release pinned by tag and SHA256 in `src/testing/terrabase-release.json`. They verify the executable before running it, provision an isolated organization/project/database through its real APIs, and use a temporary TLS certificate and data directory. Only ts-status's own D1 storage is substituted. Linux x64 and OpenSSL are required. The harness downloads through authenticated `fj` or `FORGEJO_READ_TOKEN` and caches the verified binary; `TERRABASE_BINARY=/path/to/terrabase-linux-amd64` supplies an existing copy, which must match the same SHA256. CI reads `ORG_READ_TOKEN`, which must have access to the private release; no credential is stored in the repo.
+The existing legacy TerraBase probe suites launch the actual `terrabase-linux-amd64` release pinned by tag and SHA256 in `src/testing/terrabase-release.json`. They verify the executable before running it, provision an isolated organization/project/database through its real APIs, and use a temporary TLS certificate and data directory. Only ts-status's own D1 storage is substituted. Linux x64 and OpenSSL are required. The harness downloads through authenticated `fj` or `FORGEJO_READ_TOKEN` and caches the verified binary; `TERRABASE_BINARY=/path/to/terrabase-linux-amd64` supplies an existing copy, which must match the same SHA256. CI reads `ORG_READ_TOKEN`, which must have access to the private release; no credential is stored in the repo.
 
-The pinned release includes client-listener `/readyz` and region identity. The readiness integration test runs unconditionally and verifies `status: "ready"`, the configured `region`, and `X-TerraBase-Region` against the real binary.
+The pinned release includes client-listener `/readyz` and region identity. The legacy readiness integration test runs unconditionally and checks `status: "ready"`, the configured `region`, and `X-TerraBase-Region` against that binary. `src/probe/sdk.test.ts` verifies the prepared SDK document operations against the same real release using its legacy fixture credential, and explicitly records the published SDK's JWT/grant restrictions. These baseline tests do not establish platform credential interoperability. That gate must wait for the upstream releases and a matching pinned TerraBase binary; it has not been run.
 
 ## API
 
@@ -144,29 +146,58 @@ npx wrangler secret put SMTP_PASSWORD
 npx wrangler secret put SMTP_FROM       # noreply@terrascale.tech, an approved sender
 ```
 
-Provision a **dedicated status canary organization, project and database** before configuring probes. Never point a write probe at customer data. These are operator instructions; applying the catalog migration does not provision anything.
+### Probe provisioning (draft; wait for TS-589/TS-592)
 
-1. Resolve the admitted healthy `GRU-1` origin using `GET https://atlas.terrascale.tech/api/v1/regions` (`regions[].available` and `hosts`). If database placement is needed, use the existing `GET /api/v1/discovery?database=<name>` contract and its ranked `endpoints[].url`. The production TerraBase origin is `https://gru.api.terrascale.tech` (Caddy on OCI `gru-1`); do not turn the region identity into an invented hostname. Pin the resolved HTTPS origin in the secrets below; probes use that explicit override, rather than discovering placement on every round. Re-resolve and update the pinned origin when placement changes; do not derive it from the UI's `GRU` label.
-2. Use the C# management service credential (`Authorization: Bearer <dashboard credential>`, configured by TerraBase's `dashboard-credential-file`) and a dedicated acting user's `X-TerraBase-User-Id`. Create the organization with `POST /v1/management/organizations` and `{"name":"Status canary"}`; retain its returned `id`. Create a project with `POST /v1/management/organizations/{organization}/projects` and `{"name":"Status canary"}`, then a database with `POST …/projects/{project}/databases` and `{"name":"status_canary"}`. Both organization-scoped requests require `X-TerraBase-Organization-Id` equal to the path's organization. Retain the project UUID, database UUID and database name: the data API uses the **name**, while key scoping uses the **UUID**.
-3. On the TerraBase server's loopback administrative listener, issue a key with `POST /admin/api-keys` and `{"name":"status-canary","scopes":["documents:read","documents:write"],"organizationId":"<organization UUID>","projectId":"<project UUID>","databaseId":"<database UUID>"}`. Save the returned `secret` (`tb_…`) immediately; it is shown once. The management credential is distinct from this document API key. Using the `tb_` key, create separate canary collections with `POST /v1/projects/{project}/databases/status_canary/collections` and `{"name":"canary"}` (use `probe_canary` for the document probe). The key's narrowest supported scope is the database, not one collection.
-4. Store the secrets below before enabling the data API canary. Give each document probe its own collection. It overwrites one fixed UUID each round and attempts deletion even after a failed write; the data API canary retains its own fixed document for read-back. Resolve any automatic incident before removing a TerraBase probe entry: a "Not configured" round does not resolve an existing incident.
+Provision a **dedicated status canary organization, project and database** only after the upstream contracts ship. Never point a write probe at customer data. These are target operator instructions; applying a catalog migration does not provision anything. Status history, incidents, subscriptions and probe coordination stay on Cloudflare D1/Durable Objects, the sole Ouroboros exception; TerraBase is only a probe target.
 
-```sh
-npx wrangler secret put DATA_API_CANARY
-# {"data-api-canary-gru": {"origin": "https://gru.api.terrascale.tech", "project": "<project UUID>",
-#   "database": "status_canary", "collection": "canary", "document": "<fixed lowercase document UUID>", "key": "tb_…"}}
-curl -X PATCH -H "authorization: Bearer $OPERATOR_TOKEN" -H 'content-type: application/json' \
-  -d '{"enabled": true}' https://status.terrascale.tech/api/operator/endpoints/data-api-canary-gru
+1. Resolve the admitted healthy `GRU-1` origin using `GET https://atlas.terrascale.tech/api/v1/regions` (`regions[].available` and `hosts`). If database placement is needed, use the existing `GET /api/v1/discovery?database=<name>` contract and its ranked `endpoints[].url`. The production TerraBase origin is `https://gru.api.terrascale.tech` (Caddy on OCI `gru-1`); do not turn the region identity into an invented hostname. Pin the resolved HTTPS origin in the secrets below and re-resolve when placement changes. The issuer is separately configured as the regional ts-auth issuer `https://gru.auth.terrascale.tech/terrascale`, not the global auth proxy or the project tenant's issuer.
+2. Create the dedicated organization and project through ts-auth's platform management API at `https://gru.auth.terrascale.tech/v1/terrascale`, using an authorized operator's sign-in access token. That API accepts sign-in tokens, not API-key tokens. Retain the project UUID. Provision `status_canary` through TerraBase's shipped TS-589 project-scoped database API using an appropriately scoped project token, then create separate `canary` and `probe_canary` collections. Do not give the recurring write probes database-provisioning privileges.
+3. Issue separate project-scoped keys through ts-auth. Restrict each write-probe key to `database: "status_canary"` (the database **name**) and `scopes: ["documents:read", "documents:write"]`; the restriction is to a database, not a collection. Issue a separate management-probe project key with only `scopes: ["databases:read"]`. Keys have format `tsk_<20 Crockford chars>_<52 chars>`: 77 characters using lowercase Crockford base32 (`0-9a-z` excluding `i`, `l`, `o`, `u`) plus separators. The first 24 characters (`tsk_<20 chars>`) are the key ID and OAuth `client_id`; the **entire key** is `client_secret`. Save each creation/rotation response's `key` once without logging it.
+4. Exchange each key at `POST {issuer}/oauth/token` with `application/x-www-form-urlencoded`, `grant_type=client_credentials`, the configured `project` UUID and only that probe's scopes. Use `client_secret_basic` or `client_secret_post`. Tokens last 900 seconds, with no refresh token; the SDK must cache until 60 seconds before expiry and exchange again after a resource-server 401, once. TerraBase validates ES256 `at+jwt` (or `application/at+jwt`), the issuer's JWKS, exact regional `/terrascale` `iss`, `aud` including `https://gru.api.terrascale.tech`, expiry/not-before, matching `project_id`, the database-name restriction and required scopes. Project-tenant tokens and sign-in/service tokens cannot reach TerraBase tenant routes. These rules come from ts-auth `origin/main`, `docs/platform-contract.md` (TS-598), sections 1, 3, 5 and 6.
+5. After TS-589/TS-592 ship and real integration verification passes, store the target secrets below before enabling probes through the operator API. Give each write probe its own collection and fixed lowercase document UUID. The document probe attempts deletion even after a failed write; the data API canary retains its fixed document for read-back. Resolve any automatic incident before removing a TerraBase probe entry: a "Not configured" round does not resolve an existing incident.
 
-npx wrangler secret put TERRABASE_PROBES
-# {"terrabase-health-gru": {"origin": "https://<reachable readiness origin>"},
-#  "document-api-gru": {"origin": "https://gru.api.terrascale.tech", "key": "tb_…", "project": "<project UUID>",
-#    "database": "status_canary", "collection": "probe_canary"},
-#  "management-api-gru": {"origin": "https://gru.api.terrascale.tech", "key": "<dashboard service credential>",
-#    "userId": "<authorized user id>", "organization": "<organization UUID>", "project": "<project UUID>"}}
+Target secret shapes (placeholders only; do not apply while this change is draft):
+
+```json
+{
+  "data-api-canary-gru": {
+    "origin": "https://gru.api.terrascale.tech",
+    "issuer": "https://gru.auth.terrascale.tech/terrascale",
+    "project": "<project UUID>",
+    "key": "<whole canary tsk_ key>",
+    "database": "status_canary",
+    "collection": "canary",
+    "document": "<fixed lowercase document UUID>"
+  }
+}
 ```
 
-The TerraBase health probe requires an origin exposing `/readyz`. The pinned release exposes `/readyz` on its HTTPS client listener; configure the probe only after verifying the deployed origin's readiness contract. `/healthz` is liveness and cannot replace readiness.
+The JSON above is `DATA_API_CANARY`. `TERRABASE_PROBES` has these entries:
+
+```json
+{
+  "terrabase-health-gru": {
+    "origin": "https://gru.api.terrascale.tech"
+  },
+  "document-api-gru": {
+    "origin": "https://gru.api.terrascale.tech",
+    "issuer": "https://gru.auth.terrascale.tech/terrascale",
+    "project": "<project UUID>",
+    "key": "<whole document-probe tsk_ key>",
+    "database": "status_canary",
+    "collection": "probe_canary",
+    "document": "<separate fixed lowercase document UUID>"
+  },
+  "management-api-gru": {
+    "origin": "https://gru.api.terrascale.tech",
+    "issuer": "https://gru.auth.terrascale.tech/terrascale",
+    "project": "<project UUID>",
+    "key": "<whole databases:read tsk_ key>"
+  }
+}
+```
+
+The unauthenticated health entry needs only `origin`. The TerraBase health probe requires an origin exposing `/readyz`; configure it only after verifying the deployed origin's readiness contract. `/healthz` is liveness and cannot replace readiness. The readiness SDK surface is still blocked on TS-592.
 
 Every push to `main` deploys from CI once the checks and tests pass: it applies the D1 migrations, deploys the four vantage Workers, then the status Worker, with the repository's `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` Forgejo secrets (they override the organization's). The token is supplied by the account owner and needs Workers Scripts Write, D1 Edit and Account Settings Read on the account, and Workers Routes Write on `terrascale.tech` for the custom domain. Each deployed version carries its commit as its tag and message, so `npx wrangler deployments list` shows what production runs. To deploy by hand, build, apply migrations, deploy the four vantage Workers, then the status Worker with:
 
