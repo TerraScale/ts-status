@@ -1,3 +1,4 @@
+import { isId, newId } from "../ids";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import app from "../app";
 import type { Env } from "../env";
@@ -71,24 +72,51 @@ async function confirm(t: ReturnType<typeof setup>, content: string) {
 }
 
 describe("subscriptions", () => {
+  it("generates ULIDs for every outbox message across D1 batches and does not enqueue duplicates", async () => {
+    const t = setup();
+    const incident = newId();
+    const update = newId();
+    t.sql
+      .prepare("INSERT INTO incidents (id, title, status, impact) VALUES (?, 'Outage', 'investigating', 'minor')")
+      .run(incident);
+    t.sql
+      .prepare(
+        "INSERT INTO incident_updates (id, incident_id, status, body) VALUES (?, ?, 'investigating', 'Looking.')",
+      )
+      .run(update, incident);
+    for (let i = 0; i < 105; i++)
+      t.sql
+        .prepare(
+          "INSERT INTO subscribers (id, channel, target, flavor, confirmed_at) VALUES (?, 'webhook', ?, 'generic', datetime('now', '-1 minute'))",
+        )
+        .run(newId(), `https://example.com/hook/${i}`);
+    await t.outbox(Date.now());
+    const ids = t.sql.prepare("SELECT id FROM outbox ORDER BY id").all();
+    expect(ids).toHaveLength(105);
+    expect(ids.every((row) => isId(row.id))).toBe(true);
+    await t.outbox(Date.now());
+    expect(t.sql.prepare("SELECT id FROM outbox ORDER BY id").all()).toEqual(ids);
+  });
+
   afterEach(() => vi.unstubAllGlobals());
 
   it("confirms a Discord webhook by double opt-in, then delivers updates of the components it follows", async () => {
     const t = setup();
     expect(
-      (await t.form("/subscribe", { channel: "webhook", target: DISCORD, components: ["dashboard"] })).status,
+      (await t.form("/subscribe", { channel: "webhook", target: DISCORD, components: ["01M4E7G1W82VKFPF5FJ9AVK1CV"] }))
+        .status,
     ).toBe(202);
     await t.outbox(Date.now());
     expect(t.posted).toHaveLength(1);
     await confirm(t, String(t.posted[0]?.body.content));
 
     t.sql.exec(`
-      INSERT INTO incidents (id, kind, title, status, impact) VALUES ('d', 'incident', 'Dashboard errors', 'investigating', 'major'),
-        ('g', 'incident', 'Git slow', 'investigating', 'minor');
-      INSERT INTO incident_components VALUES ('d', 'dashboard'), ('g', 'git');
+      INSERT INTO incidents (id, kind, title, status, impact) VALUES ('00000000000000000000000012', 'incident', 'Dashboard errors', 'investigating', 'major'),
+        ('00000000000000000000000013', 'incident', 'Git slow', 'investigating', 'minor');
+      INSERT INTO incident_components VALUES ('00000000000000000000000012', '01M4E7G1W82VKFPF5FJ9AVK1CV'), ('00000000000000000000000013', '01M4E7G1W82VKFPF5FJ9AVK1CZ');
       INSERT INTO incident_updates (id, incident_id, status, body, created_at) VALUES
-        ('ud', 'd', 'investigating', 'Looking.', datetime('now', '+1 minute')),
-        ('ug', 'g', 'investigating', 'Looking.', datetime('now', '+1 minute'));`);
+        ('00000000000000000000000014', '00000000000000000000000012', 'investigating', 'Looking.', datetime('now', '+1 minute')),
+        ('00000000000000000000000015', '00000000000000000000000013', 'investigating', 'Looking.', datetime('now', '+1 minute'));`);
     await t.outbox(Date.now() + 120_000);
     await t.outbox(Date.now() + 180_000);
     const embeds = t.posted.slice(1).map((entry) => (entry.body.embeds as { title: string }[])[0]?.title);
@@ -98,15 +126,15 @@ describe("subscriptions", () => {
   it("holds automatic incidents for five minutes and never sends blips", async () => {
     const t = setup();
     t.sql
-      .exec(`INSERT INTO subscribers (id, channel, target, flavor, confirmed_at) VALUES ('s', 'webhook', '${DISCORD}', 'discord', '2026-09-26 09:00:00');
+      .exec(`INSERT INTO subscribers (id, channel, target, flavor, confirmed_at) VALUES ('00000000000000000000000016', 'webhook', '${DISCORD}', 'discord', '2026-09-26 09:00:00');
       INSERT INTO incidents (id, kind, title, status, impact, source, created_at) VALUES
-        ('long', 'incident', 'Atlas is down', 'investigating', 'critical', 'auto', '2026-09-26 10:00:00');
+        ('00000000000000000000000017', 'incident', 'Atlas is down', 'investigating', 'critical', 'auto', '2026-09-26 10:00:00');
       INSERT INTO incidents (id, kind, title, status, impact, source, created_at, resolved_at) VALUES
-        ('blip', 'incident', 'Website is down', 'resolved', 'critical', 'auto', '2026-09-26 10:00:00', '2026-09-26 10:03:00');
+        ('00000000000000000000000018', 'incident', 'Website is down', 'resolved', 'critical', 'auto', '2026-09-26 10:00:00', '2026-09-26 10:03:00');
       INSERT INTO incident_updates (id, incident_id, status, body, created_at) VALUES
-        ('u1', 'long', 'investigating', 'Down.', '2026-09-26 10:00:00'),
-        ('u2', 'blip', 'investigating', 'Down.', '2026-09-26 10:00:00'),
-        ('u3', 'blip', 'resolved', 'Up.', '2026-09-26 10:03:00');`);
+        ('00000000000000000000000008', '00000000000000000000000017', 'investigating', 'Down.', '2026-09-26 10:00:00'),
+        ('00000000000000000000000009', '00000000000000000000000018', 'investigating', 'Down.', '2026-09-26 10:00:00'),
+        ('00000000000000000000000010', '00000000000000000000000018', 'resolved', 'Up.', '2026-09-26 10:03:00');`);
     await t.outbox(BASE + 4 * 60_000);
     expect(t.posted).toHaveLength(0);
     await t.outbox(BASE + 6 * 60_000);
@@ -197,7 +225,7 @@ describe("subscriptions", () => {
       "Enter an HTTPS webhook URL",
     );
     t.sql.exec(
-      `INSERT INTO subscribers (id, channel, target, flavor, confirmed_at) VALUES ('s', 'webhook', '${DISCORD}', 'discord', datetime('now'))`,
+      `INSERT INTO subscribers (id, channel, target, flavor, confirmed_at) VALUES ('00000000000000000000000016', 'webhook', '${DISCORD}', 'discord', datetime('now'))`,
     );
     expect((await t.form("/subscribe", { channel: "webhook", target: DISCORD })).status).toBe(202);
     const slow = setup({ SUBSCRIBE_LIMITER: limited });

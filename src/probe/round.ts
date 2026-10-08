@@ -2,6 +2,8 @@
    results become one sample per endpoint. Rounds start on the half minute
    and are keyed by that moment, so a retried round never counts twice. */
 
+import { newId } from "../ids";
+
 import { sqlTime } from "../db/reads";
 import { judge, needsBody, parseSpec, type CheckSpec } from "../domain/assertions";
 import { adopt, step, type Action, type Observation, type Tracker } from "../domain/auto-incident";
@@ -208,7 +210,7 @@ export function observe(
 export function actionStatements(db: D1Database, actions: readonly Action[], time: string): D1PreparedStatement[] {
   return actions.flatMap((action) => {
     const update = (status: string, body: string) =>
-      db.prepare(POST_UPDATE).bind(crypto.randomUUID(), action.incidentId, status, body, time);
+      db.prepare(POST_UPDATE).bind(newId(), action.incidentId, status, body, time);
     switch (action.type) {
       case "open":
         return [
@@ -281,7 +283,7 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
 
   const list = targets(probed);
   // Fresh per attempt: a replayed round must not pass on an earlier write.
-  const marker = `ts-status canary ${new Date(at).toISOString()} ${crypto.randomUUID()}`;
+  const marker = `ts-status canary ${new Date(at).toISOString()} ${newId()}`;
   const [responses, canaryResults] = await Promise.all([
     probed.length === 0 ? [] : Promise.all(VANTAGES.map((vantage) => ask(vantage, env[vantage.binding], list))),
     Promise.all(
@@ -362,7 +364,7 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
     ),
     at,
     {
-      newId: () => crypto.randomUUID(),
+      newId,
       touched: new Set(open.filter((row) => row.touched === 1).map((row) => row.id)),
     },
   );

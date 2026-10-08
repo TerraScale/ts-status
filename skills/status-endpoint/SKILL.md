@@ -2,10 +2,12 @@
 
 Use this repo skill when the human asks to add, launch, move, pause, or remove a component, region, or cluster on the status page. The catalog lives in D1; the probe coordinator probes every enabled endpoint every 30 seconds, so changes apply within a minute without a deploy.
 
+Generate new IDs with `node --input-type=module -e 'import { monotonicFactory } from "ulid"; console.log(monotonicFactory()())'`. Never use a name, UUID or prefix as an entity ID.
+
 ## Model
 
-- `component_groups`: display groups (`platform`, `terrabase`, `developer`), ordered by `position`.
-- `components`: what customers use (`dashboard`, `website`, `atlas`, `auth`, `docs`, `data-api`, `sync`, `git`). `lifecycle` is `active` or `planned`; planned components are listed as "Planned" and never measured.
+- `component_groups`: display groups with ULID IDs (platform, TerraBase, developer tools), ordered by `position`.
+- `components`: what customers use, keyed by canonical ULIDs returned by `/api/v1/status`. `lifecycle` is `active` or `planned`; planned components are listed as "Planned" and never measured.
 - `regions`: one row per region (`code` such as `GRU`, `name`, `country`, and `map_x`/`map_y`, the hub position on the 136×80 region map viewBox). Regions without enabled endpoints show as "Planned".
 - `endpoints`: one health check per cluster of a component. `region_code` names the region, or is null for global services such as edge Workers; `url` answers 2xx when healthy; `headers` is a JSON object sent with every probe; `provider` is `fly`, `oci`, `cloudflare`, or `other`.
 
@@ -26,7 +28,7 @@ When a planned component goes live, confirm its health check answers, then launc
 ```sh
 curl -fsS -o /dev/null -w '%{http_code} %{time_total}s\n' https://auth.terrascale.tech/readyz
 echo '{ "lifecycle": "active" }' > launch.json
-api PATCH /components/auth launch.json
+api PATCH /components/01M4E7G1W82VKFPF5FJ9AVK1CT launch.json
 ```
 
 Pause or resume one endpoint with `PATCH /endpoints/ID` and `{ "enabled": false }`. Pausing a component, or its last enabled endpoint, answers `409` while an automatic incident is open for it; resolve that incident first.
@@ -38,7 +40,7 @@ Ask the human for the component, region, cluster name, and health check URL if t
 ```sh
 curl -fsS -o /dev/null -w '%{http_code} %{time_total}s\n' https://HOST/health/ready
 npm exec -- wrangler d1 execute ts-status-db --remote --command \
-  "INSERT INTO endpoints (id, component_id, region_code, cluster, provider, url, headers, position) VALUES ('dashboard-fly-fra', 'dashboard', 'FRA', 'fra', 'fly', 'https://dash.terrascale.tech/health/ready', '{\"fly-prefer-region\":\"fra\"}', 2);"
+  "INSERT INTO endpoints (id, component_id, region_code, cluster, provider, url, headers, position) VALUES ('01M4E7G1W82VKFPF5FJ9AVK1DX', '01M4E7G1W82VKFPF5FJ9AVK1CV', 'FRA', 'fra', 'fly', 'https://dash.terrascale.tech/health/ready', '{\"fly-prefer-region\":\"fra\"}', 2);"
 ```
 
 Fly.io apps share one anycast hostname. Send `{"fly-prefer-region": "gru"}` in `headers` to prefer a region's Machines; Fly falls back to the nearest region when that one has none running, so only register Fly regions that have Machines.
@@ -47,14 +49,14 @@ Check a TerraBase cell through atlas:
 
 ```sh
 npm exec -- wrangler d1 execute ts-status-db --remote --command \
-  "UPDATE endpoints SET assertions = '[{\"path\":\"regions[code=NRT].available\",\"op\":\"eq\",\"value\":true}]', extract = '{\"lag_ms\":\"regions[code=NRT].lag_ms\"}', indirect = 1 WHERE id = 'data-api-oci-nrt';"
+  "UPDATE endpoints SET assertions = '[{\"path\":\"regions[code=NRT].available\",\"op\":\"eq\",\"value\":true}]', extract = '{\"lag_ms\":\"regions[code=NRT].lag_ms\"}', indirect = 1 WHERE id = 'ENDPOINT_ULID';"
 ```
 
 ## Add a component or region
 
 ```sh
 npm exec -- wrangler d1 execute ts-status-db --remote --command \
-  "INSERT INTO components (id, group_id, name, description, lifecycle, position) VALUES ('console', 'platform', 'Console', 'Operator console', 'planned', 6);"
+  "INSERT INTO components (id, group_id, name, description, lifecycle, position) VALUES ('01M4E7G1W82VKFPF5FJ9AVK1DY', '01M4E7G1W7XH3WHVG75QYZRE6Y', 'Console', 'Operator console', 'planned', 6);"
 npm exec -- wrangler d1 execute ts-status-db --remote --command \
   "INSERT INTO regions (code, name, country, map_x, map_y, position) VALUES ('NRT', 'Tokyo', 'Japan', 118.5, 30.2, 4);"
 ```

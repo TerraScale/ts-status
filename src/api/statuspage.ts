@@ -6,7 +6,7 @@ import type { Component, Incident, IncidentUpdate, Status, TimelineState } from 
 import { aggregate, HEADLINES, maintenancePhase, updatesByIncident } from "../domain/status";
 import type { Overview } from "../overview";
 
-const PAGE_ID = "terrascale";
+const PAGE_ID = "01M4E7GK59RY4WPKPBBKFEDF48";
 
 // Statuspage has no state for "nothing measured", so an unmeasured component
 // reads as operational; the status description says when monitoring lags.
@@ -60,7 +60,7 @@ function components(feed: Feed) {
     const members = group.components.filter((component) => component.lifecycle === "active");
     if (members.length === 0) continue;
     list.push({
-      id: `group-${group.id}`,
+      id: group.id,
       name: group.name,
       status: COMPONENT_STATUS[aggregate(members.map((member) => member.status))],
       position: position++,
@@ -79,7 +79,7 @@ function components(feed: Feed) {
         position: position++,
         description: member.description,
         group: false,
-        group_id: `group-${group.id}`,
+        group_id: group.id,
         showcase: true,
         only_show_if_degraded: false,
       });

@@ -1,12 +1,12 @@
-/* A D1 stand-in for tests: an in-memory SQLite database with every
-   migration applied, answering the subset of the D1 API the Worker uses. */
+/* A D1 stand-in for tests: an in-memory SQLite database with the clean
+   bootstrap schema, answering the subset of the D1 API the Worker uses. */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
-const MIGRATIONS = join(fileURLToPath(import.meta.url), "../../../migrations");
+const SCHEMA = join(fileURLToPath(import.meta.url), "../../../schema.sql");
 
 type Value = string | number | boolean | null;
 
@@ -33,11 +33,7 @@ export interface TestD1 {
 export function testD1(): D1Database & TestD1 {
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec("PRAGMA foreign_keys = ON");
-  for (const file of readdirSync(MIGRATIONS)
-    .filter((name) => name.endsWith(".sql"))
-    .sort()) {
-    sqlite.exec(readFileSync(join(MIGRATIONS, file), "utf8"));
-  }
+  sqlite.exec(readFileSync(SCHEMA, "utf8"));
 
   const statement = (sql: string, values: Value[] = []): Statement => {
     const params = values.map((value): SQLInputValue => (typeof value === "boolean" ? Number(value) : value));
@@ -60,6 +56,11 @@ export function testD1(): D1Database & TestD1 {
 
   const db = {
     sqlite,
+    exec: async (sql: string) => {
+      const statements = sql.trim().split("\n");
+      for (const statement of statements) sqlite.exec(statement);
+      return { count: statements.length, duration: 0 };
+    },
     batches: 0,
     prepare: (sql: string) => statement(sql),
     batch: async (list: Statement[]) => {

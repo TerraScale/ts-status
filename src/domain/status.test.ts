@@ -33,7 +33,7 @@ describe("aggregate", () => {
 const NOW = 10 * H;
 
 const incident = (overrides: Partial<Incident> = {}): Incident => ({
-  id: "i",
+  id: "00000000000000000000000001",
   kind: "incident",
   title: "",
   status: "resolved",
@@ -82,7 +82,12 @@ describe("overallStatus", () => {
   });
 
   it("counts incidents naming components through those components only", () => {
-    const outage = incident({ status: "investigating", impact: "critical", resolvedAt: null, components: ["git"] });
+    const outage = incident({
+      status: "investigating",
+      impact: "critical",
+      resolvedAt: null,
+      components: ["01M4E7G1W82VKFPF5FJ9AVK1CZ"],
+    });
     expect(overallStatus(["major_outage", "operational"], [outage], NOW)).toBe("partial_outage");
   });
 
@@ -104,12 +109,17 @@ describe("maintenance", () => {
   });
 
   it("overrides what was measured for the components it covers", () => {
-    const window = maintenance(9 * H, 11 * H, ["git"]);
-    expect(componentState("major_outage", "git", [window], NOW)).toBe("maintenance");
-    expect(componentState("major_outage", "dashboard", [window], NOW)).toBe("major_outage");
-    const outage = incident({ status: "investigating", impact: "critical", resolvedAt: null, components: ["git"] });
-    expect(componentState("operational", "git", [outage], NOW)).toBe("major_outage");
-    expect(componentState("operational", "git", [window, outage], NOW)).toBe("major_outage");
+    const window = maintenance(9 * H, 11 * H, ["01M4E7G1W82VKFPF5FJ9AVK1CZ"]);
+    expect(componentState("major_outage", "01M4E7G1W82VKFPF5FJ9AVK1CZ", [window], NOW)).toBe("maintenance");
+    expect(componentState("major_outage", "01M4E7G1W82VKFPF5FJ9AVK1CV", [window], NOW)).toBe("major_outage");
+    const outage = incident({
+      status: "investigating",
+      impact: "critical",
+      resolvedAt: null,
+      components: ["01M4E7G1W82VKFPF5FJ9AVK1CZ"],
+    });
+    expect(componentState("operational", "01M4E7G1W82VKFPF5FJ9AVK1CZ", [outage], NOW)).toBe("major_outage");
+    expect(componentState("operational", "01M4E7G1W82VKFPF5FJ9AVK1CZ", [window, outage], NOW)).toBe("major_outage");
   });
 });
 

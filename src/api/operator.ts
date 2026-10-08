@@ -4,6 +4,8 @@
    needs the OPERATOR_TOKEN bearer token. Editing an automatic incident
    marks it operator-touched, so the probe coordinator leaves it alone. */
 
+import { newId, isId } from "../ids";
+
 import { sqlTime } from "../db/reads";
 import type { IncidentImpact, IncidentKind, IncidentStatus } from "../domain/status";
 import type { Env } from "../env";
@@ -79,7 +81,7 @@ const componentStatements = (env: Env, id: string, components: readonly string[]
 const postUpdate = (env: Env, id: string, status: IncidentStatus, body: string, time: string) =>
   env.STATUS_DB.prepare(
     "INSERT INTO incident_updates (id, incident_id, status, body, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-  ).bind(crypto.randomUUID(), id, status, body, time);
+  ).bind(newId(), id, status, body, time);
 
 const SCHEDULE_FIELDS = ["scheduledStart", "scheduledEnd"] as const;
 
@@ -129,7 +131,7 @@ const routes: Record<string, Handler> = {
     const components = ids(body, "components");
     onlyMaintenance(kind, body);
     const window = kind === "maintenance" ? schedule(body) : null;
-    const id = crypto.randomUUID();
+    const id = newId();
     const time = sqlTime(now);
     await env.STATUS_DB.batch([
       env.STATUS_DB.prepare(
@@ -199,6 +201,7 @@ const routes: Record<string, Handler> = {
 
   "POST /api/operator/deploys": async ({ env, body, now }) => {
     const endpoint = string(body, "endpointId", 80);
+    if (!isId(endpoint)) throw new Invalid("endpointId", "must be a canonical ULID");
     const version = string(body, "version", 100);
     const result = await env.STATUS_DB.prepare(
       "INSERT OR IGNORE INTO deploys (endpoint_id, version, detected_at) VALUES (?1, ?2, ?3)",
@@ -255,6 +258,7 @@ export async function operator(request: Request, env: Env, now: number): Promise
   const match = route(`${request.method} ${url.pathname}`);
   if (!match) return failure(404, "not_found", "No such operator endpoint.");
   try {
+    if (match.params.id !== undefined && !isId(match.params.id)) throw new Invalid("id", "must be a canonical ULID");
     const body = request.method === "POST" || request.method === "PATCH" ? await readBody(request) : {};
     const response = await match.value({ env, params: match.params, body, now });
     response.headers.set("cache-control", "no-store");

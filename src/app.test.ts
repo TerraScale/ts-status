@@ -12,31 +12,31 @@ function seededEnv(): Env & { STATUS_DB: TestD1 } {
   const db = testD1();
   db.sqlite.exec(`
     INSERT INTO incidents (id, kind, title, status, impact, created_at, updated_at) VALUES
-      ('i1', 'warning', 'Slow <queries>', 'monitoring', 'minor', '2026-09-26 09:00:00', '2026-09-26 09:30:00');
+      ('00000000000000000000000002', 'warning', 'Slow <queries>', 'monitoring', 'minor', '2026-09-26 09:00:00', '2026-09-26 09:30:00');
     INSERT INTO incident_updates (id, incident_id, status, body, created_at) VALUES
-      ('u1', 'i1', 'investigating', 'Looking into it.', '2026-09-26 09:00:00'),
-      ('u2', 'i1', 'monitoring', 'We are watching it.', '2026-09-26 09:30:00');
+      ('00000000000000000000000008', '00000000000000000000000002', 'investigating', 'Looking into it.', '2026-09-26 09:00:00'),
+      ('00000000000000000000000009', '00000000000000000000000002', 'monitoring', 'We are watching it.', '2026-09-26 09:30:00');
     INSERT INTO incidents (id, kind, title, status, impact, source, created_at, updated_at, resolved_at) VALUES
-      ('i2', 'incident', 'Website is down', 'resolved', 'critical', 'auto',
+      ('00000000000000000000000003', 'incident', 'Website is down', 'resolved', 'critical', 'auto',
        '2026-08-02 10:00:00', '2026-08-02 10:20:00', '2026-08-02 10:20:00');
-    INSERT INTO incident_components (incident_id, component_id) VALUES ('i2', 'website');
+    INSERT INTO incident_components (incident_id, component_id) VALUES ('00000000000000000000000003', '01M4E7G1W82VKFPF5FJ9AVK1D3');
     INSERT INTO incident_updates (id, incident_id, status, body, created_at) VALUES
-      ('u3', 'i2', 'resolved', 'Recovered.', '2026-08-02 10:20:00');
+      ('00000000000000000000000010', '00000000000000000000000003', 'resolved', 'Recovered.', '2026-08-02 10:20:00');
     INSERT INTO incidents (id, kind, title, status, impact, scheduled_start, scheduled_end, created_at, updated_at) VALUES
-      ('m1', 'maintenance', 'Forgejo upgrade', 'scheduled', 'none',
+      ('00000000000000000000000006', 'maintenance', 'Forgejo upgrade', 'scheduled', 'none',
        '2026-09-26 10:00:00', '2026-09-26 11:00:00', '2026-09-20 10:00:00', '2026-09-20 10:00:00'),
-      ('m2', 'maintenance', 'Atlas migration', 'scheduled', 'none',
+      ('00000000000000000000000007', 'maintenance', 'Atlas migration', 'scheduled', 'none',
        '2026-09-28 10:00:00', '2026-09-28 11:00:00', '2026-09-20 10:00:00', '2026-09-20 10:00:00');
-    INSERT INTO incident_components (incident_id, component_id) VALUES ('m1', 'git'), ('m2', 'atlas');
+    INSERT INTO incident_components (incident_id, component_id) VALUES ('00000000000000000000000006', '01M4E7G1W82VKFPF5FJ9AVK1CZ'), ('00000000000000000000000007', '01M4E7G1W82VKFPF5FJ9AVK1CS');
     INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES
-      ('dashboard-fly-gru', '2026-09-26 10:14:30', 'operational', 4, 4, 42, '[]'),
-      ('website-pages', '2026-09-26 10:14:30', 'operational', 4, 4, 30, '[]'),
-      ('atlas-workers', '2026-09-26 10:14:30', 'operational', 4, 4, 80, '[]'),
-      ('git-forgejo', '2026-09-26 10:14:30', 'major_outage', 0, 4, NULL, '[]');
+      ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 10:14:30', 'operational', 4, 4, 42, '[]'),
+      ('01M4E7G1W82VKFPF5FJ9AVK1DS', '2026-09-26 10:14:30', 'operational', 4, 4, 30, '[]'),
+      ('01M4E7G1W82VKFPF5FJ9AVK1D5', '2026-09-26 10:14:30', 'operational', 4, 4, 80, '[]'),
+      ('01M4E7G1W82VKFPF5FJ9AVK1DH', '2026-09-26 10:14:30', 'major_outage', 0, 4, NULL, '[]');
     INSERT INTO probe_hours (endpoint_id, hour, vantage, checks, failures, degraded, latency_sum, latency_max) VALUES
-      ('dashboard-fly-gru', '2026-09-26 10:00:00', 'all', 30, 0, 0, 1260, 60);
+      ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 10:00:00', 'all', 30, 0, 0, 1260, 60);
     INSERT INTO probe_days (endpoint_id, day, vantage, checks, failures, degraded, latency_sum, latency_max, hist) VALUES
-      ('dashboard-fly-gru', '2026-09-26 00:00:00', 'all', 1200, 0, 0, 50400, 90, '[]');
+      ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 00:00:00', 'all', 1200, 0, 0, 50400, 90, '[]');
   `);
   return { STATUS_DB: db } as unknown as Env & { STATUS_DB: TestD1 };
 }
@@ -131,13 +131,17 @@ describe("app", () => {
       regions: { code: string; status: string; clusters: { pingMs: number; uptime24h: number }[] }[];
     };
     expect(data.status).toBe("degraded");
-    expect(data.groups.map((group) => group.id)).toEqual(["platform", "terrabase", "developer"]);
+    expect(data.groups.map((group) => group.id)).toEqual([
+      "01M4E7G1W7XH3WHVG75QYZRE6Y",
+      "01M4E7G1W82VKFPF5FJ9AVK1CQ",
+      "01M4E7G1W6RJFB7Z87ARTHB8BW",
+    ]);
     const dashboard = data.groups[0]?.components[0];
     expect(data.range).toBe("90d");
-    expect(dashboard).toMatchObject({ id: "dashboard", status: "operational", uptime: 1 });
+    expect(dashboard).toMatchObject({ id: "01M4E7G1W82VKFPF5FJ9AVK1CV", status: "operational", uptime: 1 });
     expect(dashboard?.bars).toHaveLength(90);
     expect(dashboard?.bars.at(-1)).toBe("operational");
-    expect(data.groups[2]?.components[0]).toMatchObject({ id: "git", status: "maintenance" });
+    expect(data.groups[2]?.components[0]).toMatchObject({ id: "01M4E7G1W82VKFPF5FJ9AVK1CZ", status: "maintenance" });
     expect(data.regions.map((region) => [region.code, region.status])).toEqual([
       ["SFO", "none"],
       ["GRU", "operational"],
@@ -150,26 +154,28 @@ describe("app", () => {
     const env = seededEnv();
     env.STATUS_DB.sqlite.exec(`
       INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES
-        ('terrabase-health-gru', '2026-09-26 10:14:30', 'none', 0, 0, NULL,
+        ('01M4E7G1W82VKFPF5FJ9AVK1DQ', '2026-09-26 10:14:30', 'none', 0, 0, NULL,
           '[{"v":"canary","ok":null,"ms":null,"e":"Not configured"}]'),
-        ('management-api-gru', '2026-09-26 10:14:30', 'none', 0, 0, NULL,
+        ('01M4E7G1W82VKFPF5FJ9AVK1DK', '2026-09-26 10:14:30', 'none', 0, 0, NULL,
           '[{"v":"canary","ok":null,"ms":null,"e":"Not configured"}]'),
-        ('document-api-gru', '2026-09-26 10:14:30', 'operational', 1, 1, 120,
+        ('01M4E7G1W82VKFPF5FJ9AVK1DF', '2026-09-26 10:14:30', 'operational', 1, 1, 120,
           '[{"v":"canary","ok":1,"ms":120,"e":null}]');
       -- An incident outranks the note.
       INSERT INTO incidents (id, kind, title, status, impact, created_at, updated_at) VALUES
-        ('i3', 'incident', 'Control plane down', 'investigating', 'critical', '2026-09-26 10:10:00', '2026-09-26 10:10:00');
-      INSERT INTO incident_components (incident_id, component_id) VALUES ('i3', 'management-api');
+        ('00000000000000000000000004', 'incident', 'Control plane down', 'investigating', 'critical', '2026-09-26 10:10:00', '2026-09-26 10:10:00');
+      INSERT INTO incident_components (incident_id, component_id) VALUES ('00000000000000000000000004', '01M4E7G1W82VKFPF5FJ9AVK1D0');
     `);
     const data = (await (await app.fetch(request("/api/v1/status"), env, ctx)).json()) as {
       groups: { components: { id: string; status: string; note: string | null }[] }[];
     };
-    const terrabase = data.groups[1]?.components.filter((entry) => entry.id !== "data-api" && entry.id !== "sync");
+    const terrabase = data.groups[1]?.components.filter(
+      (entry) => entry.id !== "01M4E7G1W82VKFPF5FJ9AVK1CW" && entry.id !== "01M4E7G1W82VKFPF5FJ9AVK1D1",
+    );
     expect(terrabase?.map(({ id, status, note }) => ({ id, status, note }))).toEqual([
-      { id: "api", status: "none", note: null },
-      { id: "terrabase-health", status: "none", note: "Not configured" },
-      { id: "document-api", status: "operational", note: null },
-      { id: "management-api", status: "major_outage", note: null },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1CR", status: "none", note: null },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1D2", status: "none", note: "Not configured" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1CY", status: "operational", note: null },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1D0", status: "major_outage", note: null },
     ]);
     const page = await (await app.fetch(request("/?fragment=main"), env, ctx)).text();
     expect(page).toContain("TerraBase health: No data uptime over the last 90 days, currently not configured");
@@ -212,7 +218,7 @@ describe("app", () => {
 
   it("filters the history by component, kind, text and month", async () => {
     const text = async (path: string) => (await app.fetch(request(path), seededEnv(), ctx)).text();
-    expect(await text("/history?component=website")).not.toContain("Slow &lt;queries&gt;");
+    expect(await text("/history?component=01M4E7G1W82VKFPF5FJ9AVK1D3")).not.toContain("Slow &lt;queries&gt;");
     expect(await text("/history?kind=warning")).not.toContain("Website is down");
     expect(await text("/history?q=slow")).toContain("Slow &lt;queries&gt;");
     expect(await text("/history?q=nothing%25")).toContain("No matching incidents");
@@ -220,7 +226,7 @@ describe("app", () => {
   });
 
   it("renders an incident with its timeline", async () => {
-    const body = await (await app.fetch(request("/incidents/i1"), seededEnv(), ctx)).text();
+    const body = await (await app.fetch(request("/incidents/00000000000000000000000002"), seededEnv(), ctx)).text();
     expect(body).toContain("Slow &lt;queries&gt;");
     expect(body).toContain("Looking into it.");
     expect(body.indexOf("We are watching it.")).toBeLessThan(body.indexOf("Looking into it."));
@@ -244,11 +250,19 @@ describe("app", () => {
 
   it("renders component and region pages, and 404s for unknown ones", async () => {
     const env = seededEnv();
-    const component = await (await app.fetch(request("/components/dashboard?range=24h"), env, ctx)).text();
+    const component = await (
+      await app.fetch(request("/components/01M4E7G1W82VKFPF5FJ9AVK1CV?range=24h"), env, ctx)
+    ).text();
     expect(component).toContain("From each vantage point");
-    expect(component).toContain('<a href="/components/dashboard?range=24h" aria-current="true">24h</a>');
-    expect(await (await app.fetch(request("/components/website"), env, ctx)).text()).toContain("Website is down");
-    expect(await (await app.fetch(request("/components/docs"), env, ctx)).text()).toContain("Not launched yet");
+    expect(component).toContain(
+      '<a href="/components/01M4E7G1W82VKFPF5FJ9AVK1CV?range=24h" aria-current="true">24h</a>',
+    );
+    expect(await (await app.fetch(request("/components/01M4E7G1W82VKFPF5FJ9AVK1D3"), env, ctx)).text()).toContain(
+      "Website is down",
+    );
+    expect(await (await app.fetch(request("/components/01M4E7G1W82VKFPF5FJ9AVK1CX"), env, ctx)).text()).toContain(
+      "Not launched yet",
+    );
     expect(await (await app.fetch(request("/regions/gru"), env, ctx)).text()).toContain("São Paulo");
     expect((await app.fetch(request("/components/nope"), env, ctx)).status).toBe(404);
     expect((await app.fetch(request("/regions/XYZ"), env, ctx)).status).toBe(404);
@@ -277,9 +291,11 @@ describe("app", () => {
     };
     expect(summary.page.url).toBe("https://status.test");
     expect(summary.status.indicator).toBe("minor");
-    expect(summary.components.find((entry) => entry.id === "git")?.status).toBe("under_maintenance");
-    expect(summary.components.some((entry) => entry.id === "auth")).toBe(true);
-    expect(summary.components.some((entry) => entry.id === "docs")).toBe(false);
+    expect(summary.components.find((entry) => entry.id === "01M4E7G1W82VKFPF5FJ9AVK1CZ")?.status).toBe(
+      "under_maintenance",
+    );
+    expect(summary.components.some((entry) => entry.id === "01M4E7G1W82VKFPF5FJ9AVK1CT")).toBe(true);
+    expect(summary.components.some((entry) => entry.id === "01M4E7G1W82VKFPF5FJ9AVK1CX")).toBe(false);
     expect(summary.incidents.map((entry) => entry.name)).toEqual(["Slow <queries>"]);
     expect(summary.incidents[0]?.incident_updates).toHaveLength(2);
     // Both were last updated in the same second; the id breaks the tie.
@@ -310,7 +326,7 @@ describe("app", () => {
     expect(regions.regions.find((region) => region.code === "GRU")?.live).toBe(true);
     expect(regions.vantages).toHaveLength(4);
     const latency = (await (
-      await app.fetch(request("/api/v1/latency?component=dashboard&range=24h"), env, ctx)
+      await app.fetch(request("/api/v1/latency?component=01M4E7G1W82VKFPF5FJ9AVK1CV&range=24h"), env, ctx)
     ).json()) as {
       buckets: { vantages: Record<string, unknown> }[];
     };
@@ -396,7 +412,9 @@ describe("app", () => {
     expect(await type("/maintenance.ics")).toBe("text/calendar; charset=utf-8");
     const status = await (await app.fetch(request("/badge/status.svg"), env, ctx)).text();
     expect(status).toContain("Some systems are degraded");
-    expect(await (await app.fetch(request("/badge/docs.svg"), env, ctx)).text()).toContain("Planned");
+    expect(await (await app.fetch(request("/badge/01M4E7G1W82VKFPF5FJ9AVK1CX.svg"), env, ctx)).text()).toContain(
+      "Planned",
+    );
     expect((await app.fetch(request("/badge/nope.svg"), env, ctx)).status).toBe(404);
   });
 

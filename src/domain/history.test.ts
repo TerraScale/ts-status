@@ -21,12 +21,16 @@ const incident = (id: string, impact: Incident["impact"], minutes: number | null
 describe("incidentStats", () => {
   it("counts incidents, their mean time to recovery and the longest", () => {
     expect(
-      incidentStats([incident("a", "critical", 10), incident("b", "minor", 30), incident("c", "major", null)]),
+      incidentStats([
+        incident("00000000000000000000000001", "critical", 10),
+        incident("00000000000000000000000002", "minor", 30),
+        incident("00000000000000000000000003", "major", null),
+      ]),
     ).toEqual({
       count: 3,
       resolved: 2,
       mttrMs: 20 * 60_000,
-      longest: { id: "b", title: "b", durationMs: 30 * 60_000 },
+      longest: { id: "00000000000000000000000002", title: "00000000000000000000000002", durationMs: 30 * 60_000 },
       byImpact: { minor: 1, major: 1, critical: 1 },
     });
   });

@@ -16,30 +16,30 @@ describe("probe catalog", () => {
 
   it("enables launched checks and observes pending OIDC discovery", () => {
     expect(sql.prepare("SELECT id FROM endpoints WHERE enabled = 1 ORDER BY id").all()).toEqual([
-      { id: "api-workers" },
-      { id: "atlas-workers" },
-      { id: "auth-edge" },
-      { id: "auth-oidc-edge" },
-      { id: "dashboard-fly-gru" },
-      { id: "data-api-oci-gru" },
-      { id: "document-api-gru" },
-      { id: "git-forgejo" },
-      { id: "management-api-gru" },
-      { id: "terrabase-health-gru" },
-      { id: "website-pages" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1D4" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1D5" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1D6" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1D7" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1D8" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DB" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DF" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DH" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DK" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DQ" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DS" },
     ]);
     expect(sql.prepare("SELECT id FROM endpoints WHERE enabled = 0 ORDER BY id").all()).toEqual([
-      { id: "data-api-canary-gru" },
-      { id: "data-api-oci-fra" },
-      { id: "data-api-oci-sfo" },
-      { id: "docs-pages" },
-      { id: "document-api-fra" },
-      { id: "document-api-sfo" },
-      { id: "management-api-fra" },
-      { id: "management-api-sfo" },
-      { id: "sync-edge" },
-      { id: "terrabase-health-fra" },
-      { id: "terrabase-health-sfo" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1D9" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DA" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DC" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DD" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DE" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DG" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DJ" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DM" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DN" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DP" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DR" },
     ]);
   });
 
@@ -47,18 +47,18 @@ describe("probe catalog", () => {
     const rows = sql
       .prepare(
         `SELECT id, url, expect_status, assertions FROM endpoints
-          WHERE id IN ('api-workers', 'data-api-oci-sfo', 'data-api-oci-gru', 'data-api-oci-fra') ORDER BY id`,
+          WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1D4', '01M4E7G1W82VKFPF5FJ9AVK1DC', '01M4E7G1W82VKFPF5FJ9AVK1DB', '01M4E7G1W82VKFPF5FJ9AVK1DA') ORDER BY id`,
       )
       .all();
     expect(rows.map((row) => [row.id, new URL(String(row.url)).host])).toEqual([
-      ["api-workers", "api.terrascale.tech"],
-      ["data-api-oci-fra", "fra.api.terrascale.tech"],
-      ["data-api-oci-gru", "gru.api.terrascale.tech"],
-      ["data-api-oci-sfo", "sfo.api.terrascale.tech"],
+      ["01M4E7G1W82VKFPF5FJ9AVK1D4", "api.terrascale.tech"],
+      ["01M4E7G1W82VKFPF5FJ9AVK1DA", "fra.api.terrascale.tech"],
+      ["01M4E7G1W82VKFPF5FJ9AVK1DB", "gru.api.terrascale.tech"],
+      ["01M4E7G1W82VKFPF5FJ9AVK1DC", "sfo.api.terrascale.tech"],
     ]);
     for (const row of rows) {
       expect(new URL(String(row.url)).pathname).toBe(
-        "/v1/projects/018f0000-0000-7000-8000-000000000001/databases/status_canary/collections/canary/documents/018f0000-0000-7000-8000-000000000004",
+        "/v1/projects/01M4E7G1W82VKFPF5FJ9AVK1DT/databases/status_canary/collections/canary/documents/01M4E7G1W82VKFPF5FJ9AVK1DV",
       );
       expect(row.expect_status).toBe("401");
       expect(JSON.parse(String(row.assertions))).toEqual([{ path: "error.code", op: "eq", value: "invalid_key" }]);
@@ -75,40 +75,48 @@ describe("probe catalog", () => {
         .filter((row) => row.region_code === "GRU"),
     ).toEqual([
       {
-        component_id: "document-api",
+        component_id: "01M4E7G1W82VKFPF5FJ9AVK1CY",
         region_code: "GRU",
         kind: "canary",
         probe: "documents",
         url: "/v1/projects/{project}/databases/{database}/collections/{collection}",
       },
       {
-        component_id: "management-api",
+        component_id: "01M4E7G1W82VKFPF5FJ9AVK1D0",
         region_code: "GRU",
         kind: "canary",
         probe: "management",
         url: "/v1/management/organizations/{organization}/projects",
       },
-      { component_id: "terrabase-health", region_code: "GRU", kind: "canary", probe: "health", url: "/readyz" },
+      {
+        component_id: "01M4E7G1W82VKFPF5FJ9AVK1D2",
+        region_code: "GRU",
+        kind: "canary",
+        probe: "health",
+        url: "/readyz",
+      },
     ]);
     expect(sql.prepare("SELECT count(*) AS n FROM endpoints WHERE probe IS NOT NULL").get()).toEqual({ n: 9 });
   });
 
   it("labels OIDC pending while keeping its non-404 failures in active authentication", () => {
     expect(sql.prepare("SELECT id FROM components WHERE lifecycle = 'planned' ORDER BY id").all()).toEqual([
-      { id: "docs" },
-      { id: "sync" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1CX" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1D1" },
     ]);
-    expect(sql.prepare("SELECT kind FROM endpoints WHERE id = 'data-api-canary-gru'").get()).toEqual({
+    expect(sql.prepare("SELECT kind FROM endpoints WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1D9'").get()).toEqual({
       kind: "canary",
     });
-    expect(sql.prepare("SELECT lifecycle FROM components WHERE id = 'auth'").get()).toEqual({ lifecycle: "active" });
-    expect(sql.prepare("SELECT description FROM components WHERE id = 'auth'").get()).toEqual({
+    expect(sql.prepare("SELECT lifecycle FROM components WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1CT'").get()).toEqual({
+      lifecycle: "active",
+    });
+    expect(sql.prepare("SELECT description FROM components WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1CT'").get()).toEqual({
       description: "Sign-in, accounts and API keys; OIDC discovery pending (404)",
     });
-    expect(sql.prepare("SELECT component_id FROM endpoints WHERE id = 'auth-oidc-edge'").get()).toEqual({
-      component_id: "auth",
+    expect(sql.prepare("SELECT component_id FROM endpoints WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1D7'").get()).toEqual({
+      component_id: "01M4E7G1W82VKFPF5FJ9AVK1CT",
     });
-    const oidc = endpoint("auth-oidc-edge");
+    const oidc = endpoint("01M4E7G1W82VKFPF5FJ9AVK1D7");
     expect(oidc.url).toBe("https://auth.terrascale.tech/.well-known/openid-configuration");
     expect(oidc.pendingStatus).toBe(404);
     expect(oidc.expectStatus).toBe("200");
@@ -140,16 +148,16 @@ describe("probe catalog", () => {
     expect(
       sql.prepare("SELECT id, blocked_status FROM endpoints WHERE blocked_status IS NOT NULL ORDER BY id").all(),
     ).toEqual([
-      { id: "dashboard-fly-gru", blocked_status: 403 },
-      { id: "git-forgejo", blocked_status: 403 },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1D8", blocked_status: 403 },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DH", blocked_status: 403 },
     ]);
-    expect(judge(parseSpec(endpoint("git-forgejo")), { status: 403, error: null })).toEqual({
+    expect(judge(parseSpec(endpoint("01M4E7G1W82VKFPF5FJ9AVK1DH")), { status: 403, error: null })).toEqual({
       outcome: "unknown",
       error: "Probe blocked (HTTP 403)",
       values: {},
     });
-    expect(judge(parseSpec(endpoint("git-forgejo")), { status: 503, error: null }).outcome).toBe("fail");
-    expect(judge(parseSpec(endpoint("auth-edge")), { status: 403, error: null }).outcome).toBe("fail");
+    expect(judge(parseSpec(endpoint("01M4E7G1W82VKFPF5FJ9AVK1DH")), { status: 503, error: null }).outcome).toBe("fail");
+    expect(judge(parseSpec(endpoint("01M4E7G1W82VKFPF5FJ9AVK1D6")), { status: 403, error: null }).outcome).toBe("fail");
   });
 
   const endpoint = (id: string) =>
@@ -169,7 +177,7 @@ describe("probe catalog", () => {
     };
 
   it("requires Atlas to resolve the admitted gru-1 region and report it healthy", () => {
-    const atlas = endpoint("atlas-workers");
+    const atlas = endpoint("01M4E7G1W82VKFPF5FJ9AVK1D5");
     expect(atlas.url).toBe("https://atlas.terrascale.tech/api/v1/regions");
     const check = (available: boolean, host: string | null, code = "GRU-1") =>
       judge(parseSpec(atlas), {
@@ -184,7 +192,7 @@ describe("probe catalog", () => {
   });
 
   it("keeps the production GRU hostname for the canary and browser ping", () => {
-    expect(sql.prepare("SELECT url FROM endpoints WHERE id = 'data-api-canary-gru'").get()).toEqual({
+    expect(sql.prepare("SELECT url FROM endpoints WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1D9'").get()).toEqual({
       url: "https://gru.api.terrascale.tech",
     });
     expect(sql.prepare("SELECT ping_url FROM regions WHERE code = 'GRU'").get()).toEqual({
@@ -194,8 +202,8 @@ describe("probe catalog", () => {
 
   it("checks the actual dashboard and C# auth readiness contracts", () => {
     for (const [id, url, status] of [
-      ["dashboard-fly-gru", "https://dash.terrascale.tech/health/ready", "ok"],
-      ["auth-edge", "https://auth.terrascale.tech/readyz", "ready"],
+      ["01M4E7G1W82VKFPF5FJ9AVK1D8", "https://dash.terrascale.tech/health/ready", "ok"],
+      ["01M4E7G1W82VKFPF5FJ9AVK1D6", "https://auth.terrascale.tech/readyz", "ready"],
     ]) {
       const row = endpoint(id!);
       expect(row.url).toBe(url);

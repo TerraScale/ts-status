@@ -7,6 +7,9 @@
    messages, and hourly refreshes the TLS certificates of the monitored
    hosts. */
 
+import { bootstrap } from "./db/bootstrap";
+import { isId } from "./ids";
+
 import { operator } from "./api/operator";
 import { regionLatencyDocument } from "./api/latency";
 import { connect } from "./notify/connect";
@@ -106,7 +109,7 @@ const route = createRouter<Route>({
   },
   "/history": {
     query: {
-      component: (value) => /^[a-z0-9-]{1,40}$/.test(value),
+      component: isId,
       kind: oneOf("incident", "warning"),
       impact: oneOf("minor", "major", "critical"),
       q: short(80),
@@ -220,7 +223,7 @@ const route = createRouter<Route>({
     render: async (env, { now }) => json(regionsDocument(await loadOverview(env, now, "24h"))),
   },
   "/api/v1/latency": {
-    query: { ...rangeQuery, component: (value) => /^[a-z0-9-]{1,40}$/.test(value) },
+    query: { ...rangeQuery, component: isId },
     render: async (env, { now, query }) => {
       const range: RangeKey = isRange(query.range) ? query.range : "24h";
       const view = await loadOverview(env, now, range);
@@ -315,6 +318,7 @@ async function render(route: Route, env: Env, context: RenderContext): Promise<R
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
+    await bootstrap(env);
     const url = new URL(request.url);
     const now = Date.now();
     if (url.pathname.startsWith("/api/operator/")) return secure(await operator(request, env, now), false);
@@ -342,7 +346,12 @@ export default {
     }
     const match = route(url.pathname);
 
-    if (!match) {
+    if (
+      !match ||
+      (match.params.id !== undefined &&
+        (match.params.id !== "status" || !url.pathname.startsWith("/badge/")) &&
+        !isId(match.params.id))
+    ) {
       return secure(
         await page(notFoundPage(), { now, origin: url.origin, fragment: false, params: {}, query: {} }, 404),
         false,
@@ -372,6 +381,7 @@ export default {
   },
 
   async scheduled(controller, env, ctx): Promise<void> {
+    await bootstrap(env);
     const now = controller.scheduledTime;
     const work: Promise<unknown>[] = [coordinator(env).arm(), rollup(env, now), runOutbox(env, now, { connect })];
     if (new Date(now).getUTCMinutes() === CHECK_MINUTE) work.push(checkCertificates(env, now));

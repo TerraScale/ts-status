@@ -1,7 +1,9 @@
 /* Published TerraBase only: verify the release before executing it, provision
    via its APIs, and trust this instance's certificate without weakening TLS. */
+
+import { isId, newId } from "../ids";
 import { execFile, spawn } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { request } from "node:https";
@@ -38,7 +40,7 @@ export async function verifiedBinary(): Promise<string> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT" || process.env.TERRABASE_BINARY) throw error;
     await mkdir(directory, { recursive: true });
-    const download = `${binary}.${randomUUID()}.download`;
+    const download = `${binary}.${newId()}.download`;
     try {
       if (process.env.FORGEJO_READ_TOKEN) {
         // curl keeps credentials off redirects to another host. Pass the token
@@ -91,8 +93,8 @@ export async function verifiedBinary(): Promise<string> {
 export async function startTerraBase() {
   const binary = await verifiedBinary();
   const directory = await mkdtemp(join(tmpdir(), "ts-status-terrabase-"));
-  const credential = randomUUID() + randomUUID();
-  const userId = randomUUID();
+  const credential = Buffer.from(randomBytes(32)).toString("hex");
+  const userId = newId();
   let child: ReturnType<typeof spawn> | undefined;
   let closed: Promise<void> | undefined;
   let launchError: Error | undefined;
@@ -233,8 +235,16 @@ export async function startTerraBase() {
     const organization = (
       await create(`${origin}/v1/management/organizations`, { name: "Status test" }, managementHeaders())
     ).id;
+    if (!isId(organization))
+      throw new Error(
+        "TerraBase release returns legacy organization IDs; publish a release implementing TS-754 before running the integration suite.",
+      );
     const projectsPath = `${origin}/v1/management/organizations/${organization}/projects`;
     const project = (await create(projectsPath, { name: "Canary" }, managementHeaders(organization))).id;
+    if (!isId(project))
+      throw new Error(
+        "TerraBase release returns legacy project IDs; publish a release implementing TS-754 before running the integration suite.",
+      );
     const database = "status_canary";
     const createDatabase = async (name: string) =>
       (await create(`${projectsPath}/${project}/databases`, { name }, managementHeaders(organization))).id;
@@ -261,7 +271,7 @@ export async function startTerraBase() {
       { name: collection },
       { authorization: `Bearer ${key}` },
     );
-    const canary: CanaryConfig = { origin, project, database, collection, document: randomUUID(), key };
+    const canary: CanaryConfig = { origin, project, database, collection, document: newId(), key };
     return {
       origin,
       fetcher,

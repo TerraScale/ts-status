@@ -3,7 +3,7 @@ import { adopt, step, type Observation, type Tracker } from "./auto-incident";
 
 const M = 60_000;
 const seen = (state: Observation["state"], suppressed = false): Observation => ({
-  componentId: "dashboard",
+  componentId: "01M4E7G1W82VKFPF5FJ9AVK1CV",
   name: "Dashboard",
   state,
   detail: "4 of 4 vantage points failing: HTTP 503",
@@ -16,7 +16,7 @@ function run(states: Observation[], options: { touched?: Set<string>; start?: Re
   let ids = 0;
   const actions = states.flatMap((observation, index) => {
     const result = step(trackers, [observation], index * 30_000, {
-      newId: () => `i${++ids}`,
+      newId: () => `0000000000${String(++ids + 1).padStart(16, "0")}`,
       touched: options.touched ?? new Set(),
     });
     trackers = result.trackers;
@@ -75,9 +75,18 @@ describe("step", () => {
   it("never opens during maintenance and lets go of operator-edited incidents", () => {
     expect(run(Array.from({ length: 5 }, () => seen("major_outage", true))).actions).toEqual([]);
     const start = {
-      dashboard: { state: "major_outage", since: 0, incidentId: "op", impact: "critical", healthySince: null },
+      "01M4E7G1W82VKFPF5FJ9AVK1CV": {
+        state: "major_outage",
+        since: 0,
+        incidentId: "00000000000000000000000019",
+        impact: "critical",
+        healthySince: null,
+      },
     } as const;
-    const { actions, trackers } = run([seen("operational")], { touched: new Set(["op"]), start: { ...start } });
+    const { actions, trackers } = run([seen("operational")], {
+      touched: new Set(["00000000000000000000000019"]),
+      start: { ...start },
+    });
     expect(actions).toEqual([]);
     expect(trackers).toEqual({});
   });
@@ -100,14 +109,24 @@ describe("step", () => {
 
   it("keeps its memory while nothing is measured", () => {
     const { trackers } = run([seen("major_outage"), seen("none")]);
-    expect(trackers.dashboard?.since).toBe(0);
+    expect(trackers["01M4E7G1W82VKFPF5FJ9AVK1CV"]?.since).toBe(0);
   });
 });
 
 describe("adopt", () => {
   it("tracks open automatic incidents it has forgotten", () => {
-    expect(adopt({}, [{ id: "i9", componentId: "git", impact: "major", createdAt: 5 }])).toEqual({
-      git: { state: "partial_outage", since: 5, incidentId: "i9", impact: "major", healthySince: null },
+    expect(
+      adopt({}, [
+        { id: "00000000000000000000000005", componentId: "01M4E7G1W82VKFPF5FJ9AVK1CZ", impact: "major", createdAt: 5 },
+      ]),
+    ).toEqual({
+      "01M4E7G1W82VKFPF5FJ9AVK1CZ": {
+        state: "partial_outage",
+        since: 5,
+        incidentId: "00000000000000000000000005",
+        impact: "major",
+        healthySince: null,
+      },
     });
   });
 
@@ -115,11 +134,11 @@ describe("adopt", () => {
     const tracked: Tracker = {
       state: "major_outage",
       since: 0,
-      incidentId: "gone",
+      incidentId: "000000000000000000000000ZZ",
       impact: "critical",
       healthySince: null,
     };
     const pending: Tracker = { state: "degraded", since: 0, incidentId: null, impact: null, healthySince: null };
-    expect(adopt({ git: tracked, docs: pending }, [])).toEqual({ docs: pending });
+    expect(adopt({ "01M4E7G1W82VKFPF5FJ9AVK1CZ": tracked, docs: pending }, [])).toEqual({ docs: pending });
   });
 });
