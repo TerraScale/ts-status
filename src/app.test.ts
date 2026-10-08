@@ -339,12 +339,12 @@ describe("app", () => {
     const env = seededEnv();
     env.STATUS_DB.sqlite.exec(`
       INSERT INTO probe_hours (endpoint_id, hour, vantage, checks, failures, degraded, latency_sum, latency_max, hist) VALUES
-        ('dashboard-fly-gru', '2026-09-26 09:00:00', 'all', 4, 2, 0, 150, 100, '[1,1,0,0,0,0,0,0,0,0,0,0,0]'),
-        ('data-api-oci-gru', '2026-09-26 09:00:00', 'all', 2, 0, 0, 200, 100, '[0,2,0,0,0,0,0,0,0,0,0,0,0]'),
-        ('dashboard-fly-gru', '2026-09-26 09:00:00', 'sfo', 2, 0, 0, 400, 200, '[0,0,0,2,0,0,0,0,0,0,0,0,0]'),
-        ('dashboard-fly-gru', '2026-09-26 09:00:00', 'gru', 2, 0, 0, 80, 50, '[2,0,0,0,0,0,0,0,0,0,0,0,0]'),
-        ('dashboard-fly-gru', '2026-09-26 08:00:00', 'all', 100, 0, 0, 100000, 1000, '[0,0,0,0,0,0,0,0,100,0,0,0,0]'),
-        ('website-pages', '2026-09-26 09:00:00', 'all', 100, 0, 0, 100000, 1000, '[0,0,0,0,0,0,0,0,100,0,0,0,0]');
+        ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 09:00:00', 'all', 4, 2, 0, 150, 100, '[1,1,0,0,0,0,0,0,0,0,0,0,0]'),
+        ('01M4E7G1W82VKFPF5FJ9AVK1DB', '2026-09-26 09:00:00', 'all', 2, 0, 0, 200, 100, '[0,2,0,0,0,0,0,0,0,0,0,0,0]'),
+        ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 09:00:00', 'sfo', 2, 0, 0, 400, 200, '[0,0,0,2,0,0,0,0,0,0,0,0,0]'),
+        ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 09:00:00', 'gru', 2, 0, 0, 80, 50, '[2,0,0,0,0,0,0,0,0,0,0,0,0]'),
+        ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 08:00:00', 'all', 100, 0, 0, 100000, 1000, '[0,0,0,0,0,0,0,0,100,0,0,0,0]'),
+        ('01M4E7G1W82VKFPF5FJ9AVK1DS', '2026-09-26 09:00:00', 'all', 100, 0, 0, 100000, 1000, '[0,0,0,0,0,0,0,0,100,0,0,0,0]');
       UPDATE probe_hours SET hist = '[0,0,0,0,0,0,0,0,100,0,0,0,0]' WHERE hour = '2026-09-26 10:00:00';
     `);
     const response = await app.fetch(request("/api/latency"), env, ctx);
@@ -397,7 +397,7 @@ describe("app", () => {
     ["none", "planned"],
   ])("maps region state %s to %s with null stats without measured latency", async (state, status) => {
     const env = seededEnv();
-    await env.STATUS_DB.prepare("UPDATE probe_samples SET state = ? WHERE endpoint_id = 'dashboard-fly-gru'")
+    await env.STATUS_DB.prepare("UPDATE probe_samples SET state = ? WHERE endpoint_id = '01M4E7G1W82VKFPF5FJ9AVK1D8'")
       .bind(state)
       .run();
     const data = (await (await app.fetch(request("/api/latency?region=gru"), env, ctx)).json()) as RegionLatency;
