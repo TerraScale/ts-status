@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import app from "./app";
 import type { Env } from "./env";
+import { regionLatencyDocument } from "./api/latency";
 import { testD1, type TestD1 } from "./testing/d1";
 
 const NOW = "2026-09-26T10:15:00Z";
+type RegionLatency = ReturnType<typeof regionLatencyDocument>;
 
 /** The seeded catalog plus a warning and the dashboard's recent probes. */
 function seededEnv(): Env & { STATUS_DB: TestD1 } {
@@ -317,6 +319,75 @@ describe("app", () => {
     expect((await app.fetch(request("/api/v1/latency?component=nope"), env, ctx)).status).toBe(404);
   });
 
+  it("serves public region latency from the completed hour, merging cluster histograms", async () => {
+    const env = seededEnv();
+    env.STATUS_DB.sqlite.exec(`
+      INSERT INTO probe_hours (endpoint_id, hour, vantage, checks, failures, degraded, latency_sum, latency_max, hist) VALUES
+        ('dashboard-fly-gru', '2026-09-26 09:00:00', 'all', 4, 2, 0, 150, 100, '[1,1,0,0,0,0,0,0,0,0,0,0,0]'),
+        ('data-api-oci-gru', '2026-09-26 09:00:00', 'all', 2, 0, 0, 200, 100, '[0,2,0,0,0,0,0,0,0,0,0,0,0]'),
+        ('dashboard-fly-gru', '2026-09-26 09:00:00', 'sfo', 2, 0, 0, 400, 200, '[0,0,0,2,0,0,0,0,0,0,0,0,0]'),
+        ('dashboard-fly-gru', '2026-09-26 09:00:00', 'gru', 2, 0, 0, 80, 50, '[2,0,0,0,0,0,0,0,0,0,0,0,0]'),
+        ('dashboard-fly-gru', '2026-09-26 08:00:00', 'all', 100, 0, 0, 100000, 1000, '[0,0,0,0,0,0,0,0,100,0,0,0,0]'),
+        ('website-pages', '2026-09-26 09:00:00', 'all', 100, 0, 0, 100000, 1000, '[0,0,0,0,0,0,0,0,100,0,0,0,0]');
+      UPDATE probe_hours SET hist = '[0,0,0,0,0,0,0,0,100,0,0,0,0]' WHERE hour = '2026-09-26 10:00:00';
+    `);
+    const response = await app.fetch(request("/api/latency"), env, ctx);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    expect(response.headers.get("cache-control")).toBe("public, max-age=10");
+    const data = (await response.json()) as RegionLatency;
+    expect(data.generated_at).toBe("2026-09-26T10:15:00.000Z");
+    expect(data.window).toBe("1h");
+    expect(data.regions.map((region) => region.code)).toEqual(["sfo", "gru", "fra"]);
+    expect(data.regions[1]).toEqual({
+      code: "gru",
+      name: "São Paulo",
+      ping_url: "https://gru.api.terrascale.tech/healthz",
+      status: "operational",
+      consensus: { median_ms: 67, p95_ms: 97, samples: 4 },
+      vantages: [
+        { code: "sfo", name: "US West", median_ms: 175, p95_ms: 198, samples: 2 },
+        { code: "gru", name: "South America", median_ms: 25, p95_ms: 48, samples: 2 },
+        { code: "fra", name: "Europe", median_ms: null, p95_ms: null, samples: 0 },
+        { code: "nrt", name: "Asia Pacific", median_ms: null, p95_ms: null, samples: 0 },
+      ],
+    });
+    expect(data.regions[0]).toMatchObject({
+      status: "planned",
+      ping_url: null,
+      consensus: { median_ms: null, p95_ms: null, samples: 0 },
+    });
+    await app.fetch(request("/api/latency?bust=1"), env, ctx);
+    expect(env.STATUS_DB.batches).toBe(1);
+  });
+
+  it("filters region latency and caches each filter separately", async () => {
+    const env = seededEnv();
+    const read = async (path: string) => (await (await app.fetch(request(path), env, ctx)).json()) as RegionLatency;
+    expect((await read("/api/latency?region=gru")).regions.map((region) => region.code)).toEqual(["gru"]);
+    expect((await read("/api/latency?region=gru&bust=1")).regions).toHaveLength(1);
+    expect(env.STATUS_DB.batches).toBe(1);
+    expect((await read("/api/latency?region=GRU")).regions[0]?.code).toBe("gru");
+    expect((await read("/api/latency?region=unknown")).regions).toEqual([]);
+    expect((await read("/api/latency")).regions).toHaveLength(3);
+    expect(env.STATUS_DB.batches).toBe(4);
+  });
+
+  it.each([
+    ["degraded", "degraded"],
+    ["partial_outage", "down"],
+    ["major_outage", "down"],
+    ["none", "planned"],
+  ])("maps region state %s to %s with null stats without measured latency", async (state, status) => {
+    const env = seededEnv();
+    await env.STATUS_DB.prepare("UPDATE probe_samples SET state = ? WHERE endpoint_id = 'dashboard-fly-gru'")
+      .bind(state)
+      .run();
+    const data = (await (await app.fetch(request("/api/latency?region=gru"), env, ctx)).json()) as RegionLatency;
+    expect(data.regions[0]).toMatchObject({ status, consensus: { median_ms: null, p95_ms: null, samples: 0 } });
+  });
+
   it("serves feeds, the calendar and badges with their types", async () => {
     const env = seededEnv();
     const type = async (path: string) => (await app.fetch(request(path), env, ctx)).headers.get("content-type");
@@ -338,7 +409,9 @@ describe("app", () => {
     expect(body).not.toContain("st-top");
     const integrations = await app.fetch(request("/integrations"), env, ctx);
     expect(integrations.headers.get("content-security-policy")).toContain("frame-src 'self'");
-    expect(await integrations.text()).toContain("https://status.test/api/v2/summary.json");
+    const integrationsBody = await integrations.text();
+    expect(integrationsBody).toContain("https://status.test/api/v2/summary.json");
+    expect(integrationsBody).toContain("https://status.test/api/latency?region=gru");
   });
 
   it("rejects unknown paths and methods", async () => {

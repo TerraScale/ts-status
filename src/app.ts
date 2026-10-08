@@ -8,6 +8,7 @@
    hosts. */
 
 import { operator } from "./api/operator";
+import { regionLatencyDocument } from "./api/latency";
 import { connect } from "./notify/connect";
 import { deliverDue, runOutbox } from "./notify/outbox";
 import { subscriptions } from "./notify/subscribe";
@@ -20,7 +21,7 @@ import { HEADLINES } from "./domain/status";
 import type { Env } from "./env";
 import { badge } from "./feeds/badge";
 import { atom, calendar, rss } from "./feeds/feeds";
-import { DAY } from "./format";
+import { DAY, HOUR, startOfHour } from "./format";
 import { cacheKey, oneOf, readQuery, text as short, type QuerySpec } from "./http/cache";
 import { contentSecurityPolicy, type PolicyOptions } from "./http/csp";
 import { secure } from "./http/security";
@@ -188,6 +189,22 @@ const route = createRouter<Route>({
     render: async (env, context) => {
       const { windows, components } = await loadMaintenance(env, context.now - MAINTENANCE_DAYS * DAY);
       return page(maintenancePage(windows, components, context.now), context);
+    },
+  },
+  "/api/latency": {
+    query: { region: (value) => /^[a-z0-9-]{1,40}$/i.test(value) },
+    render: async (env, { now, query }) => {
+      const view = await loadOverview(env, now, "24h");
+      const regions = view.regions.filter(
+        (region) => !query.region || region.code.toLowerCase() === query.region.toLowerCase(),
+      );
+      const periods = await loadPeriods(
+        env,
+        regions.flatMap((region) => region.clusters.map((cluster) => cluster.id)),
+        startOfHour(now) - HOUR,
+        true,
+      );
+      return json(regionLatencyDocument(regions, new Measurements(periods), now));
     },
   },
   "/api/v1/status": {

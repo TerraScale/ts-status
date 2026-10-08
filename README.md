@@ -104,6 +104,7 @@ Feeds and APIs, all open to any origin and listed with snippets on `/integration
 | `/maintenance.ics`                           | Maintenance windows as an iCalendar subscription                                        |
 | `/badge/status.svg`, `/badge/:component.svg` | Live SVG status badges                                                                  |
 | `/embed`                                     | A compact live widget for iframes (the only page any site may frame)                    |
+| `/api/latency`                               | Region ping over the last completed UTC hour, consensus and per vantage (`?region=gru`) |
 | `/api/v1/status`                             | Headline, components with bars, regions, maintenance and incidents (`?range=`)          |
 | `/api/v1/incidents`                          | The latest incidents with their updates (`?limit=`)                                     |
 | `/api/v1/regions`                            | Regions, clusters, and the latest latency from each vantage                             |
@@ -111,6 +112,15 @@ Feeds and APIs, all open to any origin and listed with snippets on `/integration
 | `/api/v2/*.json`                             | The Atlassian Statuspage v2 format: status, summary, components, incidents, maintenance |
 
 Operators publish incidents with the [`status-warning`](skills/status-warning/SKILL.md) skill.
+
+`GET /api/latency` is public, allows any CORS origin and is cached for 10 seconds. It returns
+`generated_at` (RFC3339), `window: "1h"` and `regions`, each with a lowercase `code`, `name`,
+catalog `ping_url`, `status` (`operational`, `degraded`, `down` or `planned`), `consensus` and
+`vantages`. Each stats object contains integer `median_ms`, `p95_ms` and `samples`; percentiles
+are estimated from the existing latency histograms. Empty stats have null percentiles and zero
+samples. Regions without a configured ping URL retain `ping_url: null`. Outages map to `down`;
+maintenance and unmeasured regions map to `planned`. The optional case-insensitive `?region=gru`
+filters to one region; an unknown code returns an empty list.
 
 The operator API under `/api/operator` needs the `OPERATOR_TOKEN` bearer token (`wrangler secret put OPERATOR_TOKEN`; locally in `.dev.vars`):
 

@@ -64,6 +64,7 @@ export function integrationsPage(view: Overview, origin: string): Page {
   ${card(
     { id: "api", title: "APIs", description: "JSON with open CORS, cached for 10 seconds." },
     html`<ul class="ts-list">
+    ${row("Region ping", "Median, p95 and sample counts for the last completed UTC hour, consensus and per vantage. Takes ?region=gru.", `${origin}/api/latency`, `curl -s ${origin}/api/latency?region=gru`)}
     ${row("Status", "Headline, components with bars, regions, recent incidents. Takes ?range=24h|7d|30d|90d.", `${origin}/api/v1/status`)}
     ${row("Incidents", "The latest incidents, warnings and maintenance with their updates. Takes ?limit=1–100.", `${origin}/api/v1/incidents`)}
     ${row("Regions", "Every region with its clusters and the latest latency from each vantage.", `${origin}/api/v1/regions`)}
