@@ -31,7 +31,7 @@ import { secure } from "./http/security";
 import { Measurements } from "./measure";
 import { overview, snapshotWindow } from "./overview";
 import { coordinator } from "./probe/coordinator";
-import { deployments } from "./probe/deployments";
+import { deployments, type DeploymentObservation } from "./probe/deployments";
 import { rollup } from "./probe/rollup";
 import { CHECK_MINUTE, checkCertificates } from "./probe/tls";
 import { createRouter } from "./router";
@@ -49,6 +49,7 @@ import { regionPage } from "./views/region";
 import { uptimePage, YEAR_DAYS } from "./views/uptime";
 
 const FONT_PRELOAD = '</fonts/oxanium.woff2>; rel=preload; as=font; type="font/woff2"; crossorigin';
+const deploymentRequests = new WeakMap<Env, Promise<DeploymentObservation[]>>();
 
 interface RenderContext {
   now: number;
@@ -330,12 +331,24 @@ export default {
       if (request.method !== "GET") {
         return secure(new Response("Method not allowed", { status: 405, headers: { allow: "GET" } }), false);
       }
-      return secure(
-        Response.json(await deployments(env, now), {
-          headers: { "cache-control": "no-store" },
-        }),
-        false,
-      );
+      const cache = caches.default;
+      const key = new Request(cacheKey(url, {}, false));
+      let response = await cache.match(key);
+      if (!response) {
+        let pending = deploymentRequests.get(env);
+        if (!pending) {
+          pending = deployments(env, now)
+            .then(async (observations) => {
+              await cache.put(key, secure(Response.json(observations), true));
+              return observations;
+            })
+            .finally(() => deploymentRequests.delete(env));
+          deploymentRequests.set(env, pending);
+        }
+        response = Response.json(await pending);
+      }
+      // Keep the observation timestamp; clients must return through the bounded edge cache.
+      return secure(response, false);
     }
     if (url.pathname === "/health/version") {
       if (request.method !== "GET") {

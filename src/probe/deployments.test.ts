@@ -59,4 +59,60 @@ describe("regional deployment observations", () => {
     expect(rows.every((row) => row.version === null)).toBe(true);
     expect(rows.filter((row) => row.region === "GRU").every((row) => row.status === null)).toBe(true);
   });
+
+  it.each([
+    null,
+    [],
+    {},
+    { results: {} },
+    { results: [null] },
+    { results: [[]] },
+    { results: [{ key: "ts-atlas", status: "200" }] },
+    { results: [{ key: "ts-atlas", status: 200.5 }] },
+    { results: [{ key: "ts-atlas", status: 600 }] },
+    { results: [{ key: 1, status: 200 }] },
+    { results: [{ key: "ts-atlas", status: 200, body: {} }] },
+    { version: 1, results: [] },
+    { colo: {}, results: [] },
+  ])("keeps malformed GRU payload %j unknown without losing SFO observations", async (body) => {
+    const version = "a".repeat(40);
+    const rows = await deployments(
+      {
+        VANTAGE_GRU: { fetch: async () => Response.json(body) },
+        VANTAGE_SFO: {
+          fetch: async () =>
+            Response.json({
+              version,
+              colo: "SFO",
+              results: ["ts-atlas", "ts-status", "ts-dashboard"].map((key) => ({
+                key,
+                status: 200,
+                body: JSON.stringify({ version }),
+              })),
+            }),
+        },
+      } as unknown as Env,
+      0,
+    );
+    expect(rows).toHaveLength(8);
+    const failed = rows.filter((row) => row.region === "GRU");
+    expect(failed).toHaveLength(4);
+    expect(failed.every((row) => row.status === null && row.version === null && row.colo === null)).toBe(true);
+    const healthy = rows.filter((row) => row.region === "SFO");
+    expect(healthy).toHaveLength(4);
+    expect(healthy.every((row) => row.status === 200 && row.version === version && row.colo === "SFO")).toBe(true);
+  });
+
+  it("keeps non-JSON vantage responses unknown", async () => {
+    const rows = await deployments(
+      {
+        VANTAGE_GRU: { fetch: async () => new Response("not JSON") },
+        VANTAGE_SFO: { fetch: async () => Response.json({ version: "a".repeat(40), results: [] }) },
+      } as unknown as Env,
+      0,
+    );
+    expect(rows).toHaveLength(8);
+    expect(rows.filter((row) => row.region === "GRU").every((row) => row.status === null)).toBe(true);
+    expect(rows.find((row) => row.region === "SFO" && row.target === "vantage")?.version).toBe("a".repeat(40));
+  });
 });

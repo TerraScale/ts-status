@@ -8,6 +8,11 @@ when the oldest pending qualified build exceeds 30 minutes. Its clock cannot
 be reset by another green build. The fixed /api/v1/deployments endpoint observes
 Atlas, Status and Dashboard from GRU/SFO service bindings and also reports each
 vantage Worker's own deployed revision. It accepts no caller-controlled target.
+Observations share the existing 10-second edge cache per colo, and concurrent
+cache misses coalesce within a Worker instance. Query strings cannot bypass
+that cache. Cached observations keep their original timestamps; clients receive
+`no-store`, so they cannot extend proof freshness. Invalid vantage payloads
+produce unknown observations for that region while preserving the other region.
 
 Every main push runs locked dependency installation, type checking, lint,
 tests, a Worker build and Wrangler dry runs. The same job deploys the verified

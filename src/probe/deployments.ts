@@ -1,5 +1,5 @@
 import type { Env } from "../env";
-import type { ProbeResponse } from "./protocol";
+import type { TargetResult } from "./protocol";
 
 const SERVICES = [
   ["ts-atlas", "https://atlas.terrascale.tech/health/version"],
@@ -20,6 +20,35 @@ export interface DeploymentObservation {
 const revision = (value: unknown): string | null =>
   typeof value === "string" && /^[0-9a-f]{40}$/.test(value) ? value : null;
 
+interface DeploymentProbe {
+  version?: string;
+  colo?: string | null;
+  results: Pick<TargetResult, "key" | "status" | "body">[];
+}
+
+function isDeploymentProbe(value: unknown): value is DeploymentProbe {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const probe = value as Record<string, unknown>;
+  return (
+    (probe.version === undefined || typeof probe.version === "string") &&
+    (probe.colo === undefined || probe.colo === null || typeof probe.colo === "string") &&
+    Array.isArray(probe.results) &&
+    probe.results.every((value: unknown) => {
+      if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+      const result = value as Record<string, unknown>;
+      return (
+        typeof result.key === "string" &&
+        (result.status === null ||
+          (typeof result.status === "number" &&
+            Number.isInteger(result.status) &&
+            result.status >= 100 &&
+            result.status <= 599)) &&
+        (result.body === undefined || typeof result.body === "string")
+      );
+    })
+  );
+}
+
 /** Fixed public targets only: callers cannot use the regional bindings as a proxy. */
 export async function deployments(env: Env, now: number): Promise<DeploymentObservation[]> {
   const observedAt = new Date(now).toISOString();
@@ -36,14 +65,17 @@ export async function deployments(env: Env, now: number): Promise<DeploymentObse
   return (
     await Promise.all(
       regions.map(async ([region, vantage]) => {
-        let probe: ProbeResponse | null = null;
+        let probe: DeploymentProbe | null = null;
         try {
           const response = await vantage.fetch("https://vantage/probe", {
             method: "POST",
             body: JSON.stringify({ targets }),
             signal: AbortSignal.timeout(8_000),
           });
-          if (response.ok) probe = (await response.json()) as ProbeResponse;
+          if (response.ok) {
+            const body: unknown = await response.json();
+            if (isDeploymentProbe(body)) probe = body;
+          }
         } catch {
           // A missing vantage is a missing deployment proof, never a healthy sample.
         }
