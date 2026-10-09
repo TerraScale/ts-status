@@ -81,6 +81,7 @@ export async function verifiedBinary(): Promise<string> {
         );
       }
       await verify(download);
+      await chmod(download, 0o700);
       await rename(download, binary);
     } finally {
       await rm(download, { force: true });
