@@ -3,6 +3,8 @@
 import type { Coordinator } from "./probe/coordinator";
 
 export interface Env {
+  /** Full source revision set by the main deployment job. */
+  VERSION?: string;
   STATUS_DB: D1Database;
   COORDINATOR: DurableObjectNamespace<Coordinator>;
   VANTAGE_SFO: Fetcher;

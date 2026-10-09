@@ -57,12 +57,26 @@ describe("worker", () => {
 });
 
 describe("app", () => {
+  it("serves an uncached deployment revision without reading D1", async () => {
+    const version = "a".repeat(40);
+    const response = await app.fetch(request("/health/version"), { VERSION: version } as Env, ctx);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({ version });
+    expect((await app.fetch(request("/health/version", "POST"), {} as Env, ctx)).status).toBe(405);
+  });
   beforeEach(() => {
-    const store = new Map<string, Response>();
+    const store = new Map<string, { response: Response; expires: number }>();
     vi.stubGlobal("caches", {
       default: {
-        match: async (key: Request) => store.get(key.url)?.clone(),
-        put: async (key: Request, response: Response) => void store.set(key.url, response),
+        match: async (key: Request) => {
+          const entry = store.get(key.url);
+          return entry && entry.expires > Date.now() ? entry.response.clone() : undefined;
+        },
+        put: async (key: Request, response: Response) => {
+          const seconds = Number(response.headers.get("cache-control")?.match(/max-age=(\d+)/)?.[1] ?? 0);
+          store.set(key.url, { response, expires: Date.now() + seconds * 1_000 });
+        },
       },
     });
     vi.useFakeTimers({ now: Date.parse(NOW), toFake: ["Date"] });
@@ -71,6 +85,83 @@ describe("app", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("coalesces deployment cache misses and ignores caller query strings", async () => {
+    const version = "a".repeat(40);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const fetch = vi.fn(async () => {
+      await gate;
+      return Response.json({ version, results: [] });
+    });
+    const env = { VANTAGE_GRU: { fetch }, VANTAGE_SFO: { fetch } } as unknown as Env;
+    const responses = Promise.all([
+      app.fetch(request("/api/v1/deployments?bust=1"), env, ctx),
+      app.fetch(request("/api/v1/deployments?target=https://other.test"), env, ctx),
+    ]);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    release();
+    const [first, second] = await responses;
+    expect(first.headers.get("cache-control")).toBe("no-store");
+    const observations = await first.json();
+    expect(await second.json()).toEqual(observations);
+
+    // The edge cache is shared even when the binding object changes.
+    const cached = await app.fetch(request("/api/v1/deployments?bust=2"), { ...env }, ctx);
+    expect(await cached.json()).toEqual(observations);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect((await app.fetch(request("/api/v1/deployments", "POST"), env, ctx)).status).toBe(405);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns valid observations to every waiter when the deployment cache write fails", async () => {
+    const version = "a".repeat(40);
+    const fetch = vi.fn(async () => Response.json({ version, results: [] }));
+    const env = { VANTAGE_GRU: { fetch }, VANTAGE_SFO: { fetch } } as unknown as Env;
+    const error = new Error("cache unavailable");
+    const put = vi.spyOn(caches.default, "put").mockRejectedValue(error);
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const responses = await Promise.all([
+        app.fetch(request("/api/v1/deployments"), env, ctx),
+        app.fetch(request("/api/v1/deployments?bust=1"), env, ctx),
+      ]);
+      const observations = await responses[0].json();
+      expect(responses.every((response) => response.status === 200)).toBe(true);
+      expect(await responses[1].json()).toEqual(observations);
+      expect(observations).toHaveLength(8);
+      expect(observations).toEqual(expect.arrayContaining([expect.objectContaining({ target: "vantage", version })]));
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(put).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledWith("deployment cache write failed", error);
+
+      expect((await app.fetch(request("/api/v1/deployments"), env, ctx)).status).toBe(200);
+      expect(fetch).toHaveBeenCalledTimes(4);
+      expect(put).toHaveBeenCalledTimes(2);
+    } finally {
+      put.mockRestore();
+      log.mockRestore();
+    }
+  });
+
+  it("expires deployment observations after ten seconds without refreshing cached timestamps or reading D1", async () => {
+    const fetch = vi.fn(async () => Response.json({ version: "a".repeat(40), results: [] }));
+    const env = { ...seededEnv(), VANTAGE_GRU: { fetch }, VANTAGE_SFO: { fetch } } as unknown as Env;
+    const exec = vi.spyOn(env.STATUS_DB, "exec").mockRejectedValue(new Error("D1 unavailable"));
+    const first = await (await app.fetch(request("/api/v1/deployments"), env, ctx)).json();
+    vi.setSystemTime(Date.parse(NOW) + 9_999);
+    const cached = await (await app.fetch(request("/api/v1/deployments"), env, ctx)).json();
+    expect(cached).toEqual(first);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    vi.setSystemTime(Date.parse(NOW) + 10_000);
+    const fresh = (await (await app.fetch(request("/api/v1/deployments"), env, ctx)).json()) as {
+      observedAt: string;
+    }[];
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fresh).toHaveLength(8);
+    expect(fresh.every((row) => row.observedAt === "2026-09-26T10:15:10.000Z")).toBe(true);
+    expect(exec).not.toHaveBeenCalled();
   });
 
   it("renders the status page with escaped content and a strict policy", async () => {

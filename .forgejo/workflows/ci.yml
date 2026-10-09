@@ -60,6 +60,18 @@ jobs:
           done
           .forgejo/scripts/parallel.sh "${plans[@]}"
 
+      # Deployment failure must not erase the time this build became qualified.
+      - name: Record the qualified main build for the deployment-lag guard
+        if: forgejo.event_name == 'push' && forgejo.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+        run: |
+          set -euo pipefail
+          curl -fsS --connect-timeout 10 --max-time 30 -o /dev/null \
+            -H "Authorization: token ${FORGEJO_TOKEN}" -H 'Content-Type: application/json' \
+            --data '{"state":"success","context":"deployment/qualified","description":"Verified main build ready for automatic deployment"}' \
+            "https://git.terrascale.tech/api/v1/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}"
       # A merged push ships what verification just approved: the build above
       # left dist/ populated, so the exact verified bundles are deployed.
       # Pull requests never take this step. D1 bootstrap goes first, so the new
@@ -81,9 +93,9 @@ jobs:
           wrangler d1 execute ts-status-db --remote --file schema.sql
           # The commit marks each version: wrangler deployments list shows it.
           for config in dist/ts_status_vantage_*/wrangler.json; do
-            wrangler deploy -c "$config" --tag "${COMMIT:0:12}" --message "$COMMIT"
+            wrangler deploy -c "$config" --tag "${COMMIT:0:12}" --message "$COMMIT" --var "VERSION:${COMMIT}"
           done
-          wrangler deploy --tag "${COMMIT:0:12}" --message "$COMMIT"
+          wrangler deploy --tag "${COMMIT:0:12}" --message "$COMMIT" --var "VERSION:${COMMIT}"
 
       - name: Smoke check the production status page
         if: forgejo.event_name == 'push' && forgejo.ref == 'refs/heads/main'
@@ -91,8 +103,11 @@ jobs:
         run: |
           set -eu
           for attempt in 1 2 3 4 5 6; do
-            if curl -fsS -o /dev/null -H 'Cache-Control: no-cache' https://status.terrascale.tech/api/v1/status; then
-              echo "deploy: https://status.terrascale.tech answers"
+            if revision=$(curl -fsS --connect-timeout 10 --max-time 20 -H 'Cache-Control: no-cache' \
+              https://status.terrascale.tech/health/version | jq -er '.version') \
+              && [[ $revision == "$GITHUB_SHA" ]]; then
+              curl -fsS --connect-timeout 10 --max-time 20 -o /dev/null https://status.terrascale.tech/api/v1/status
+              echo "deploy: https://status.terrascale.tech serves $revision"
               exit 0
             fi
             echo "deploy: waiting for the status page (attempt ${attempt}/6)" >&2
