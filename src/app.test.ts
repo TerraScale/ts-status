@@ -115,6 +115,36 @@ describe("app", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
+  it("returns valid observations to every waiter when the deployment cache write fails", async () => {
+    const version = "a".repeat(40);
+    const fetch = vi.fn(async () => Response.json({ version, results: [] }));
+    const env = { VANTAGE_GRU: { fetch }, VANTAGE_SFO: { fetch } } as unknown as Env;
+    const error = new Error("cache unavailable");
+    const put = vi.spyOn(caches.default, "put").mockRejectedValue(error);
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const responses = await Promise.all([
+        app.fetch(request("/api/v1/deployments"), env, ctx),
+        app.fetch(request("/api/v1/deployments?bust=1"), env, ctx),
+      ]);
+      const observations = await responses[0].json();
+      expect(responses.every((response) => response.status === 200)).toBe(true);
+      expect(await responses[1].json()).toEqual(observations);
+      expect(observations).toHaveLength(8);
+      expect(observations).toEqual(expect.arrayContaining([expect.objectContaining({ target: "vantage", version })]));
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(put).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledWith("deployment cache write failed", error);
+
+      expect((await app.fetch(request("/api/v1/deployments"), env, ctx)).status).toBe(200);
+      expect(fetch).toHaveBeenCalledTimes(4);
+      expect(put).toHaveBeenCalledTimes(2);
+    } finally {
+      put.mockRestore();
+      log.mockRestore();
+    }
+  });
+
   it("expires deployment observations after ten seconds without refreshing cached timestamps or reading D1", async () => {
     const fetch = vi.fn(async () => Response.json({ version: "a".repeat(40), results: [] }));
     const env = { ...seededEnv(), VANTAGE_GRU: { fetch }, VANTAGE_SFO: { fetch } } as unknown as Env;

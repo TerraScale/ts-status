@@ -339,7 +339,9 @@ export default {
         if (!pending) {
           pending = deployments(env, now)
             .then(async (observations) => {
-              await cache.put(key, secure(Response.json(observations), true));
+              await cache.put(key, secure(Response.json(observations), true)).catch((error: unknown) => {
+                console.error("deployment cache write failed", error);
+              });
               return observations;
             })
             .finally(() => deploymentRequests.delete(env));
