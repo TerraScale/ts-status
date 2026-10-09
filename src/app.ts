@@ -241,11 +241,13 @@ const route = createRouter<Route>({
       return json(latencyDocument(component, new Measurements(periods), range, now));
     },
   },
-  "/api/v2/:document": { render: (env, context) => statuspageDocument(env, context, context.params.document) },
-  "/api/v2/incidents/unresolved.json": {
+  "/api/v1/:document.json": {
+    render: (env, context) => statuspageDocument(env, context, `${context.params.document}.json`),
+  },
+  "/api/v1/incidents/unresolved.json": {
     render: (env, context) => statuspageDocument(env, context, "incidents/unresolved.json"),
   },
-  "/api/v2/scheduled-maintenances/:which": {
+  "/api/v1/scheduled-maintenances/:which": {
     render: (env, context) => statuspageDocument(env, context, `scheduled-maintenances/${context.params.which}`),
   },
   "/feed.atom": {

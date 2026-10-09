@@ -1,4 +1,4 @@
-/* Statuspage-compatible JSON (the /api/v2 format of Atlassian Statuspage),
+/* Statuspage-compatible JSON served under /api/v1,
    so existing tools and integrations that read status pages can read this
    one. Planned components are left out: Statuspage has no such state. */
 
@@ -148,7 +148,7 @@ function maintenances(feed: Feed, keep: (entry: Incident) => boolean) {
   };
 }
 
-/** The payload of every /api/v2 document, by file name. */
+/** The payload of every Statuspage-compatible /api/v1 document, by file name. */
 export const statuspage = {
   "status.json": (feed: Feed) => ({ page: page(feed), status: status(feed) }),
   "components.json": (feed: Feed) => ({ page: page(feed), components: components(feed) }),
