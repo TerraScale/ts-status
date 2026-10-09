@@ -26,6 +26,8 @@ export interface TargetResult {
 }
 
 export interface ProbeResponse {
+  /** Revision of the vantage Worker itself. */
+  version?: string;
   vantage: string;
   /** The data center the vantage ran in, e.g. "GRU". */
   colo: string | null;

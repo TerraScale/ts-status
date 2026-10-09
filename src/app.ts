@@ -28,6 +28,7 @@ import { secure } from "./http/security";
 import { Measurements } from "./measure";
 import { overview, snapshotWindow } from "./overview";
 import { coordinator } from "./probe/coordinator";
+import { deployments } from "./probe/deployments";
 import { rollup } from "./probe/rollup";
 import { CHECK_MINUTE, checkCertificates } from "./probe/tls";
 import { createRouter } from "./router";
@@ -317,6 +318,31 @@ export default {
   async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
     const now = Date.now();
+    if (url.pathname === "/api/v1/deployments") {
+      if (request.method !== "GET") {
+        return secure(new Response("Method not allowed", { status: 405, headers: { allow: "GET" } }), false);
+      }
+      return secure(
+        Response.json(await deployments(env, now), {
+          headers: { "cache-control": "no-store" },
+        }),
+        false,
+      );
+    }
+    if (url.pathname === "/health/version") {
+      if (request.method !== "GET") {
+        return secure(new Response("Method not allowed", { status: 405, headers: { allow: "GET" } }), false);
+      }
+      return secure(
+        Response.json(
+          { version: env.VERSION ?? "unknown", colo: request.cf?.colo ?? null },
+          {
+            headers: { "cache-control": "no-store" },
+          },
+        ),
+        false,
+      );
+    }
     if (url.pathname.startsWith("/api/operator/")) return secure(await operator(request, env, now), false);
     if (url.pathname === "/subscribe" || url.pathname.startsWith("/subscribe/")) {
       const answer = await subscriptions(env, request, now);

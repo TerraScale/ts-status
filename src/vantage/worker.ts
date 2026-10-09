@@ -7,6 +7,7 @@ import type { ProbeRequest, ProbeResponse, Target } from "../probe/protocol";
 
 interface VantageEnv {
   VANTAGE: string;
+  VERSION?: string;
 }
 
 function isTarget(value: unknown): value is Target {
@@ -35,6 +36,11 @@ export default {
       return new Response("Bad request", { status: 400 });
     }
     const results = await Promise.all(body.targets.map((target) => check(target)));
-    return Response.json({ vantage: env.VANTAGE, colo: colo(request), results } satisfies ProbeResponse);
+    return Response.json({
+      vantage: env.VANTAGE,
+      version: env.VERSION ?? "unknown",
+      colo: colo(request),
+      results,
+    } satisfies ProbeResponse);
   },
 } satisfies ExportedHandler<VantageEnv>;

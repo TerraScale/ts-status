@@ -57,6 +57,14 @@ describe("worker", () => {
 });
 
 describe("app", () => {
+  it("serves an uncached deployment revision without reading D1", async () => {
+    const version = "a".repeat(40);
+    const response = await app.fetch(request("/health/version"), { VERSION: version } as Env, ctx);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({ version });
+    expect((await app.fetch(request("/health/version", "POST"), {} as Env, ctx)).status).toBe(405);
+  });
   beforeEach(() => {
     const store = new Map<string, Response>();
     vi.stubGlobal("caches", {
