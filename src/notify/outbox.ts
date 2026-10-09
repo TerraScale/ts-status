@@ -9,6 +9,8 @@
    incident resolved within five minutes notifies nobody: a blip should
    not wake anyone. Operator incidents notify at once. */
 
+import { newId } from "../ids";
+
 import { iso, sqlTime } from "../db/reads";
 import type { IncidentImpact, IncidentKind, IncidentStatus } from "../domain/status";
 import type { Env } from "../env";
@@ -29,21 +31,25 @@ export const MAX_ATTEMPTS = 8;
 /** Messages delivered per cron run. */
 const BATCH = 20;
 
+/** Fan-out per cron run; later runs pick up pairs not yet queued. */
+const ENQUEUE_BATCH = 1_000;
+
 /** How long a claimed message stays with its run before it is due again. */
 const LEASE_MS = 10 * 60_000;
 
-const ENQUEUE = `INSERT OR IGNORE INTO outbox (id, subscriber_id, kind, update_id, next_attempt_at, created_at)
-  SELECT lower(hex(randomblob(16))), s.id, 'update', u.id, ?1, ?1
+const ELIGIBLE = `SELECT s.id AS subscriberId, u.id AS updateId
   FROM incident_updates u
   JOIN incidents i ON i.id = u.incident_id
   JOIN subscribers s ON s.confirmed_at IS NOT NULL AND s.confirmed_at <= u.created_at
-  WHERE u.created_at >= ?2
+  WHERE u.created_at >= ?1
     AND (i.source = 'manual' OR i.operator_touched = 1
-      OR (i.created_at <= ?3 AND (i.resolved_at IS NULL OR i.resolved_at >= datetime(i.created_at, '+5 minutes'))))
+      OR (i.created_at <= ?2 AND (i.resolved_at IS NULL OR i.resolved_at >= datetime(i.created_at, '+5 minutes'))))
     AND (s.components = '[]'
       OR NOT EXISTS (SELECT 1 FROM incident_components c WHERE c.incident_id = i.id)
       OR EXISTS (SELECT 1 FROM incident_components c, json_each(s.components) j
-        WHERE c.incident_id = i.id AND c.component_id = j.value))`;
+        WHERE c.incident_id = i.id AND c.component_id = j.value))
+    AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.subscriber_id = s.id AND o.update_id = u.id)
+  ORDER BY u.created_at, u.id, s.id LIMIT ?3`;
 
 // Claims up to a batch of due messages for run ?4, or only the pending
 // confirmation of subscriber ?5 when it is set.
@@ -164,7 +170,7 @@ export async function deliverDue(
   const secret = env.SUBSCRIPTION_SECRET;
   if (!secret) return { sent: 0, failed: 0 };
   const signed = { ...env, SUBSCRIPTION_SECRET: secret };
-  const run = crypto.randomUUID();
+  const run = newId();
   const [, claimed] = await env.STATUS_DB.batch([
     env.STATUS_DB.prepare(CLAIM).bind(sqlTime(now), MAX_ATTEMPTS, BATCH, run, only, sqlTime(now + LEASE_MS)),
     env.STATUS_DB.prepare(CLAIMED).bind(run),
@@ -199,9 +205,20 @@ export async function deliverDue(
     prunes old ones. Returns how many were sent and how many failed. */
 export async function runOutbox(env: Env, now: number, delivery: Delivery): Promise<{ sent: number; failed: number }> {
   if (!env.SUBSCRIPTION_SECRET) return { sent: 0, failed: 0 };
-  await env.STATUS_DB.prepare(ENQUEUE)
-    .bind(sqlTime(now), sqlTime(now - LOOKBACK_MS), sqlTime(now - AUTO_HOLD_MS))
-    .run();
+  const { results } = await env.STATUS_DB.prepare(ELIGIBLE)
+    .bind(sqlTime(now - LOOKBACK_MS), sqlTime(now - AUTO_HOLD_MS), ENQUEUE_BATCH)
+    .all<{ subscriberId: string; updateId: string }>();
+  if (results.length) {
+    await env.STATUS_DB.prepare(
+      `INSERT OR IGNORE INTO outbox (id, subscriber_id, kind, update_id, next_attempt_at, created_at)
+       SELECT json_extract(q.value, '$.id'), s.id, 'update', u.id, ?2, ?2
+       FROM json_each(?1) q
+       JOIN subscribers s ON s.id = json_extract(q.value, '$.subscriberId')
+       JOIN incident_updates u ON u.id = json_extract(q.value, '$.updateId')`,
+    )
+      .bind(JSON.stringify(results.map((pair) => ({ id: newId(), ...pair }))), sqlTime(now))
+      .run();
+  }
   const result = await deliverDue(env, now, delivery);
   // Retention: delivered messages for 30 days, unconfirmed subscribers for 7.
   await env.STATUS_DB.batch([

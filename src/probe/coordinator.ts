@@ -3,6 +3,8 @@
    so rounds never overlap. It sits near the D1 primary; the minute cron
    re-arms it should the alarm ever be lost. */
 
+import { bootstrap } from "../db/bootstrap";
+
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env";
 import { ROUND_MS, roundOf, runRound, type RoundState } from "./round";
@@ -27,6 +29,7 @@ export class Coordinator extends DurableObject<Env> {
     const state = (await this.ctx.storage.get<State>("state")) ?? {};
     if (state.round !== undefined && state.round >= at) return;
     try {
+      await bootstrap(this.env);
       const result = await runRound(this.env, at, {
         streaks: state.streaks ?? {},
         colos: state.colos ?? {},

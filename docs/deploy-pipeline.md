@@ -14,7 +14,7 @@ tests, a Worker build and Wrangler dry runs. The same job deploys the verified
 bundles only after all checks pass. Pull requests validate without deploying.
 Main jobs queue; newer commits never cancel an active production deployment.
 
-CI applies D1 migrations, deploys each GRU/SFO/FRA/NRT vantage Worker, then
+CI bootstraps D1 from schema.sql, deploys each GRU/SFO/FRA/NRT vantage Worker, then
 deploys the status Worker. Cloudflare distributes these Workers globally;
 there is no separate ts-status process on the OCI controllers. Vantages are
 placed near their named regions to measure the services from those locations.

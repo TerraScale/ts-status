@@ -8,6 +8,8 @@
    are seeded disabled; once enabled, one the secret does not configure
    fails every round, so losing the secret is never silent. */
 
+import { isId } from "../ids";
+
 import { settle } from "../domain/consensus";
 import { SLOW_MS, type TimelineState } from "../domain/status";
 import { MAX_BODY_BYTES, USER_AGENT } from "./check";
@@ -37,8 +39,6 @@ export interface CanaryResult {
   error: string | null;
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
 const NAME = /^[a-z][a-z0-9_-]{0,62}$/;
 const VERSION = /^tbv1-[0-9a-f]{32}$/;
 
@@ -51,13 +51,13 @@ export function isCanaryConfig(value: unknown): value is CanaryConfig {
       url.protocol === "https:" &&
       url.origin === entry.origin &&
       typeof entry.project === "string" &&
-      UUID.test(entry.project) &&
+      isId(entry.project) &&
       typeof entry.database === "string" &&
       NAME.test(entry.database) &&
       typeof entry.collection === "string" &&
       NAME.test(entry.collection) &&
       typeof entry.document === "string" &&
-      UUID.test(entry.document) &&
+      isId(entry.document) &&
       typeof entry.key === "string" &&
       entry.key.startsWith("tb_") &&
       entry.key.length > 3
@@ -78,7 +78,7 @@ export function written(value: unknown): string {
   if (
     !body ||
     typeof body.id !== "string" ||
-    !UUID.test(body.id) ||
+    !isId(body.id) ||
     typeof body.version !== "string" ||
     !VERSION.test(body.version) ||
     typeof body.offset !== "string" ||
@@ -113,8 +113,8 @@ export function parseCanaries(secret: string | undefined): Record<string, Canary
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
   return Object.fromEntries(
     Object.entries(value).filter((entry): entry is [string, CanaryConfig] => {
-      const valid = isCanaryConfig(entry[1]);
-      if (!valid) console.error("malformed DATA_API_CANARY entry", entry[0]);
+      const valid = isId(entry[0]) && isCanaryConfig(entry[1]);
+      if (!valid) console.error("malformed DATA_API_CANARY entry");
       return valid;
     }),
   );
@@ -261,6 +261,7 @@ export async function runCanary(
   const headers = { authorization: `Bearer ${config.key}`, "user-agent": USER_AGENT };
   const started = Date.now();
   try {
+    if (!isCanaryConfig(config)) throw new CanaryError("Invalid probe config");
     const write = await canaryJson(
       url,
       {

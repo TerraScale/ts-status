@@ -3,6 +3,8 @@
    one-click unsubscribe from mail clients. Responses never reveal whether
    an address is already subscribed. */
 
+import { newId, isId } from "../ids";
+
 import type { Component } from "../domain/status";
 import type { Env } from "../env";
 import { sqlTime } from "../db/reads";
@@ -62,13 +64,15 @@ async function subscribe(env: Env, request: Request, now: number): Promise<Answe
   const form = await fields(request);
   const channel = form.get("channel") === "email" && email ? "email" : "webhook";
   const target = (form.get("target") ?? "").trim();
-  const chosen = [...new Set(form.getAll("components"))].filter((id) =>
-    catalog.some((component) => component.id === id),
-  );
+  const supplied = [...new Set(form.getAll("components"))];
+  const chosen = supplied.filter((id) => catalog.some((component) => component.id === id));
   const retry = (error: string, status = 400): Answer => ({
     page: subscribeForm({ components: catalog, email, error, values: { channel, target, components: chosen } }),
     status,
   });
+
+  if (supplied.some((id) => !isId(id) || !catalog.some((component) => component.id === id)))
+    return retry("Choose valid component IDs from the catalog.");
 
   // Every accepted request answers the same, so nobody can tell whether a
   // target is already subscribed.
@@ -98,7 +102,7 @@ async function subscribe(env: Env, request: Request, now: number): Promise<Answe
     .first<{ id: string; confirmedAt: string | null }>();
   if (existing?.confirmedAt) return sent;
 
-  const id = existing?.id ?? crypto.randomUUID();
+  const id = existing?.id ?? newId();
   const [, queued] = await env.STATUS_DB.batch([
     // Asking again restarts the unconfirmed subscriber's week to confirm.
     env.STATUS_DB.prepare(
@@ -114,7 +118,7 @@ async function subscribe(env: Env, request: Request, now: number): Promise<Answe
         WHERE NOT EXISTS (SELECT 1 FROM outbox WHERE subscriber_id = ?2 AND kind = 'confirm'
             AND ((sent_at IS NULL AND attempts < ?4) OR created_at >= ?5))
           AND (SELECT count(*) FROM outbox WHERE subscriber_id = ?2 AND kind = 'confirm') < ?6`,
-    ).bind(crypto.randomUUID(), id, time, MAX_ATTEMPTS, sqlTime(now - CONFIRM_COOLDOWN_MS), MAX_CONFIRMATIONS),
+    ).bind(newId(), id, time, MAX_ATTEMPTS, sqlTime(now - CONFIRM_COOLDOWN_MS), MAX_CONFIRMATIONS),
   ]);
   return (queued?.meta.changes ?? 0) > 0 ? { ...sent, deliver: id } : sent;
 }
@@ -133,7 +137,7 @@ async function linked(
   token: string | null,
   purpose: "confirm" | "manage",
 ): Promise<Subscriber | null> {
-  if (!id || !token || !env.SUBSCRIPTION_SECRET || !(await verify(env.SUBSCRIPTION_SECRET, purpose, id, token)))
+  if (!isId(id) || !token || !env.SUBSCRIPTION_SECRET || !(await verify(env.SUBSCRIPTION_SECRET, purpose, id, token)))
     return null;
   return env.STATUS_DB.prepare(
     "SELECT id, target, components, confirmed_at AS confirmedAt FROM subscribers WHERE id = ?1",

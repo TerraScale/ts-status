@@ -7,6 +7,9 @@
    messages, and hourly refreshes the TLS certificates of the monitored
    hosts. */
 
+import { bootstrap } from "./db/bootstrap";
+import { isId } from "./ids";
+
 import { operator } from "./api/operator";
 import { regionLatencyDocument } from "./api/latency";
 import { connect } from "./notify/connect";
@@ -107,7 +110,7 @@ const route = createRouter<Route>({
   },
   "/history": {
     query: {
-      component: (value) => /^[a-z0-9-]{1,40}$/.test(value),
+      component: isId,
       kind: oneOf("incident", "warning"),
       impact: oneOf("minor", "major", "critical"),
       q: short(80),
@@ -221,7 +224,7 @@ const route = createRouter<Route>({
     render: async (env, { now }) => json(regionsDocument(await loadOverview(env, now, "24h"))),
   },
   "/api/v1/latency": {
-    query: { ...rangeQuery, component: (value) => /^[a-z0-9-]{1,40}$/.test(value) },
+    query: { ...rangeQuery, component: isId },
     render: async (env, { now, query }) => {
       const range: RangeKey = isRange(query.range) ? query.range : "24h";
       const view = await loadOverview(env, now, range);
@@ -302,15 +305,20 @@ async function page(content: Page, context: RenderContext, status = 200): Promis
   });
 }
 
+function unavailable(): Response {
+  return secure(
+    new Response("Status is temporarily unavailable.", { status: 503, headers: { "retry-after": "10" } }),
+    false,
+  );
+}
+
 async function render(route: Route, env: Env, context: RenderContext): Promise<Response> {
   try {
+    await bootstrap(env);
     return secure(await route.render(env, context), true);
   } catch (error) {
     console.error("status render failed", error);
-    return secure(
-      new Response("Status is temporarily unavailable.", { status: 503, headers: { "retry-after": "10" } }),
-      false,
-    );
+    return unavailable();
   }
 }
 
@@ -343,8 +351,25 @@ export default {
         false,
       );
     }
-    if (url.pathname.startsWith("/api/operator/")) return secure(await operator(request, env, now), false);
-    if (url.pathname === "/subscribe" || url.pathname.startsWith("/subscribe/")) {
+    // The browser ping test's baseline needs no database.
+    if (url.pathname === "/api/ping") {
+      return secure(
+        Response.json({ colo: request.cf?.colo ?? null }, { headers: { "access-control-allow-origin": "*" } }),
+        false,
+      );
+    }
+    const operatorRequest = url.pathname.startsWith("/api/operator/");
+    const subscriptionRequest = url.pathname === "/subscribe" || url.pathname.startsWith("/subscribe/");
+    if (operatorRequest || subscriptionRequest) {
+      try {
+        await bootstrap(env);
+      } catch (error) {
+        console.error("status bootstrap failed", error);
+        return unavailable();
+      }
+    }
+    if (operatorRequest) return secure(await operator(request, env, now), false);
+    if (subscriptionRequest) {
       const answer = await subscriptions(env, request, now);
       if (answer instanceof Response) return secure(answer, false);
       // Send a new confirmation right away instead of on the next cron run.
@@ -359,16 +384,14 @@ export default {
       };
       return secure(await page(answer.page, context, answer.status), false);
     }
-    // The browser ping test's baseline: the round trip to this data center.
-    if (url.pathname === "/api/ping") {
-      return secure(
-        Response.json({ colo: request.cf?.colo ?? null }, { headers: { "access-control-allow-origin": "*" } }),
-        false,
-      );
-    }
     const match = route(url.pathname);
 
-    if (!match) {
+    if (
+      !match ||
+      (match.params.id !== undefined &&
+        (match.params.id !== "status" || !url.pathname.startsWith("/badge/")) &&
+        !isId(match.params.id))
+    ) {
       return secure(
         await page(notFoundPage(), { now, origin: url.origin, fragment: false, params: {}, query: {} }, 404),
         false,
@@ -398,6 +421,7 @@ export default {
   },
 
   async scheduled(controller, env, ctx): Promise<void> {
+    await bootstrap(env);
     const now = controller.scheduledTime;
     const work: Promise<unknown>[] = [coordinator(env).arm(), rollup(env, now), runOutbox(env, now, { connect })];
     if (new Date(now).getUTCMinutes() === CHECK_MINUTE) work.push(checkCertificates(env, now));

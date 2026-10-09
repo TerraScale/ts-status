@@ -1,6 +1,8 @@
 /* Request body validation for the JSON APIs: small checks that either
    return a clean value or name the field that failed. */
 
+import { isId } from "../ids";
+
 export class Invalid extends Error {
   constructor(
     readonly field: string,
@@ -62,8 +64,8 @@ export function instant(body: Body, field: string): number {
 
 export function ids(body: Body, field: string): string[] {
   const value = body[field] ?? [];
-  if (!Array.isArray(value) || !value.every((item) => typeof item === "string" && /^[a-z0-9-]{1,40}$/.test(item))) {
-    throw new Invalid(field, "must be a list of ids");
+  if (!Array.isArray(value) || !value.every(isId)) {
+    throw new Invalid(field, "must be a list of canonical ULIDs");
   }
   return [...new Set(value as string[])];
 }

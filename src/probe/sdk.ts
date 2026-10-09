@@ -1,6 +1,8 @@
 /* TS-603 draft: prepared against the TS-598 platform credential contract.
    Wire into round.ts only after TS-589 and TS-592 ship. The currently
    published SDK rejects JWTs and has no platform grant/management methods. */
+
+import { isId } from "../ids";
 import { createTerraBaseClient, isTerraBaseV1Error, v1Filter, type V1Collection } from "@terrascale/sdk";
 import { CANARY_TIMEOUT_MS, CanaryError, type CanaryResult } from "./canary";
 import { MAX_BODY_BYTES, USER_AGENT } from "./check";
@@ -19,7 +21,6 @@ export interface SdkProbeConfig {
   document?: string;
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const NAME = /^[a-z][a-z0-9_-]{0,62}$/;
 const KEY = /^tsk_[0-9a-hjkmnp-tv-z]{20}_[0-9a-hjkmnp-tv-z]{52}$/;
 
@@ -35,7 +36,7 @@ export function isSdkProbeConfig(probe: SdkProbe, value: unknown): value is SdkP
       issuer.protocol === "https:" &&
       `${issuer.origin}/terrascale` === entry.issuer &&
       typeof entry.project === "string" &&
-      UUID.test(entry.project) &&
+      isId(entry.project) &&
       typeof entry.key === "string" &&
       KEY.test(entry.key) &&
       entry.userId === undefined &&
@@ -45,7 +46,7 @@ export function isSdkProbeConfig(probe: SdkProbe, value: unknown): value is SdkP
           NAME.test(entry.database) &&
           typeof entry.collection === "string" &&
           NAME.test(entry.collection) &&
-          (entry.document === undefined || (typeof entry.document === "string" && UUID.test(entry.document)))))
+          (entry.document === undefined || (typeof entry.document === "string" && isId(entry.document)))))
     );
   } catch {
     return false;
@@ -116,6 +117,7 @@ export async function runSdkDocuments(
   marker: string,
   cleanup: boolean,
 ): Promise<CanaryResult> {
+  if (!isId(id)) return { ok: false, latencyMs: null, error: "Invalid probe config" };
   const options = () => ({ signal: AbortSignal.timeout(CANARY_TIMEOUT_MS) });
   const started = Date.now();
   let failure: unknown;

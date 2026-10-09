@@ -67,8 +67,13 @@ describe("published TerraBase canary", () => {
       expect(parseCanaries(undefined)).toEqual({});
       expect(parseCanaries("not json")).toEqual({});
       expect(
-        parseCanaries(JSON.stringify({ valid: api.canary, invalid: { ...api.canary, key: "tbk1_retired" } })),
-      ).toEqual({ valid: api.canary });
+        parseCanaries(
+          JSON.stringify({
+            "01M4E7G1W82VKFPF5FJ9AVK1D9": api.canary,
+            "01M4E7G1W82VKFPF5FJ9AVK1DF": { ...api.canary, key: "tbk1_retired" },
+          }),
+        ),
+      ).toEqual({ "01M4E7G1W82VKFPF5FJ9AVK1D9": api.canary });
     } finally {
       error.mockRestore();
     }

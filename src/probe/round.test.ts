@@ -151,29 +151,41 @@ describe("runRound", () => {
 
     expect(asked).toHaveLength(9);
     expect(first.colos).toEqual({ sfo: "SFO", gru: "GRU", fra: "FRA" });
-    expect(first.versions).toEqual({ "auth-edge": "1.0.0", "dashboard-fly-gru": "1.0.0" });
+    expect(first.versions).toEqual({ "01M4E7G1W82VKFPF5FJ9AVK1D6": "1.0.0", "01M4E7G1W82VKFPF5FJ9AVK1D8": "1.0.0" });
     const samples = db.sqlite
       .prepare(
         `SELECT endpoint_id, state, ok, total, "values" FROM probe_samples WHERE at = '2026-09-26 10:00:30' ORDER BY endpoint_id`,
       )
       .all();
     expect(samples).toEqual([
-      { endpoint_id: "api-workers", state: "operational", ok: 3, total: 3, values: null },
-      { endpoint_id: "atlas-workers", state: "operational", ok: 3, total: 3, values: null },
-      { endpoint_id: "auth-edge", state: "operational", ok: 3, total: 3, values: '{"version":"1.0.0"}' },
-      { endpoint_id: "auth-oidc-edge", state: "none", ok: 0, total: 0, values: null },
-      { endpoint_id: "dashboard-fly-gru", state: "operational", ok: 3, total: 3, values: '{"version":"1.0.0"}' },
-      { endpoint_id: "data-api-oci-gru", state: "operational", ok: 3, total: 3, values: null },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D4", state: "operational", ok: 3, total: 3, values: null },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D5", state: "operational", ok: 3, total: 3, values: null },
+      {
+        endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D6",
+        state: "operational",
+        ok: 3,
+        total: 3,
+        values: '{"version":"1.0.0"}',
+      },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D7", state: "none", ok: 0, total: 0, values: null },
+      {
+        endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D8",
+        state: "operational",
+        ok: 3,
+        total: 3,
+        values: '{"version":"1.0.0"}',
+      },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DB", state: "operational", ok: 3, total: 3, values: null },
       // Without TERRABASE_PROBES the TerraBase probes are not configured, never down.
-      { endpoint_id: "document-api-gru", state: "none", ok: 0, total: 0, values: null },
-      { endpoint_id: "git-forgejo", state: "operational", ok: 3, total: 3, values: null },
-      { endpoint_id: "management-api-gru", state: "none", ok: 0, total: 0, values: null },
-      { endpoint_id: "terrabase-health-gru", state: "none", ok: 0, total: 0, values: null },
-      { endpoint_id: "website-pages", state: "degraded", ok: 0, total: 3, values: null },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DF", state: "none", ok: 0, total: 0, values: null },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DH", state: "operational", ok: 3, total: 3, values: null },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DK", state: "none", ok: 0, total: 0, values: null },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DQ", state: "none", ok: 0, total: 0, values: null },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DS", state: "degraded", ok: 0, total: 3, values: null },
     ]);
     expect(db.sqlite.prepare("SELECT endpoint_id, version FROM deploys").all()).toEqual([
-      { endpoint_id: "auth-edge", version: "1.1.0" },
-      { endpoint_id: "dashboard-fly-gru", version: "1.1.0" },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D6", version: "1.1.0" },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D8", version: "1.1.0" },
     ]);
     expect(db.sqlite.prepare("SELECT code FROM vantages").all()).toHaveLength(3);
   });
@@ -246,6 +258,8 @@ describe("automatic incidents", () => {
     ]);
     const updates = db.sqlite.prepare("SELECT status FROM incident_updates ORDER BY created_at").all();
     expect(updates.map((row) => row.status)).toEqual(["investigating", "monitoring", "resolved"]);
-    expect(db.sqlite.prepare("SELECT component_id FROM incident_components").all()).toEqual([{ component_id: "git" }]);
+    expect(db.sqlite.prepare("SELECT component_id FROM incident_components").all()).toEqual([
+      { component_id: "01M4E7G1W82VKFPF5FJ9AVK1CZ" },
+    ]);
   });
 });

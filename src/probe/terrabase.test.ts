@@ -99,7 +99,7 @@ describe("published TerraBase probes", () => {
     });
     for (const [patch, error] of [
       [{ key: api.canary.key }, "HTTP 401 invalid_key"],
-      [{ userId: "not-a-member" }, "HTTP 404 unknown_route"],
+      [{ userId: "not-a-member" }, "Invalid probe config"],
     ] as const) {
       expect(await runTerraBase("management", { ...api.management, ...patch }, "round", api.fetcher)).toEqual({
         ok: false,
@@ -141,7 +141,7 @@ describe("published TerraBase probes", () => {
     expect(isTerraBaseConfig("documents", api.canary)).toBe(true);
     expect(isTerraBaseConfig("management", api.management)).toBe(true);
     expect(isTerraBaseConfig("health", { origin: api.origin })).toBe(true);
-    expect(isTerraBaseConfig("management", { ...api.management, userId: "status-\u00ff" })).toBe(true);
+    expect(isTerraBaseConfig("management", { ...api.management, userId: "status-\u00ff" })).toBe(false);
     for (const patch of [{ project: "bad" }, { organization: "bad" }, { userId: "" }, { userId: "x\n" }, { key: "" }])
       expect(isTerraBaseConfig("management", { ...api.management, ...patch })).toBe(false);
     expect(isTerraBaseConfig("documents", { ...api.canary, key: "tbk1_retired" })).toBe(false);
@@ -151,8 +151,15 @@ describe("published TerraBase probes", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     expect(parseTerraBase(undefined)).toEqual({});
     for (const secret of ["not json", "[]", "null"]) expect(parseTerraBase(secret)).toBeNull();
-    expect(parseTerraBase(JSON.stringify({ documents: api.canary }))).toEqual({ documents: api.canary });
-    expect(notConfiguredSample("document-api-gru")).toMatchObject({ state: "none", ok: 0, total: 0, latencyMs: null });
+    expect(parseTerraBase(JSON.stringify({ "01M4E7G1W82VKFPF5FJ9AVK1DF": api.canary }))).toEqual({
+      "01M4E7G1W82VKFPF5FJ9AVK1DF": api.canary,
+    });
+    expect(notConfiguredSample("01M4E7G1W82VKFPF5FJ9AVK1DF")).toMatchObject({
+      state: "none",
+      ok: 0,
+      total: 0,
+      latencyMs: null,
+    });
   });
 
   it.each(["用户", "\u0100", "\ud800", "\udfff", "😀"])(
@@ -163,14 +170,14 @@ describe("published TerraBase probes", () => {
       const db = testD1();
       try {
         db.sqlite.exec(
-          "UPDATE endpoints SET enabled = 0; UPDATE endpoints SET enabled = 1 WHERE id = 'management-api-gru'",
+          "UPDATE endpoints SET enabled = 0; UPDATE endpoints SET enabled = 1 WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1DK'",
         );
         const fetcher = vi.fn(api.fetcher);
         vi.stubGlobal("fetch", fetcher);
         await runRound(
           {
             STATUS_DB: db,
-            TERRABASE_PROBES: JSON.stringify({ "management-api-gru": management }),
+            TERRABASE_PROBES: JSON.stringify({ "01M4E7G1W82VKFPF5FJ9AVK1DK": management }),
           } as unknown as Env,
           start,
           empty(),
@@ -191,12 +198,15 @@ describe("published TerraBase probes", () => {
     const db = testD1();
     try {
       db.sqlite.exec(
-        "UPDATE endpoints SET enabled = 0; UPDATE endpoints SET enabled = 1 WHERE id IN ('document-api-gru', 'management-api-gru', 'data-api-canary-gru')",
+        "UPDATE endpoints SET enabled = 0; UPDATE endpoints SET enabled = 1 WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1DF', '01M4E7G1W82VKFPF5FJ9AVK1DK', '01M4E7G1W82VKFPF5FJ9AVK1D9')",
       );
       const env = {
         STATUS_DB: db,
-        DATA_API_CANARY: JSON.stringify({ "data-api-canary-gru": api.canary }),
-        TERRABASE_PROBES: JSON.stringify({ "document-api-gru": api.canary, "management-api-gru": api.management }),
+        DATA_API_CANARY: JSON.stringify({ "01M4E7G1W82VKFPF5FJ9AVK1D9": api.canary }),
+        TERRABASE_PROBES: JSON.stringify({
+          "01M4E7G1W82VKFPF5FJ9AVK1DF": api.canary,
+          "01M4E7G1W82VKFPF5FJ9AVK1DK": api.management,
+        }),
       } as unknown as Env;
       vi.stubGlobal("fetch", api.fetcher);
       let state = await runRound(env, start, empty());
@@ -205,17 +215,17 @@ describe("published TerraBase probes", () => {
           .prepare("SELECT endpoint_id AS id, state, ok, total FROM probe_samples ORDER BY at, endpoint_id")
           .all();
       expect(sampleStates()).toEqual(
-        ["data-api-canary-gru", "document-api-gru", "management-api-gru"].map((id) => ({
+        ["01M4E7G1W82VKFPF5FJ9AVK1D9", "01M4E7G1W82VKFPF5FJ9AVK1DF", "01M4E7G1W82VKFPF5FJ9AVK1DK"].map((id) => ({
           id,
           state: "operational",
           ok: 1,
           total: 1,
         })),
       );
-      env.DATA_API_CANARY = JSON.stringify({ "data-api-canary-gru": { ...api.canary, key: "tb_rejected" } });
+      env.DATA_API_CANARY = JSON.stringify({ "01M4E7G1W82VKFPF5FJ9AVK1D9": { ...api.canary, key: "tb_rejected" } });
       env.TERRABASE_PROBES = JSON.stringify({
-        "document-api-gru": { ...api.canary, key: "tb_rejected" },
-        "management-api-gru": { ...api.management, key: "rejected-service-credential" },
+        "01M4E7G1W82VKFPF5FJ9AVK1DF": { ...api.canary, key: "tb_rejected" },
+        "01M4E7G1W82VKFPF5FJ9AVK1DK": { ...api.management, key: "rejected-service-credential" },
       });
       state = await runRound(env, start + 30_000, state);
       state = await runRound(env, start + 60_000, state);
@@ -229,11 +239,20 @@ describe("published TerraBase probes", () => {
           .slice(6)
           .map((row) => row.state),
       ).toEqual(["major_outage", "major_outage", "major_outage"]);
-      expect(state.streaks).toEqual({ "data-api-canary-gru": 2, "document-api-gru": 2, "management-api-gru": 2 });
+      expect(state.streaks).toEqual({
+        "01M4E7G1W82VKFPF5FJ9AVK1D9": 2,
+        "01M4E7G1W82VKFPF5FJ9AVK1DF": 2,
+        "01M4E7G1W82VKFPF5FJ9AVK1DK": 2,
+      });
       env.TERRABASE_PROBES = undefined;
       await runRound(env, start + 90_000, state);
       expect(sampleStates().slice(-2)).toEqual(
-        ["document-api-gru", "management-api-gru"].map((id) => ({ id, state: "none", ok: 0, total: 0 })),
+        ["01M4E7G1W82VKFPF5FJ9AVK1DF", "01M4E7G1W82VKFPF5FJ9AVK1DK"].map((id) => ({
+          id,
+          state: "none",
+          ok: 0,
+          total: 0,
+        })),
       );
       env.TERRABASE_PROBES = "not json";
       vi.spyOn(console, "error").mockImplementation(() => {});

@@ -2,6 +2,8 @@
    as an email (plain text and HTML) or a webhook payload for Discord,
    Slack, or anything else (signed JSON). */
 
+import { newId } from "../ids";
+
 import type { IncidentImpact, IncidentKind, IncidentStatus } from "../domain/status";
 import { escape } from "../html";
 import { hmacHex } from "./webhooks";
@@ -76,14 +78,14 @@ ${rest
 
 /** The full email message, headers and body. */
 export function email(notice: Notice, from: string, to: string, now: number): string {
-  const boundary = `ts-${crypto.randomUUID()}`;
+  const boundary = `ts-${newId()}`;
   const text = [...lines(notice), "", `Unsubscribe: ${notice.links.manage}`].join("\r\n");
   return [
     `From: ${header("TerraScale Status")} <${from}>`,
     `To: <${to}>`,
     `Subject: ${header(subject(notice))}`,
     `Date: ${new Date(now).toUTCString()}`,
-    `Message-ID: <${crypto.randomUUID()}@status.terrascale.tech>`,
+    `Message-ID: <${newId()}@status.terrascale.tech>`,
     "MIME-Version: 1.0",
     "Auto-Submitted: auto-generated",
     `List-Unsubscribe: <${notice.links.manage}>`,
