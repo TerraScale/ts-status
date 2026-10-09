@@ -119,7 +119,14 @@ Feeds and APIs, all open to any origin and listed with snippets on `/integration
 | `/api/v1/incidents`                          | The latest incidents with their updates (`?limit=`)                                     |
 | `/api/v1/regions`                            | Regions, clusters, and the latest latency from each vantage                             |
 | `/api/v1/latency?component=`                 | Median and p95 per bucket, overall and per vantage (`?range=`)                          |
-| `/api/v2/*.json`                             | The Atlassian Statuspage v2 format: status, summary, components, incidents, maintenance |
+| `/api/v1/*.json`                             | The Atlassian Statuspage format: status, summary, components, incidents, maintenance    |
+
+Every versioned API uses v1. Statuspage-compatible documents use the `.json` suffix:
+`/api/v1/summary.json`, `/api/v1/status.json`, `/api/v1/components.json`,
+`/api/v1/incidents.json`, `/api/v1/incidents/unresolved.json`,
+`/api/v1/scheduled-maintenances.json`, `/api/v1/scheduled-maintenances/upcoming.json`
+and `/api/v1/scheduled-maintenances/active.json`. The extensionless
+`/api/v1/status` and `/api/v1/incidents` retain their TerraScale payloads and query parameters.
 
 Operators publish incidents with the [`status-warning`](skills/status-warning/SKILL.md) skill.
 

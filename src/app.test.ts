@@ -402,7 +402,7 @@ describe("app", () => {
 
   it("serves the Statuspage-compatible API", async () => {
     const env = seededEnv();
-    const summary = (await (await app.fetch(request("/api/v2/summary.json"), env, ctx)).json()) as {
+    const summary = (await (await app.fetch(request("/api/v1/summary.json"), env, ctx)).json()) as {
       page: { url: string };
       status: { indicator: string };
       components: { id: string; status: string; group: boolean }[];
@@ -424,13 +424,37 @@ describe("app", () => {
       ["Forgejo upgrade", "in_progress"],
     ]);
     const upcoming = (await (
-      await app.fetch(request("/api/v2/scheduled-maintenances/upcoming.json"), env, ctx)
+      await app.fetch(request("/api/v1/scheduled-maintenances/upcoming.json"), env, ctx)
     ).json()) as {
       scheduled_maintenances: unknown[];
     };
     expect(upcoming.scheduled_maintenances).toHaveLength(1);
-    expect((await app.fetch(request("/api/v2/incidents/unresolved.json"), env, ctx)).status).toBe(200);
-    expect((await app.fetch(request("/api/v2/nope.json"), env, ctx)).status).toBe(404);
+    expect((await app.fetch(request("/api/v1/incidents/unresolved.json"), env, ctx)).status).toBe(200);
+    expect((await app.fetch(request("/api/v1/nope.json"), env, ctx)).status).toBe(404);
+  });
+
+  it.each([
+    ["summary.json", "status"],
+    ["status.json", "status"],
+    ["components.json", "components"],
+    ["incidents.json", "incidents"],
+    ["incidents/unresolved.json", "incidents"],
+    ["scheduled-maintenances.json", "scheduled_maintenances"],
+    ["scheduled-maintenances/upcoming.json", "scheduled_maintenances"],
+    ["scheduled-maintenances/active.json", "scheduled_maintenances"],
+  ])("serves %s only under v1", async (document, key) => {
+    const env = seededEnv();
+    const response = await app.fetch(request(`/api/v1/${document}`), env, ctx);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/json");
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    expect(response.headers.get("cache-control")).toContain("max-age=10");
+    const data = await response.json();
+    expect(data).toMatchObject({ page: { url: "https://status.test" } });
+    expect(data).toHaveProperty(key);
+    const removed = await app.fetch(request(`/api/v2/${document}`), env, ctx);
+    expect(removed.status).toBe(404);
+    expect(removed.headers.has("location")).toBe(false);
   });
 
   it("serves the v1 incidents, regions and latency", async () => {
@@ -439,6 +463,7 @@ describe("app", () => {
       incidents: { updates: unknown[] }[];
     };
     expect(incidents.incidents).toHaveLength(2);
+    expect(incidents.incidents[0]?.updates).toHaveLength(2);
     const regions = (await (await app.fetch(request("/api/v1/regions"), env, ctx)).json()) as {
       regions: { code: string; live: boolean }[];
       vantages: unknown[];
@@ -548,7 +573,10 @@ describe("app", () => {
     const integrations = await app.fetch(request("/integrations"), env, ctx);
     expect(integrations.headers.get("content-security-policy")).toContain("frame-src 'self'");
     const integrationsBody = await integrations.text();
-    expect(integrationsBody).toContain("https://status.test/api/v2/summary.json");
+    expect(integrationsBody).toContain("https://status.test/api/v1/summary.json");
+    expect(integrationsBody).toContain("curl -s https://status.test/api/v1/status.json | jq .status");
+    expect(integrationsBody).not.toContain("/api/v2/");
+    expect(integrationsBody).not.toContain("Statuspage v2");
     expect(integrationsBody).toContain("https://status.test/api/latency?region=gru");
   });
 
