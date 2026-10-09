@@ -122,6 +122,35 @@ describe("app", () => {
     expect(env.STATUS_DB.batches).toBe(1);
   });
 
+  it.each(["/", "/api/operator/incidents", "/subscribe"])(
+    "returns a controlled 503 on bootstrap failure for %s and retries",
+    async (path) => {
+      const env = seededEnv();
+      const exec = vi.spyOn(env.STATUS_DB, "exec").mockRejectedValueOnce(new Error("D1 unavailable"));
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const response = await app.fetch(request(path), env, ctx);
+        expect(response.status).toBe(503);
+        expect(response.headers.get("retry-after")).toBe("10");
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        expect(await response.text()).toBe("Status is temporarily unavailable.");
+        expect((await app.fetch(request("/"), env, ctx)).status).toBe(200);
+        expect(exec).toHaveBeenCalledTimes(2);
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
+
+  it("serves ping and cached pages without bootstrapping D1", async () => {
+    await app.fetch(request("/"), seededEnv(), ctx);
+    const env = seededEnv();
+    const exec = vi.spyOn(env.STATUS_DB, "exec").mockRejectedValue(new Error("D1 unavailable"));
+    expect((await app.fetch(request("/api/ping"), env, ctx)).status).toBe(200);
+    expect((await app.fetch(request("/"), env, ctx)).status).toBe(200);
+    expect(exec).not.toHaveBeenCalled();
+  });
+
   it("returns the JSON API", async () => {
     const response = await app.fetch(request("/api/v1/status"), seededEnv(), ctx);
     const data = (await response.json()) as {

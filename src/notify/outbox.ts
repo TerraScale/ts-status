@@ -31,6 +31,9 @@ export const MAX_ATTEMPTS = 8;
 /** Messages delivered per cron run. */
 const BATCH = 20;
 
+/** Fan-out per cron run; later runs pick up pairs not yet queued. */
+const ENQUEUE_BATCH = 1_000;
+
 /** How long a claimed message stays with its run before it is due again. */
 const LEASE_MS = 10 * 60_000;
 
@@ -46,7 +49,7 @@ const ELIGIBLE = `SELECT s.id AS subscriberId, u.id AS updateId
       OR EXISTS (SELECT 1 FROM incident_components c, json_each(s.components) j
         WHERE c.incident_id = i.id AND c.component_id = j.value))
     AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.subscriber_id = s.id AND o.update_id = u.id)
-  ORDER BY u.created_at, u.id, s.id`;
+  ORDER BY u.created_at, u.id, s.id LIMIT ?3`;
 
 // Claims up to a batch of due messages for run ?4, or only the pending
 // confirmation of subscriber ?5 when it is set.
@@ -203,18 +206,18 @@ export async function deliverDue(
 export async function runOutbox(env: Env, now: number, delivery: Delivery): Promise<{ sent: number; failed: number }> {
   if (!env.SUBSCRIPTION_SECRET) return { sent: 0, failed: 0 };
   const { results } = await env.STATUS_DB.prepare(ELIGIBLE)
-    .bind(sqlTime(now - LOOKBACK_MS), sqlTime(now - AUTO_HOLD_MS))
+    .bind(sqlTime(now - LOOKBACK_MS), sqlTime(now - AUTO_HOLD_MS), ENQUEUE_BATCH)
     .all<{ subscriberId: string; updateId: string }>();
-  for (let offset = 0; offset < results.length; offset += 100) {
-    await env.STATUS_DB.batch(
-      results
-        .slice(offset, offset + 100)
-        .map(({ subscriberId, updateId }) =>
-          env.STATUS_DB.prepare(
-            "INSERT OR IGNORE INTO outbox (id, subscriber_id, kind, update_id, next_attempt_at, created_at) VALUES (?1, ?2, 'update', ?3, ?4, ?4)",
-          ).bind(newId(), subscriberId, updateId, sqlTime(now)),
-        ),
-    );
+  if (results.length) {
+    await env.STATUS_DB.prepare(
+      `INSERT OR IGNORE INTO outbox (id, subscriber_id, kind, update_id, next_attempt_at, created_at)
+       SELECT json_extract(q.value, '$.id'), s.id, 'update', u.id, ?2, ?2
+       FROM json_each(?1) q
+       JOIN subscribers s ON s.id = json_extract(q.value, '$.subscriberId')
+       JOIN incident_updates u ON u.id = json_extract(q.value, '$.updateId')`,
+    )
+      .bind(JSON.stringify(results.map((pair) => ({ id: newId(), ...pair }))), sqlTime(now))
+      .run();
   }
   const result = await deliverDue(env, now, delivery);
   // Retention: delivered messages for 30 days, unconfirmed subscribers for 7.

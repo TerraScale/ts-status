@@ -72,7 +72,7 @@ async function confirm(t: ReturnType<typeof setup>, content: string) {
 }
 
 describe("subscriptions", () => {
-  it("generates ULIDs for every outbox message across D1 batches and does not enqueue duplicates", async () => {
+  it("bounds fan-out queries, resumes the backlog and never duplicates ULID messages", async () => {
     const t = setup();
     const incident = newId();
     const update = newId();
@@ -84,19 +84,70 @@ describe("subscriptions", () => {
         "INSERT INTO incident_updates (id, incident_id, status, body) VALUES (?, ?, 'investigating', 'Looking.')",
       )
       .run(update, incident);
-    for (let i = 0; i < 105; i++)
+    for (let i = 0; i < 1_005; i++)
       t.sql
         .prepare(
           "INSERT INTO subscribers (id, channel, target, flavor, confirmed_at) VALUES (?, 'webhook', ?, 'generic', datetime('now', '-1 minute'))",
         )
         .run(newId(), `https://example.com/hook/${i}`);
+    const queries = vi.spyOn(t.env.STATUS_DB, "prepare");
     await t.outbox(Date.now());
     const ids = t.sql.prepare("SELECT id FROM outbox ORDER BY id").all();
-    expect(ids).toHaveLength(105);
+    expect(ids).toHaveLength(1_000);
     expect(ids.every((row) => isId(row.id))).toBe(true);
+    expect(queries.mock.calls.length).toBeLessThan(30);
+    expect(t.posted).toHaveLength(20);
     await t.outbox(Date.now());
-    expect(t.sql.prepare("SELECT id FROM outbox ORDER BY id").all()).toEqual(ids);
+    const all = t.sql.prepare("SELECT id FROM outbox ORDER BY id").all();
+    expect(all).toHaveLength(1_005);
+    expect(all.slice(0, 1_000)).toEqual(ids);
+    expect(all.every((row) => isId(row.id))).toBe(true);
+    await t.outbox(Date.now());
+    expect(t.sql.prepare("SELECT id FROM outbox ORDER BY id").all()).toEqual(all);
   });
+
+  it.each(["subscriber", "update"])(
+    "delivers pending mail after an eligible %s is concurrently deleted",
+    async (removed) => {
+      const t = setup();
+      const incident = newId(),
+        update = newId(),
+        subscriber = newId(),
+        survivor = newId();
+      t.sql
+        .prepare("INSERT INTO incidents (id, title, status, impact) VALUES (?, 'Outage', 'investigating', 'minor')")
+        .run(incident);
+      t.sql
+        .prepare(
+          "INSERT INTO incident_updates (id, incident_id, status, body) VALUES (?, ?, 'investigating', 'Looking.')",
+        )
+        .run(update, incident);
+      t.sql
+        .prepare(
+          "INSERT INTO subscribers (id, channel, target, flavor, confirmed_at) VALUES (?, 'webhook', 'https://example.com/deleted', 'generic', datetime('now', '-1 minute'))",
+        )
+        .run(subscriber);
+      t.sql
+        .prepare(
+          "INSERT INTO subscribers (id, channel, target, flavor) VALUES (?, 'webhook', 'https://example.com/survivor', 'generic')",
+        )
+        .run(survivor);
+      t.sql.prepare("INSERT INTO outbox (id, subscriber_id, kind) VALUES (?, ?, 'confirm')").run(newId(), survivor);
+      const prepare = t.env.STATUS_DB.prepare.bind(t.env.STATUS_DB);
+      vi.spyOn(t.env.STATUS_DB, "prepare").mockImplementation((sql) => {
+        if (sql.startsWith("INSERT OR IGNORE INTO outbox")) {
+          if (removed === "subscriber") t.sql.prepare("DELETE FROM subscribers WHERE id = ?").run(subscriber);
+          else t.sql.prepare("DELETE FROM incident_updates WHERE id = ?").run(update);
+        }
+        return prepare(sql);
+      });
+      expect(await t.outbox(Date.now())).toEqual({ sent: 1, failed: 0 });
+      expect(t.posted.map((entry) => entry.url)).toEqual(["https://example.com/survivor"]);
+      expect(t.sql.prepare("SELECT kind, sent_at FROM outbox").all()).toEqual([
+        { kind: "confirm", sent_at: expect.any(String) },
+      ]);
+    },
+  );
 
   afterEach(() => vi.unstubAllGlobals());
 

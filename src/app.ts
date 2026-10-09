@@ -304,25 +304,46 @@ async function page(content: Page, context: RenderContext, status = 200): Promis
   });
 }
 
+function unavailable(): Response {
+  return secure(
+    new Response("Status is temporarily unavailable.", { status: 503, headers: { "retry-after": "10" } }),
+    false,
+  );
+}
+
 async function render(route: Route, env: Env, context: RenderContext): Promise<Response> {
   try {
+    await bootstrap(env);
     return secure(await route.render(env, context), true);
   } catch (error) {
     console.error("status render failed", error);
-    return secure(
-      new Response("Status is temporarily unavailable.", { status: 503, headers: { "retry-after": "10" } }),
-      false,
-    );
+    return unavailable();
   }
 }
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
-    await bootstrap(env);
     const url = new URL(request.url);
     const now = Date.now();
-    if (url.pathname.startsWith("/api/operator/")) return secure(await operator(request, env, now), false);
-    if (url.pathname === "/subscribe" || url.pathname.startsWith("/subscribe/")) {
+    // The browser ping test's baseline needs no database.
+    if (url.pathname === "/api/ping") {
+      return secure(
+        Response.json({ colo: request.cf?.colo ?? null }, { headers: { "access-control-allow-origin": "*" } }),
+        false,
+      );
+    }
+    const operatorRequest = url.pathname.startsWith("/api/operator/");
+    const subscriptionRequest = url.pathname === "/subscribe" || url.pathname.startsWith("/subscribe/");
+    if (operatorRequest || subscriptionRequest) {
+      try {
+        await bootstrap(env);
+      } catch (error) {
+        console.error("status bootstrap failed", error);
+        return unavailable();
+      }
+    }
+    if (operatorRequest) return secure(await operator(request, env, now), false);
+    if (subscriptionRequest) {
       const answer = await subscriptions(env, request, now);
       if (answer instanceof Response) return secure(answer, false);
       // Send a new confirmation right away instead of on the next cron run.
@@ -336,13 +357,6 @@ export default {
         policy: { formAction: "'self'" },
       };
       return secure(await page(answer.page, context, answer.status), false);
-    }
-    // The browser ping test's baseline: the round trip to this data center.
-    if (url.pathname === "/api/ping") {
-      return secure(
-        Response.json({ colo: request.cf?.colo ?? null }, { headers: { "access-control-allow-origin": "*" } }),
-        false,
-      );
     }
     const match = route(url.pathname);
 
