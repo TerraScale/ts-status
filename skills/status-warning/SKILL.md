@@ -7,7 +7,7 @@ Use this repo skill when the human asks to publish, update, or resolve a TerraSc
 - `kind` is `incident`, `warning`, or `maintenance`. `impact` is `none`, `minor` (degraded), `major` (partial outage), or `critical` (major outage).
 - Incidents move `investigating` → `identified` → `monitoring` → `resolved`; maintenance is `scheduled` → `in_progress` → `completed` and follows its schedule unless completed early.
 - Every change of status is an update with a customer-facing `message`; the page shows the latest.
-- `components` lists the affected component ids (`dashboard`, `website`, `atlas`, `auth`, `docs`, `data-api`, `sync`, `git`). With none, the incident concerns the whole platform and colors the headline directly.
+- `components` lists the affected canonical ULIDs returned by `/api/v1/status`. With none, the incident concerns the whole platform and colors the headline directly.
 
 The probe coordinator opens incidents on its own when a component stays down for a minute or degraded for ten, and resolves them after five healthy minutes. Any operator edit through the API takes an automatic incident over, and the coordinator then leaves it alone. During maintenance covering a component, no automatic incident opens for it.
 
@@ -27,7 +27,7 @@ Ask the human for the title, the customer-facing message, the impact, and the af
 ```sh
 cat > incident.json <<'JSON'
 { "kind": "incident", "title": "Dashboard sign-in errors", "impact": "major",
-  "components": ["dashboard"], "message": "Some sign-ins fail with an error. We are investigating." }
+  "components": ["01M4E7G1W82VKFPF5FJ9AVK1CV"], "message": "Some sign-ins fail with an error. We are investigating." }
 JSON
 api POST /incidents incident.json   # → {"id": "…", "url": "/incidents/…"}
 ```
@@ -49,7 +49,7 @@ An update may also change `impact`. `PATCH /incidents/ID` edits `title`, `impact
 
 ```sh
 cat > maintenance.json <<'JSON'
-{ "kind": "maintenance", "title": "Forgejo upgrade", "components": ["git"],
+{ "kind": "maintenance", "title": "Forgejo upgrade", "components": ["01M4E7G1W82VKFPF5FJ9AVK1CZ"],
   "scheduledStart": "2026-10-01T02:00:00Z", "scheduledEnd": "2026-10-01T03:00:00Z",
   "message": "Git and CI will be unavailable for up to an hour." }
 JSON

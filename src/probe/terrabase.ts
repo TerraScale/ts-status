@@ -1,6 +1,8 @@
 /* Coordinator probes of the C# TerraBase contract. Unconfigured secrets
    remain unjudged; malformed configuration and contract failures fail closed. */
 
+import { isId } from "../ids";
+
 import { NOT_CONFIGURED } from "../domain/status";
 import {
   CANARY_VANTAGE,
@@ -44,8 +46,6 @@ export const notConfiguredSample = (endpointId: string): Sample => ({
   values: null,
 });
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
 const isString = (value: unknown): value is string => typeof value === "string" && value.length > 0;
 
 /** One item is enough to prove a list or query route answers. */
@@ -54,7 +54,7 @@ const PAGE_SIZE = 1;
 /** The one document the canary writes, each round over the last: a create
     whose answer is lost, or a failed delete, leaves at most this document
     behind, and the next round overwrites and deletes it. */
-const CANARY_DOCUMENT = "7d8f6b0e-4c1a-4f2e-9a63-746572726173";
+const CANARY_DOCUMENT = "01M4E7G1W82VKFPF5FJ9AVK1DW";
 
 const documentConfig = (config: TerraBaseConfig): CanaryConfig =>
   ({
@@ -110,16 +110,10 @@ export function isTerraBaseConfig(probe: TerraBaseProbe, value: unknown): value 
       return (
         isString(entry.key) &&
         typeof entry.organization === "string" &&
-        UUID.test(entry.organization) &&
+        isId(entry.organization) &&
         typeof entry.project === "string" &&
-        UUID.test(entry.project) &&
-        typeof entry.userId === "string" &&
-        entry.userId.length >= 1 &&
-        entry.userId.length <= 256 &&
-        ![...entry.userId].some(
-          (character) =>
-            character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127 || character.charCodeAt(0) > 255,
-        )
+        isId(entry.project) &&
+        isId(entry.userId)
       );
   }
 }
@@ -131,11 +125,12 @@ export function parseTerraBase(secret: string | undefined): Record<string, unkno
   if (!secret) return {};
   try {
     const value: unknown = JSON.parse(secret);
-    if (typeof value === "object" && value !== null && !Array.isArray(value)) return value as Record<string, unknown>;
+    if (typeof value === "object" && value !== null && !Array.isArray(value) && Object.keys(value).every(isId))
+      return value as Record<string, unknown>;
   } catch {
     // Reported below.
   }
-  console.error("TERRABASE_PROBES is not a JSON object");
+  console.error("TERRABASE_PROBES must be a JSON object keyed by canonical endpoint ULIDs");
   return null;
 }
 
@@ -152,7 +147,7 @@ function listed(value: unknown): void {
   if (!Array.isArray(body.items) || !isCursor(body.next)) invalid();
   for (const item of body.items as unknown[]) {
     const id = (item as { id?: unknown } | null)?.id;
-    if (typeof id !== "string" || !UUID.test(id)) invalid();
+    if (typeof id !== "string" || !isId(id)) invalid();
   }
 }
 
@@ -216,6 +211,7 @@ export async function runTerraBase(
     canaryJson(config.origin + path, init(extra), fetcher, statuses);
   const started = Date.now();
   try {
+    if (!isTerraBaseConfig(probe, config)) throw new CanaryError("Invalid probe config");
     switch (probe) {
       case "health": {
         const ready = (await call(ROUTES.readyz, { cache: "no-store" })) as { status?: unknown; version?: unknown };

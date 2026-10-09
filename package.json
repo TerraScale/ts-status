@@ -9,13 +9,14 @@
     "check": "tsc --noEmit",
     "lint": "vp lint && vp fmt --check",
     "test": "vitest run",
-    "deploy": "npm run build && npm run db:migrate:remote && npm run deploy:vantages && wrangler deploy",
+    "deploy": "npm run build && npm run db:bootstrap:remote && npm run deploy:vantages && wrangler deploy",
     "deploy:vantages": "for config in dist/ts_status_vantage_*/wrangler.json; do wrangler deploy -c \"$config\" || exit 1; done",
-    "db:migrate:local": "wrangler d1 migrations apply ts-status-db --local",
-    "db:migrate:remote": "wrangler d1 migrations apply ts-status-db --remote"
+    "db:bootstrap:local": "wrangler d1 execute ts-status-db --local --file schema.sql",
+    "db:bootstrap:remote": "wrangler d1 execute ts-status-db --remote --file schema.sql"
   },
   "dependencies": {
-    "@terrascale/sdk": "0.0.2"
+    "@terrascale/sdk": "0.0.2",
+    "ulid": "3.0.2"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.54.7",

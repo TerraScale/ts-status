@@ -13,7 +13,7 @@ function seed() {
   const sample = (time: string, state: string, results: { v: string; ok: number; ms: number }[]) => {
     const passed = results.filter((result) => result.ok === 1).map((result) => result.ms);
     insert.run(
-      "git-forgejo",
+      "01M4E7G1W82VKFPF5FJ9AVK1DH",
       sqlTime(at(time)),
       state,
       passed.length,
@@ -43,8 +43,8 @@ describe("rollupStatements", () => {
   it("rebuilds the consensus and per-vantage hours, idempotently", async () => {
     const db = seed();
     const now = at("2026-09-26T10:10:00Z");
-    await db.batch(rollupStatements(db, ["git-forgejo"], now));
-    await db.batch(rollupStatements(db, ["git-forgejo"], now));
+    await db.batch(rollupStatements(db, ["01M4E7G1W82VKFPF5FJ9AVK1DH"], now));
+    await db.batch(rollupStatements(db, ["01M4E7G1W82VKFPF5FJ9AVK1DH"], now));
 
     const hours = db.sqlite
       .prepare("SELECT vantage, checks, failures, degraded, latency_sum, latency_max FROM probe_hours ORDER BY vantage")
@@ -62,7 +62,7 @@ describe("rollupStatements", () => {
   it("judges every canary round, though a canary is a single check", async () => {
     const db = testD1();
     const insert = db.sqlite.prepare(
-      "INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES ('data-api-canary-gru', ?, ?, ?, 1, ?, ?)",
+      "INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES ('01M4E7G1W82VKFPF5FJ9AVK1D9', ?, ?, ?, 1, ?, ?)",
     );
     insert.run(sqlTime(at("2026-09-26T10:00:00Z")), "operational", 1, 200, '[{"v":"canary","ok":1,"ms":200,"e":null}]');
     insert.run(
@@ -72,7 +72,7 @@ describe("rollupStatements", () => {
       null,
       '[{"v":"canary","ok":0,"ms":null,"e":"HTTP 401"}]',
     );
-    await db.batch(rollupStatements(db, ["data-api-canary-gru"], at("2026-09-26T10:10:00Z")));
+    await db.batch(rollupStatements(db, ["01M4E7G1W82VKFPF5FJ9AVK1D9"], at("2026-09-26T10:10:00Z")));
 
     expect(
       db.sqlite

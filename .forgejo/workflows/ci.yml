@@ -49,7 +49,7 @@ jobs:
         run: .forgejo/scripts/parallel.sh "vpr check" "vpr lint" "vpr test" "vpr build"
 
       # This validates the generated deployment plans of the status Worker
-      # and its vantage Workers only. It never applies D1 migrations and
+      # and its vantage Workers only. It never bootstraps D1 and
       # never publishes to Cloudflare.
       - name: Validate the Wrangler deployment plans
         shell: bash
@@ -62,10 +62,10 @@ jobs:
 
       # A merged push ships what verification just approved: the build above
       # left dist/ populated, so the exact verified bundles are deployed.
-      # Pull requests never take this step. Migrations go first, so the new
+      # Pull requests never take this step. D1 bootstrap goes first, so the new
       # code never reads a schema it does not know; then the vantage Workers
       # the status Worker binds to, then the status Worker itself.
-      - name: Apply D1 migrations and deploy to Cloudflare
+      - name: Bootstrap D1 and deploy to Cloudflare
         if: forgejo.event_name == 'push' && forgejo.ref == 'refs/heads/main'
         shell: bash
         env:
@@ -78,7 +78,7 @@ jobs:
           # report green without deploying.
           : "${CLOUDFLARE_API_TOKEN:?deploy: CLOUDFLARE_API_TOKEN is required}"
           : "${CLOUDFLARE_ACCOUNT_ID:?deploy: CLOUDFLARE_ACCOUNT_ID is required}"
-          wrangler d1 migrations apply ts-status-db --remote
+          wrangler d1 execute ts-status-db --remote --file schema.sql
           # The commit marks each version: wrangler deployments list shows it.
           for config in dist/ts_status_vantage_*/wrangler.json; do
             wrangler deploy -c "$config" --tag "${COMMIT:0:12}" --message "$COMMIT"

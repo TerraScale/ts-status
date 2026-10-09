@@ -9,9 +9,15 @@ const update: Notice = {
   links: {
     site: "https://s.test",
     manage: "https://s.test/subscribe/manage?id=s&token=t",
-    incident: "https://s.test/incidents/i",
+    incident: "https://s.test/incidents/00000000000000000000000001",
   },
-  incident: { id: "i", kind: "incident", title: "Dashboard é down", impact: "critical", source: "manual" },
+  incident: {
+    id: "00000000000000000000000001",
+    kind: "incident",
+    title: "Dashboard é down",
+    impact: "critical",
+    source: "manual",
+  },
   update: { status: "investigating", body: "Looking <now>.", createdAt: "2026-09-26T10:00:00Z" },
 };
 

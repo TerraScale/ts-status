@@ -52,6 +52,16 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 | `src/views/`      | HTML views and the client script                                        |
 | `src/styles/`     | Design tokens and styles, bundled and minified by Lightning CSS         |
 
+## IDs and clean bootstrap
+
+Every entity ID is a plain, canonical uppercase 26-character Crockford ULID. `src/ids.ts` uses the maintained `ulid` library's monotonic generator. Requests reject UUIDs, prefixes, lowercase aliases, invalid alphabet characters and overflow. D1 enforces the same contract for primary IDs. Region/vantage codes, hostnames, database/collection names and composite measurement keys are natural keys, not entity IDs. TerraBase document bodies contain only data; the document key is the entity ID.
+
+`schema.sql` is the idempotent clean bootstrap (one SQL statement per line for D1 `exec`); historical data migrations are removed. Fresh stores recreate the schema and catalog before serving requests or running scheduled probes. Repeated startup preserves incidents, subscriptions and operator catalog edits. Catalog IDs are fixed ULIDs; discover component IDs through `/api/v1/status` and endpoint IDs through a D1 catalog query. Probe secrets are keyed by endpoint ULID.
+
+TS-754 requires deleting the old D1 records and coordinator state before deploying this shape. The exact production D1 target is `ts-status-db` (`8a72dd69-2136-4398-8d70-92c0c2dade5a`), bound only as `STATUS_DB`. Verify that target against Cloudflare before the authorized wipe. Remove affected probe-secret entries and recreate them with canonical project/document IDs. Do not rewrite old IDs or retain compatibility paths.
+
+The retained TerraBase integration release predates the ULID contract and rejects ULID document keys. Upgrade the real-server test bootstrap and release pin when the upstream project/document contract is published; keep the integration tests as a deployment gate.
+
 ## Catalog
 
 Status is measured, never hand-edited. Components sit in display groups and are checked by regional or global endpoints. Planned components are shown without contributing to measured status. GRU's C# Data API is checked at `https://gru.api.terrascale.tech`; SFO and FRA remain disabled. The GRU browser ping uses public `/healthz`. Resolve regional origins with Atlas before pinning them in probe secrets. The [`status-endpoint`](skills/status-endpoint/SKILL.md) skill manages the catalog.
@@ -60,7 +70,7 @@ Status is measured, never hand-edited. Components sit in display groups and are 
 
 ```sh
 npm ci
-nice -n 19 npm run db:migrate:local
+nice -n 19 npm run db:bootstrap:local
 nice -n 19 npm run dev
 ```
 
@@ -141,7 +151,7 @@ Editing an automatic incident takes it over from the probe coordinator. Pausing 
 
 Visitors subscribe on `/subscribe` by email or webhook (Discord, Slack, or any public HTTPS URL), optionally to some components only, and confirm by double opt-in. Confirm and unsubscribe links are HMAC-signed with `SUBSCRIPTION_SECRET` and act only through POST forms, so link scanners cannot trigger them; emails carry RFC 8058 one-click unsubscribe, and generic webhooks an `x-terrascale-signature: sha256=…` HMAC of the body, keyed by the `signingKey` their confirmation request carries. Requests are rate limited per IP (per /64 for IPv6), a target gets at most one confirmation an hour and three in all, and a honeypot field drops bots. Delivery runs claim their messages first, so overlapping runs never send one twice.
 
-The minute cron enqueues every eligible update into the D1 `outbox` and delivers what is due, retrying failures with exponential backoff (8 attempts). Automatic incidents notify only once they have lasted five minutes; one resolved sooner notifies nobody. Email goes through OCI Email Delivery's SMTP relay (STARTTLS on 587, over Cloudflare TCP sockets) with the credentials ts-auth uses.
+The minute cron enqueues up to 1,000 eligible subscriber/update pairs into the D1 `outbox` with one insert query and delivers up to 20 due messages, retrying failures with exponential backoff (8 attempts). Later runs resume the unqueued backlog. Automatic incidents notify only once they have lasted five minutes; one resolved sooner notifies nobody. Email goes through OCI Email Delivery's SMTP relay (STARTTLS on 587, over Cloudflare TCP sockets) with the credentials ts-auth uses.
 
 ## Deploy
 
@@ -158,26 +168,26 @@ npx wrangler secret put SMTP_FROM       # noreply@terrascale.tech, an approved s
 
 ### Probe provisioning (draft; wait for TS-589/TS-592)
 
-Provision a **dedicated status canary organization, project and database** only after the upstream contracts ship. Never point a write probe at customer data. These are target operator instructions; applying a catalog migration does not provision anything. Status history, incidents, subscriptions and probe coordination stay on Cloudflare D1/Durable Objects, the sole Ouroboros exception; TerraBase is only a probe target.
+Provision a **dedicated status canary organization, project and database** only after the upstream contracts ship. Never point a write probe at customer data. These are target operator instructions; bootstrapping the catalog does not provision anything. Status history, incidents, subscriptions and probe coordination stay on Cloudflare D1/Durable Objects, the sole Ouroboros exception; TerraBase is only a probe target.
 
 1. Resolve the admitted healthy `GRU-1` origin using `GET https://atlas.terrascale.tech/api/v1/regions` (`regions[].available` and `hosts`). If database placement is needed, use the existing `GET /api/v1/discovery?database=<name>` contract and its ranked `endpoints[].url`. The production TerraBase origin is `https://gru.api.terrascale.tech` (Caddy on OCI `gru-1`); do not turn the region identity into an invented hostname. Pin the resolved HTTPS origin in the secrets below and re-resolve when placement changes. The issuer is separately configured as the regional ts-auth issuer `https://gru.auth.terrascale.tech/terrascale`, not the global auth proxy or the project tenant's issuer.
-2. Create the dedicated organization and project through ts-auth's platform management API at `https://gru.auth.terrascale.tech/v1/terrascale`, using an authorized operator's sign-in access token. That API accepts sign-in tokens, not API-key tokens. Retain the project UUID. Provision `status_canary` through TerraBase's shipped TS-589 project-scoped database API using an appropriately scoped project token, then create separate `canary` and `probe_canary` collections. Do not give the recurring write probes database-provisioning privileges.
+2. Create the dedicated organization and project through ts-auth's platform management API at `https://gru.auth.terrascale.tech/v1/terrascale`, using an authorized operator's sign-in access token. That API accepts sign-in tokens, not API-key tokens. Retain the project ULID. Provision `status_canary` through TerraBase's shipped TS-589 project-scoped database API using an appropriately scoped project token, then create separate `canary` and `probe_canary` collections. Do not give the recurring write probes database-provisioning privileges.
 3. Issue separate project-scoped keys through ts-auth. Restrict each write-probe key to `database: "status_canary"` (the database **name**) and `scopes: ["documents:read", "documents:write"]`; the restriction is to a database, not a collection. Issue a separate management-probe project key with only `scopes: ["databases:read"]`. Keys have format `tsk_<20 Crockford chars>_<52 chars>`: 77 characters using lowercase Crockford base32 (`0-9a-z` excluding `i`, `l`, `o`, `u`) plus separators. The first 24 characters (`tsk_<20 chars>`) are the key ID and OAuth `client_id`; the **entire key** is `client_secret`. Save each creation/rotation response's `key` once without logging it.
-4. Exchange each key at `POST {issuer}/oauth/token` with `application/x-www-form-urlencoded`, `grant_type=client_credentials`, the configured `project` UUID and only that probe's scopes. Use `client_secret_basic` or `client_secret_post`. Tokens last 900 seconds, with no refresh token; the SDK must cache until 60 seconds before expiry and exchange again after a resource-server 401, once. TerraBase validates ES256 `at+jwt` (or `application/at+jwt`), the issuer's JWKS, exact regional `/terrascale` `iss`, `aud` including `https://gru.api.terrascale.tech`, expiry/not-before, matching `project_id`, the database-name restriction and required scopes. Project-tenant tokens and sign-in/service tokens cannot reach TerraBase tenant routes. These rules come from ts-auth `origin/main`, `docs/platform-contract.md` (TS-598), sections 1, 3, 5 and 6.
-5. After TS-589/TS-592 ship and real integration verification passes, store the target secrets below before enabling probes through the operator API. Give each write probe its own collection and fixed lowercase document UUID. The document probe attempts deletion even after a failed write; the data API canary retains its fixed document for read-back. Resolve any automatic incident before removing a TerraBase probe entry: a "Not configured" round does not resolve an existing incident.
+4. Exchange each key at `POST {issuer}/oauth/token` with `application/x-www-form-urlencoded`, `grant_type=client_credentials`, the configured `project` ULID and only that probe's scopes. Use `client_secret_basic` or `client_secret_post`. Tokens last 900 seconds, with no refresh token; the SDK must cache until 60 seconds before expiry and exchange again after a resource-server 401, once. TerraBase validates ES256 `at+jwt` (or `application/at+jwt`), the issuer's JWKS, exact regional `/terrascale` `iss`, `aud` including `https://gru.api.terrascale.tech`, expiry/not-before, matching `project_id`, the database-name restriction and required scopes. Project-tenant tokens and sign-in/service tokens cannot reach TerraBase tenant routes. These rules come from ts-auth `origin/main`, `docs/platform-contract.md` (TS-598), sections 1, 3, 5 and 6.
+5. After TS-589/TS-592 ship and real integration verification passes, store the target secrets below before enabling probes through the operator API. Give each write probe its own collection and fixed uppercase document ULID. The document probe attempts deletion even after a failed write; the data API canary retains its fixed document for read-back. Resolve any automatic incident before removing a TerraBase probe entry: a "Not configured" round does not resolve an existing incident.
 
 Target secret shapes (placeholders only; do not apply while this change is draft):
 
 ```json
 {
-  "data-api-canary-gru": {
+  "01M4E7G1W82VKFPF5FJ9AVK1D9": {
     "origin": "https://gru.api.terrascale.tech",
     "issuer": "https://gru.auth.terrascale.tech/terrascale",
-    "project": "<project UUID>",
+    "project": "<project ULID>",
     "key": "<whole canary tsk_ key>",
     "database": "status_canary",
     "collection": "canary",
-    "document": "<fixed lowercase document UUID>"
+    "document": "<fixed uppercase document ULID>"
   }
 }
 ```
@@ -186,22 +196,22 @@ The JSON above is `DATA_API_CANARY`. `TERRABASE_PROBES` has these entries:
 
 ```json
 {
-  "terrabase-health-gru": {
+  "01M4E7G1W82VKFPF5FJ9AVK1DQ": {
     "origin": "https://gru.api.terrascale.tech"
   },
-  "document-api-gru": {
+  "01M4E7G1W82VKFPF5FJ9AVK1DF": {
     "origin": "https://gru.api.terrascale.tech",
     "issuer": "https://gru.auth.terrascale.tech/terrascale",
-    "project": "<project UUID>",
+    "project": "<project ULID>",
     "key": "<whole document-probe tsk_ key>",
     "database": "status_canary",
     "collection": "probe_canary",
-    "document": "<separate fixed lowercase document UUID>"
+    "document": "<separate fixed uppercase document ULID>"
   },
-  "management-api-gru": {
+  "01M4E7G1W82VKFPF5FJ9AVK1DK": {
     "origin": "https://gru.api.terrascale.tech",
     "issuer": "https://gru.auth.terrascale.tech/terrascale",
-    "project": "<project UUID>",
+    "project": "<project ULID>",
     "key": "<whole databases:read tsk_ key>"
   }
 }
@@ -209,7 +219,7 @@ The JSON above is `DATA_API_CANARY`. `TERRABASE_PROBES` has these entries:
 
 The unauthenticated health entry needs only `origin`. The TerraBase health probe requires an origin exposing `/readyz`; configure it only after verifying the deployed origin's readiness contract. `/healthz` is liveness and cannot replace readiness. The readiness SDK surface is still blocked on TS-592.
 
-Every push to `main` deploys from CI once the checks and tests pass: it applies the D1 migrations, deploys the four vantage Workers, then the status Worker, with the repository's `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` Forgejo secrets (they override the organization's). The token is supplied by the account owner and needs Workers Scripts Write, D1 Edit and Account Settings Read on the account, and Workers Routes Write on `terrascale.tech` for the custom domain. Each deployed version carries its commit as its tag and message, so `npx wrangler deployments list` shows what production runs. To deploy by hand, build, apply migrations, deploy the four vantage Workers, then the status Worker with:
+Every push to `main` deploys from CI once the checks and tests pass: it bootstraps the D1 schema and catalog, deploys the four vantage Workers, then the status Worker, with the repository's `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` Forgejo secrets (they override the organization's). The token is supplied by the account owner and needs Workers Scripts Write, D1 Edit and Account Settings Read on the account, and Workers Routes Write on `terrascale.tech` for the custom domain. Each deployed version carries its commit as its tag and message, so `npx wrangler deployments list` shows what production runs. To deploy by hand, build, bootstrap D1, deploy the four vantage Workers, then the status Worker with:
 
 ```sh
 nice -n 19 npm run deploy

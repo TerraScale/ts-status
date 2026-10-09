@@ -5,14 +5,14 @@ import { badge } from "./badge";
 import { atom, calendar, rss } from "./feeds";
 
 const base: Incident = {
-  id: "i1",
+  id: "00000000000000000000000002",
   kind: "incident",
   title: "Dashboard <down>",
   status: "resolved",
   impact: "major",
   source: "manual",
   message: "Fixed, finally; really.",
-  components: ["dashboard"],
+  components: ["01M4E7G1W82VKFPF5FJ9AVK1CV"],
   scheduledStart: null,
   scheduledEnd: null,
   createdAt: "2026-09-26T10:00:00Z",
@@ -25,7 +25,7 @@ const recent: Recent = {
     base,
     {
       ...base,
-      id: "m1",
+      id: "00000000000000000000000006",
       kind: "maintenance",
       title: "A very long maintenance title that goes on and on, well past the folding limit of calendars",
       status: "scheduled",
@@ -35,7 +35,13 @@ const recent: Recent = {
     },
   ],
   updates: [
-    { id: "u1", incidentId: "i1", status: "resolved", body: "Fixed <now>.", createdAt: "2026-09-26T11:00:00Z" },
+    {
+      id: "00000000000000000000000008",
+      incidentId: "00000000000000000000000002",
+      status: "resolved",
+      body: "Fixed <now>.",
+      createdAt: "2026-09-26T11:00:00Z",
+    },
   ],
   components: [],
 };
@@ -46,7 +52,9 @@ describe("feeds", () => {
     expect(feed).toContain("<title>Incident: Dashboard &lt;down&gt;</title>");
     expect(feed).toContain("&lt;p&gt;&lt;strong&gt;resolved");
     expect(feed).toContain("Fixed &amp;lt;now&amp;gt;.");
-    expect(rss(recent, "https://s.test", 0)).toContain('<guid isPermaLink="true">https://s.test/incidents/i1</guid>');
+    expect(rss(recent, "https://s.test", 0)).toContain(
+      '<guid isPermaLink="true">https://s.test/incidents/00000000000000000000000002</guid>',
+    );
   });
 
   it("writes a valid calendar of maintenance only, with folded lines", () => {
@@ -55,7 +63,7 @@ describe("feeds", () => {
     expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(1);
     expect(ics).toContain("DTSTART:20261001T020000Z");
     expect(ics).toContain(String.raw`DESCRIPTION:Fixed\, finally\; really.`);
-    expect(ics).toContain("UID:m1@s.test");
+    expect(ics).toContain("UID:00000000000000000000000006@s.test");
     const slashed = calendar(
       { ...recent, incidents: recent.incidents.map((entry) => ({ ...entry, message: String.raw`C:\path, done` })) },
       "https://s.test",
