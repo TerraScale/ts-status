@@ -125,8 +125,8 @@ describe("runRound", () => {
               ? JSON.stringify({
                   status: target.url.includes("git") ? "pass" : target.url.includes("auth") ? "ready" : "ok",
                   version,
-                  regions: [{ code: "GRU-1", available: true }],
-                  hosts: { "GRU-1": "gru.api.terrascale.tech" },
+                  regions: [{ code: "GRU", available: true }],
+                  hosts: { GRU: "gru.api.terrascale.tech" },
                   error: { code: "invalid_key" },
                 })
               : undefined,
@@ -239,8 +239,8 @@ describe("automatic incidents", () => {
             const failing = !up && target.url.includes("git.terrascale.tech");
             const json = {
               status: target.url.includes("git") ? "pass" : target.url.includes("auth") ? "ready" : "ok",
-              regions: [{ code: "GRU-1", available: true }],
-              hosts: { "GRU-1": "gru.api.terrascale.tech" },
+              regions: [{ code: "GRU", available: true }],
+              hosts: { GRU: "gru.api.terrascale.tech" },
               error: { code: "invalid_key" },
             };
             return {

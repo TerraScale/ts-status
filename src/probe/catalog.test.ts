@@ -166,19 +166,23 @@ describe("probe catalog", () => {
       indirect: number;
     };
 
-  it("requires Atlas to resolve the admitted gru-1 region and report it healthy", () => {
+  it("checks Atlas discovery without naming a region", () => {
     const atlas = endpoint("01M4E7G1W82VKFPF5FJ9AVK1D5");
     expect(atlas.url).toBe("https://atlas.terrascale.tech/api/v1/regions");
-    const check = (available: boolean, host: string | null, code = "GRU-1") =>
-      judge(parseSpec(atlas), {
-        status: 200,
-        error: null,
-        body: JSON.stringify({ regions: [{ code, available }], hosts: { [code]: host } }),
-      }).outcome;
-    expect(check(true, "gru.api.terrascale.tech")).toBe("ok");
-    expect(check(false, "gru.api.terrascale.tech")).toBe("fail");
-    expect(check(true, null)).toBe("fail");
-    expect(check(true, "gru.api.terrascale.tech", "GRU")).toBe("fail");
+    expect(atlas.assertions).toBe('[{"path":"regions[0].code","op":"exists"},{"path":"hosts","op":"exists"}]');
+    expect(atlas.extract).toBe("{}");
+    const outcome = (body: unknown) =>
+      judge(parseSpec(atlas), { status: 200, error: null, body: JSON.stringify(body) }).outcome;
+    const live = {
+      regions: [
+        { code: "GRU", name: "São Paulo", available: true },
+        { code: "SFO", name: "San Francisco", available: true },
+      ],
+      hosts: { GRU: "gru.api.terrascale.tech", SFO: "sfo.api.terrascale.tech" },
+      updated: "2026-10-10T22:16:00Z",
+    };
+    expect(outcome(live)).toBe("ok");
+    expect(outcome({ ...live, regions: [] })).toBe("fail");
   });
 
   it("keeps the production GRU hostname for the canary and browser ping", () => {
