@@ -2,6 +2,7 @@
    remain unjudged; malformed configuration and contract failures fail closed. */
 
 import { isId } from "../ids";
+import { logEvent } from "../log";
 
 import { NOT_CONFIGURED } from "../domain/status";
 import {
@@ -130,7 +131,9 @@ export function parseTerraBase(secret: string | undefined): Record<string, unkno
   } catch {
     // Reported below.
   }
-  console.error("TERRABASE_PROBES must be a JSON object keyed by canonical endpoint ULIDs");
+  logEvent("error", "TERRABASE_PROBES must be a JSON object keyed by canonical endpoint ULIDs", {
+    component: "terrabase",
+  });
   return null;
 }
 

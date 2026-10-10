@@ -9,6 +9,7 @@ import { newId, isId } from "../ids";
 import { sqlTime } from "../db/reads";
 import type { IncidentImpact, IncidentKind, IncidentStatus } from "../domain/status";
 import type { Env } from "../env";
+import { logEvent } from "../log";
 import { isOperator } from "../http/operator-auth";
 import { createRouter } from "../router";
 import { choice, ids, instant, Invalid, optionalChoice, optionalString, readBody, string, type Body } from "./validate";
@@ -270,7 +271,7 @@ export async function operator(request: Request, env: Env, now: number): Promise
     if (error instanceof Error && /FOREIGN KEY|CHECK constraint/.test(error.message)) {
       return failure(400, "invalid", "A referenced component or endpoint does not exist, or a value is out of range.");
     }
-    console.error("operator request failed", error);
+    logEvent("error", "operator request failed", { component: "operator", request, error });
     return failure(500, "internal", "The request failed.");
   }
 }

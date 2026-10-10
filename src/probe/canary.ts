@@ -9,6 +9,7 @@
    fails every round, so losing the secret is never silent. */
 
 import { isId } from "../ids";
+import { logEvent } from "../log";
 
 import { settle } from "../domain/consensus";
 import { SLOW_MS, type TimelineState } from "../domain/status";
@@ -107,14 +108,14 @@ export function parseCanaries(secret: string | undefined): Record<string, Canary
   try {
     value = JSON.parse(secret);
   } catch {
-    console.error("DATA_API_CANARY is not JSON");
+    logEvent("error", "DATA_API_CANARY is not JSON", { component: "canary" });
     return {};
   }
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
   return Object.fromEntries(
     Object.entries(value).filter((entry): entry is [string, CanaryConfig] => {
       const valid = isId(entry[0]) && isCanaryConfig(entry[1]);
-      if (!valid) console.error("malformed DATA_API_CANARY entry");
+      if (!valid) logEvent("error", "malformed DATA_API_CANARY entry", { component: "canary" });
       return valid;
     }),
   );

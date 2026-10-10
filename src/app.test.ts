@@ -134,7 +134,14 @@ describe("app", () => {
       expect(observations).toEqual(expect.arrayContaining([expect.objectContaining({ target: "vantage", version })]));
       expect(fetch).toHaveBeenCalledTimes(2);
       expect(put).toHaveBeenCalledTimes(1);
-      expect(log).toHaveBeenCalledWith("deployment cache write failed", error);
+      expect(log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          level: "error",
+          msg: "deployment cache write failed",
+          component: "deployments",
+          error: "cache unavailable",
+        }),
+      );
 
       expect((await app.fetch(request("/api/v1/deployments"), env, ctx)).status).toBe(200);
       expect(fetch).toHaveBeenCalledTimes(4);

@@ -3,6 +3,7 @@
    datetime text ("YYYY-MM-DD HH:MM:SS", UTC) and returned as ISO 8601. */
 
 import type { Env } from "../env";
+import { logEvent } from "../log";
 import { HOUR } from "../format";
 import { SAMPLE_RETENTION_MS } from "../probe/retention";
 import {
@@ -69,7 +70,7 @@ function toIncident(row: IncidentRow): Incident {
   } catch {
     // json_group_array always yields valid JSON, so this is corruption: say
     // so rather than quietly treating the incident as platform-wide.
-    console.error("malformed incident components", row.id, row.components);
+    logEvent("error", "malformed incident components", { component: "reads", id: row.id, components: row.components });
   }
   return { ...row, message: row.message ?? "", components };
 }

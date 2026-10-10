@@ -7,6 +7,7 @@ import { bootstrap } from "../db/bootstrap";
 
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env";
+import { logEvent } from "../log";
 import { ROUND_MS, roundOf, runRound, type RoundState } from "./round";
 
 interface State extends Partial<RoundState> {
@@ -40,7 +41,7 @@ export class Coordinator extends DurableObject<Env> {
     } catch (error) {
       // The next round runs in 30 seconds; retrying this one would only
       // delay it.
-      console.error("probe round failed", error);
+      logEvent("error", "probe round failed", { component: "coordinator", error });
     }
   }
 }

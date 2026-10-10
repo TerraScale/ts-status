@@ -10,6 +10,7 @@ import { adopt, step, type Action, type Observation, type Tracker } from "../dom
 import { consensus, settle, type VantageResult } from "../domain/consensus";
 import { aggregate, type IncidentImpact, type TimelineState } from "../domain/status";
 import type { Env } from "../env";
+import { logEvent } from "../log";
 import { canarySample, parseCanaries, runCanary, type CanaryResult } from "./canary";
 import type { ProbeResponse, Target } from "./protocol";
 import {
@@ -132,7 +133,7 @@ async function ask(vantage: Vantage, fetcher: Fetcher, list: readonly Target[]):
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return (await response.json()) as ProbeResponse;
   } catch (error) {
-    console.error("vantage did not answer", vantage.code, error);
+    logEvent("error", "vantage did not answer", { component: "round", vantage: vantage.code, error });
     return null;
   } finally {
     clearTimeout(timer);
@@ -300,7 +301,7 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
           const config = canaries[row.id];
           return config ? await runCanary(config, marker) : failed("Canary not configured");
         } catch (error) {
-          console.error("canary failed", row.id, error);
+          logEvent("error", "canary failed", { component: "round", id: row.id, error });
           return failed("Canary error");
         }
       }),

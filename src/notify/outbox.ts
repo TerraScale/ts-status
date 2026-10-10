@@ -10,6 +10,7 @@
    not wake anyone. Operator incidents notify at once. */
 
 import { newId } from "../ids";
+import { logEvent } from "../log";
 
 import { iso, sqlTime } from "../db/reads";
 import type { IncidentImpact, IncidentKind, IncidentStatus } from "../domain/status";
@@ -97,7 +98,7 @@ export function smtpConfig(env: Env): (SmtpConfig & { from: string }) | null {
   if (!env.SMTP_HOST || !env.SMTP_USERNAME || !env.SMTP_PASSWORD || !env.SMTP_FROM) return null;
   const port = Number(env.SMTP_PORT ?? 587);
   if (port === 465) {
-    console.error("SMTP_PORT 465 needs implicit TLS; use a STARTTLS port such as 587");
+    logEvent("error", "SMTP_PORT 465 needs implicit TLS; use a STARTTLS port such as 587", { component: "outbox" });
     return null;
   }
   return {

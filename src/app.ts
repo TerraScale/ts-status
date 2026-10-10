@@ -23,6 +23,7 @@ import { byHour, DEFAULT_RANGE, isRange, RANGE_KEYS, rangeStart, type RangeKey }
 import { HEADLINES } from "./domain/status";
 import type { Env } from "./env";
 import { badge } from "./feeds/badge";
+import { logEvent } from "./log";
 import { atom, calendar, rss } from "./feeds/feeds";
 import { DAY, HOUR, startOfHour } from "./format";
 import { cacheKey, oneOf, readQuery, text as short, type QuerySpec } from "./http/cache";
@@ -315,12 +316,12 @@ function unavailable(): Response {
   );
 }
 
-async function render(route: Route, env: Env, context: RenderContext): Promise<Response> {
+async function render(route: Route, env: Env, context: RenderContext, request: Request): Promise<Response> {
   try {
     await bootstrap(env);
     return secure(await route.render(env, context), true);
   } catch (error) {
-    console.error("status render failed", error);
+    logEvent("error", "status render failed", { component: "render", request, error });
     return unavailable();
   }
 }
@@ -342,7 +343,7 @@ export default {
           pending = deployments(env, now)
             .then(async (observations) => {
               await cache.put(key, secure(Response.json(observations), true)).catch((error: unknown) => {
-                console.error("deployment cache write failed", error);
+                logEvent("error", "deployment cache write failed", { component: "deployments", request, error });
               });
               return observations;
             })
@@ -381,7 +382,7 @@ export default {
       try {
         await bootstrap(env);
       } catch (error) {
-        console.error("status bootstrap failed", error);
+        logEvent("error", "status bootstrap failed", { component: "bootstrap", request, error });
         return unavailable();
       }
     }
@@ -424,14 +425,19 @@ export default {
     const cache = caches.default;
     let response = await cache.match(key);
     if (!response) {
-      response = await render(match.value, env, {
-        now,
-        origin: url.origin,
-        fragment,
-        params: match.params,
-        query,
-        policy: match.value.policy,
-      });
+      response = await render(
+        match.value,
+        env,
+        {
+          now,
+          origin: url.origin,
+          fragment,
+          params: match.params,
+          query,
+          policy: match.value.policy,
+        },
+        request,
+      );
       if (response.ok) ctx.waitUntil(cache.put(key, response.clone()));
     }
     return request.method === "HEAD" ? new Response(null, response) : response;
