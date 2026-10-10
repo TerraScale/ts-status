@@ -1,6 +1,13 @@
 # TerraScale status catalog: components, regions and clusters
 
-Use this repo skill when the human asks to add, launch, move, pause, or remove a component, region, or cluster on the status page. The catalog lives in D1; the probe coordinator probes every enabled endpoint every 30 seconds, so changes apply within a minute without a deploy.
+Use this repo skill to inspect or correct status catalog metadata when the
+human requests it. The [zero-configuration contract](../../docs/zero-configuration.md)
+requires automatic discovery/probing of every admitted region and service.
+Current lifecycle/endpoint switches and manual catalog reconciliation are
+runtime gaps; do not use a launch, pause or enable step to admit a region.
+Unknown or unavailable measurements must stay honest. OCI Vault must deliver
+operator/probe credentials automatically; this document establishes no live
+mutation authorization.
 
 Generate new IDs with `node --input-type=module -e 'import { monotonicFactory } from "ulid"; console.log(monotonicFactory()())'`. Never use a name, UUID or prefix as an entity ID.
 
@@ -21,49 +28,27 @@ Every endpoint also carries a check:
 
 A component's status is measured from four vantage points: a cluster is degraded when some vantages fail or it answers slower than 1.5 s, and down once most vantages fail two rounds in a row. A component or region is down only when all of its clusters are, and partially down when some are.
 
-## Launch a planned component
+## Verify discovered services
 
-When a planned component goes live, confirm its health check answers, then launch it through the operator API (see the `status-warning` skill for the `api` helper and token). Launching enables its endpoints; setting it back to `planned` pauses them.
+Use Atlas-authoritative origins and actual readiness/health contracts. Every
+admitted service must be probed without lifecycle or endpoint activation.
+The current catalog's `active`/`planned` and endpoint booleans remain legacy
+implementation inventory, not operator setup instructions.
 
-```sh
-curl -fsS -o /dev/null -w '%{http_code} %{time_total}s\n' https://auth.terrascale.tech/readyz
-echo '{ "lifecycle": "active" }' > launch.json
-api PATCH /components/01M4E7G1W82VKFPF5FJ9AVK1CT launch.json
-```
+Keep automatic incidents and their history intact. Resolve an incident before
+an approved removal; a missing probe must never be presented as recovery.
 
-Pause or resume one endpoint with `PATCH /endpoints/ID` and `{ "enabled": false }`. Pausing a component, or its last enabled endpoint, answers `409` while an automatic incident is open for it; resolve that incident first.
+## Catalog reconciliation requirements
 
-## Add a cluster
+Automatic discovery must identify the component, region, cluster and authoritative
+health URL, allocate canonical IDs and retain measurement history. Verify readiness
+before claiming health. A Fly anycast hostname or preferred-region hint does not
+prove that a Machine serves in that region; register only observed serving origins.
 
-Ask the human for the component, region, cluster name, and health check URL if they have not supplied them. Confirm the URL answers before inserting it:
-
-```sh
-curl -fsS -o /dev/null -w '%{http_code} %{time_total}s\n' https://HOST/health/ready
-npm exec -- wrangler d1 execute ts-status-db --remote --command \
-  "INSERT INTO endpoints (id, component_id, region_code, cluster, provider, url, headers, position) VALUES ('01M4E7G1W82VKFPF5FJ9AVK1DX', '01M4E7G1W82VKFPF5FJ9AVK1CV', 'FRA', 'fra', 'fly', 'https://dash.terrascale.tech/health/ready', '{\"fly-prefer-region\":\"fra\"}', 2);"
-```
-
-Fly.io apps share one anycast hostname. Send `{"fly-prefer-region": "gru"}` in `headers` to prefer a region's Machines; Fly falls back to the nearest region when that one has none running, so only register Fly regions that have Machines.
-
-Check a TerraBase cell through atlas:
-
-```sh
-npm exec -- wrangler d1 execute ts-status-db --remote --command \
-  "UPDATE endpoints SET assertions = '[{\"path\":\"regions[code=NRT].available\",\"op\":\"eq\",\"value\":true}]', extract = '{\"lag_ms\":\"regions[code=NRT].lag_ms\"}', indirect = 1 WHERE id = 'ENDPOINT_ULID';"
-```
-
-## Add a component or region
-
-```sh
-npm exec -- wrangler d1 execute ts-status-db --remote --command \
-  "INSERT INTO components (id, group_id, name, description, lifecycle, position) VALUES ('01M4E7G1W82VKFPF5FJ9AVK1DY', '01M4E7G1W7XH3WHVG75QYZRE6Y', 'Console', 'Operator console', 'planned', 6);"
-npm exec -- wrangler d1 execute ts-status-db --remote --command \
-  "INSERT INTO regions (code, name, country, map_x, map_y, position) VALUES ('NRT', 'Tokyo', 'Japan', 118.5, 30.2, 4);"
-```
-
-Set `ping_url` (and a short `ping_label`) on a region once a host there answers quickly, so the ping page's browser test can time it; any HTTPS URL under `*.terrascale.tech` works, e.g. `https://gru.api.terrascale.tech/ping` once TerraBase serves it.
-
-Place the hub by eye on `src/assets/region-map.svg` (x grows east, y grows south).
+Region display metadata and map positions may be corrected with authorization;
+such edits must not enable/disable service or suppress health evidence. The current
+manual catalog path is a pending runtime gap. No SQL mutation recipe is required
+for a new region to serve or be monitored.
 
 ## Remove
 

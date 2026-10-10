@@ -1,5 +1,9 @@
 # ts-status
 
+Read the [required zero-configuration operating contract](docs/zero-configuration.md).
+Current configuration paths described below are implementation limitations, not
+production activation instructions.
+
 TerraScale's public status page at <https://status.terrascale.tech>: a TypeScript Cloudflare Worker that renders HTML at the edge from Cloudflare D1. Status is the sole Ouroboros exception: its history, incidents, subscriptions and coordinator remain on D1/Durable Objects so a TerraBase outage cannot disable the status page; other TerraScale products use TerraBase. It uses the ts-dashboard design system (`../ts-dashboard/DESIGN_SYSTEM.md`): the same tokens, Oxanium type, and flat hairline components.
 
 ## How it is fast
@@ -16,7 +20,9 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 - **Four vantage points.** Small Workers placed near `aws:us-west-1`, `aws:sa-east-1`, `aws:eu-central-1` and `aws:ap-northeast-1` probe every endpoint; each reports the data center it ran in.
 - **30-second rounds.** A single coordinator Durable Object, next to the D1 primary, runs a round on every half minute through the vantages' service bindings and stores one sample per endpoint.
 - **Consensus.** A round needs two answering vantages; an endpoint is down only when most of them fail, degraded when some do or it is slower than 1.5 s, and shown down only after two down rounds in a row. A vantage that does not answer is left out, never counted as a failure. An endpoint's `blocked_status` names the status its probe is known to be refused with by something in front of the service: that result is a probe error ("Probe blocked"), also left out. Cloudflare answers the vantages' requests to dash and git, which answer everyone else, with 403, so only those two set it; any other unexpected status, 403 included, still fails.
-- **Deep checks.** Besides answering, an endpoint can be required to return an expected status, contain a keyword, or satisfy JSON assertions. The global API router and GRU's public C# document handler are checked with an unauthenticated `GET /v1/projects/{project}/databases/{database}/collections/{collection}/documents/{id}`: `401 invalid_key` proves the handler is reachable, not that authenticated reads/writes work. Atlas's `GET /api/v1/regions` must report admitted `GRU-1` as `available: true` and include a corresponding `hosts.GRU-1` entry; Atlas normalizes region codes to uppercase. Region identity is separate from DNS: production TerraBase is `https://gru.api.terrascale.tech`, served by Caddy on OCI `gru-1`, and the display region is `GRU`. Dashboard readiness at `https://dash.terrascale.tech/health/ready` returns `200 {"status":"ok","version":…}`. Authentication readiness at `https://auth.terrascale.tech/readyz` returns `200 {"status":"ready","version":…}`; an unavailable storage authority returns 503. Both checks record version changes. The draft TS-598 target for OIDC discovery is `https://gru.auth.terrascale.tech/terrascale/.well-known/openid-configuration`: a 200 must name the exact regional `/terrascale` issuer and its JWKS. The global auth origin is an Atlas proxy, not the issuer. The active catalog's pending discovery observation remains unknown ("Not available yet") on its configured 404; readiness continues to drive authentication status until the upstream contract ships. SFO, FRA, docs and sync remain disabled until launch.
+- **Deep checks.** Besides answering, an endpoint can be required to return an expected status, contain a keyword, or satisfy JSON assertions. The global API router and GRU's public C# document handler are checked with an unauthenticated `GET /v1/projects/{project}/databases/{database}/collections/{collection}/documents/{id}`: `401 invalid_key` proves the handler is reachable, not that authenticated reads/writes work. Atlas's `GET /api/v1/regions` must report admitted `GRU-1` as `available: true` and include a corresponding `hosts.GRU-1` entry; Atlas normalizes region codes to uppercase. Region identity is separate from DNS: production TerraBase is `https://gru.api.terrascale.tech`, served by Caddy on OCI `gru-1`, and the display region is `GRU`. Dashboard readiness at `https://dash.terrascale.tech/health/ready` returns `200 {"status":"ok","version":…}`. Authentication readiness at `https://auth.terrascale.tech/readyz` returns `200 {"status":"ready","version":…}`; an unavailable storage authority returns 503. Both checks record version changes. The draft TS-598 target for OIDC discovery is `https://gru.auth.terrascale.tech/terrascale/.well-known/openid-configuration`: a 200 must name the exact regional `/terrascale` issuer and its JWKS. The global auth origin is an Atlas proxy, not the issuer. The active catalog's pending discovery observation remains unknown ("Not available yet") on its configured 404; readiness continues to drive authentication status until the upstream contract ships. The current catalog still excludes some regions/components; that is an
+  implementation gap. Every discovered regional service must be monitored
+  automatically. Missing measurements remain unknown, never fabricated healthy.
 - **Data API canary (draft target).** With `DATA_API_CANARY` configured and `data-api-canary-gru` enabled, the coordinator will write each round's marker into a dedicated canary document and read it back through the TS-592 SDK. Authentication uses a project-scoped, database-restricted ts-auth key with `documents:read documents:write`, exchanged for a short-lived bearer token; the key itself is not a bearer token. A rejected exchange, a failed commit, an unreadable write, or an enabled canary missing its secret fails the round; two failures in a row are an outage.
 - **TerraBase probes (draft target).** TS-598 defines identity and token exchange; TS-589 defines TerraBase's project-scoped resource authorization, and TS-592 must expose those contracts through `@terrascale/sdk`. Origins and credentials come from `TERRABASE_PROBES`. An endpoint omitted from the secret shows "Not configured", with no uptime contribution. Malformed configuration, a timeout (5 seconds per request), an unexpected status or an invalid payload fails the round.
 
@@ -64,7 +70,9 @@ The retained TerraBase integration release predates the ULID contract and reject
 
 ## Catalog
 
-Status is measured, never hand-edited. Components sit in display groups and are checked by regional or global endpoints. Planned components are shown without contributing to measured status. GRU's C# Data API is checked at `https://gru.api.terrascale.tech`; SFO and FRA remain disabled. The GRU browser ping uses public `/healthz`. Resolve regional origins with Atlas before pinning them in probe secrets. The [`status-endpoint`](skills/status-endpoint/SKILL.md) skill manages the catalog.
+Status is measured, never hand-edited. Components sit in display groups and are checked by regional or global endpoints. Planned components are shown without contributing to measured status. The current catalog measures only a subset of services; automatic discovery
+and probing of every region remain implementation gaps. The GRU browser ping uses public `/healthz`. Origins must follow Atlas discovery automatically; Vault delivers scoped probe
+credentials without manual pinning or copying. The [`status-endpoint`](skills/status-endpoint/SKILL.md) skill manages the catalog.
 
 ## Local development
 
@@ -139,18 +147,20 @@ samples. Regions without a configured ping URL retain `ping_url: null`. Outages 
 maintenance and unmeasured regions map to `planned`. The optional case-insensitive `?region=gru`
 filters to one region; an unknown code returns an empty list.
 
-The operator API under `/api/operator` needs the `OPERATOR_TOKEN` bearer token (`wrangler secret put OPERATOR_TOKEN`; locally in `.dev.vars`):
+The operator API under `/api/operator` still requires a scoped bearer token.
+OCI Vault must provision/deliver it automatically. The current `OPERATOR_TOKEN`
+consumer is a delivery gap; authorization remains mandatory:
 
-| Method and path                            | Does                                                             |
-| ------------------------------------------ | ---------------------------------------------------------------- |
-| `POST /api/operator/incidents`             | Publishes an incident, warning or maintenance window             |
-| `GET /api/operator/incidents/:id`          | Reads a record with its updates and components                   |
-| `PATCH /api/operator/incidents/:id`        | Edits title, impact, components or schedule                      |
-| `DELETE /api/operator/incidents/:id`       | Removes a record published by mistake                            |
-| `POST /api/operator/incidents/:id/updates` | Posts an update, changing status (and impact)                    |
-| `POST /api/operator/deploys`               | Records a deploy marker for an endpoint                          |
-| `PATCH /api/operator/components/:id`       | Launches (`active`) or plans a component, enabling its endpoints |
-| `PATCH /api/operator/endpoints/:id`        | Enables or pauses one endpoint                                   |
+| Method and path                            | Does                                                                               |
+| ------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `POST /api/operator/incidents`             | Publishes an incident, warning or maintenance window                               |
+| `GET /api/operator/incidents/:id`          | Reads a record with its updates and components                                     |
+| `PATCH /api/operator/incidents/:id`        | Edits title, impact, components or schedule                                        |
+| `DELETE /api/operator/incidents/:id`       | Removes a record published by mistake                                              |
+| `POST /api/operator/incidents/:id/updates` | Posts an update, changing status (and impact)                                      |
+| `POST /api/operator/deploys`               | Records a deploy marker for an endpoint                                            |
+| `PATCH /api/operator/components/:id`       | Legacy lifecycle control; runtime removal pending automatic catalog reconciliation |
+| `PATCH /api/operator/endpoints/:id`        | Legacy endpoint switch; runtime removal pending automatic discovery                |
 
 Editing an automatic incident takes it over from the probe coordinator. Pausing a component, or its last enabled endpoint, answers `409` while an automatic incident is open for it: resolve the incident first.
 
@@ -162,74 +172,49 @@ The minute cron enqueues up to 1,000 eligible subscriber/update pairs into the D
 
 ## Deploy
 
-The production D1 database is `ts-status-db` (`8a72dd69-2136-4398-8d70-92c0c2dade5a`). Set the secrets once (the SMTP ones are ts-auth's `TS_AUTH_SMTP_*` values; without them, email subscriptions are hidden):
+CI deploys qualified main revisions. OCI Vault must automatically provision and
+deliver operator, subscription, SMTP and probe credentials, and deliver the
+vendor-issued Cloudflare deployment token stored once. There are no manual
+Worker-secret commands or email/probe activation steps.
 
-```sh
-npx wrangler secret put OPERATOR_TOKEN
-npx wrangler secret put SUBSCRIPTION_SECRET
-npx wrangler secret put SMTP_HOST       # smtp.email.sa-saopaulo-1.oci.oraclecloud.com
-npx wrangler secret put SMTP_USERNAME   # the OCI SMTP credential, with its @oci suffix
-npx wrangler secret put SMTP_PASSWORD
-npx wrangler secret put SMTP_FROM       # noreply@terrascale.tech, an approved sender
-```
+**Current gaps:** CI still consumes Forgejo deployment secrets and the Worker
+expects pre-existing runtime secrets. The catalog still has lifecycle/endpoint
+switches. This documentation implements neither Vault delivery nor automatic
+catalog reconciliation; it must not claim all regions are already measured.
 
 ### Probe provisioning (draft; wait for TS-589/TS-592)
 
 Provision a **dedicated status canary organization, project and database** only after the upstream contracts ship. Never point a write probe at customer data. These are target operator instructions; bootstrapping the catalog does not provision anything. Status history, incidents, subscriptions and probe coordination stay on Cloudflare D1/Durable Objects, the sole Ouroboros exception; TerraBase is only a probe target.
 
-1. Resolve the admitted healthy `GRU-1` origin using `GET https://atlas.terrascale.tech/api/v1/regions` (`regions[].available` and `hosts`). If database placement is needed, use the existing `GET /api/v1/discovery?database=<name>` contract and its ranked `endpoints[].url`. The production TerraBase origin is `https://gru.api.terrascale.tech` (Caddy on OCI `gru-1`); do not turn the region identity into an invented hostname. Pin the resolved HTTPS origin in the secrets below and re-resolve when placement changes. The issuer is separately configured as the regional ts-auth issuer `https://gru.auth.terrascale.tech/terrascale`, not the global auth proxy or the project tenant's issuer.
-2. Create the dedicated organization and project through ts-auth's platform management API at `https://gru.auth.terrascale.tech/v1/terrascale`, using an authorized operator's sign-in access token. That API accepts sign-in tokens, not API-key tokens. Retain the project ULID. Provision `status_canary` through TerraBase's shipped TS-589 project-scoped database API using an appropriately scoped project token, then create separate `canary` and `probe_canary` collections. Do not give the recurring write probes database-provisioning privileges.
-3. Issue separate project-scoped keys through ts-auth. Restrict each write-probe key to `database: "status_canary"` (the database **name**) and `scopes: ["documents:read", "documents:write"]`; the restriction is to a database, not a collection. Issue a separate management-probe project key with only `scopes: ["databases:read"]`. Keys have format `tsk_<20 Crockford chars>_<52 chars>`: 77 characters using lowercase Crockford base32 (`0-9a-z` excluding `i`, `l`, `o`, `u`) plus separators. The first 24 characters (`tsk_<20 chars>`) are the key ID and OAuth `client_id`; the **entire key** is `client_secret`. Save each creation/rotation response's `key` once without logging it.
-4. Exchange each key at `POST {issuer}/oauth/token` with `application/x-www-form-urlencoded`, `grant_type=client_credentials`, the configured `project` ULID and only that probe's scopes. Use `client_secret_basic` or `client_secret_post`. Tokens last 900 seconds, with no refresh token; the SDK must cache until 60 seconds before expiry and exchange again after a resource-server 401, once. TerraBase validates ES256 `at+jwt` (or `application/at+jwt`), the issuer's JWKS, exact regional `/terrascale` `iss`, `aud` including `https://gru.api.terrascale.tech`, expiry/not-before, matching `project_id`, the database-name restriction and required scopes. Project-tenant tokens and sign-in/service tokens cannot reach TerraBase tenant routes. These rules come from ts-auth `origin/main`, `docs/platform-contract.md` (TS-598), sections 1, 3, 5 and 6.
-5. After TS-589/TS-592 ship and real integration verification passes, store the target secrets below before enabling probes through the operator API. Give each write probe its own collection and fixed uppercase document ULID. The document probe attempts deletion even after a failed write; the data API canary retains its fixed document for read-back. Resolve any automatic incident before removing a TerraBase probe entry: a "Not configured" round does not resolve an existing incident.
+Automatic provisioning must resolve every admitted region through Atlas and
+refresh placement changes without deriving hostnames from region IDs. It must
+create a dedicated canary organization/project/database and separate collections,
+never point write probes at customer data, and deliver probe credentials through
+OCI Vault without copying them.
 
-Target secret shapes (placeholders only; do not apply while this change is draft):
+Retain these authorization and integrity requirements:
 
-```json
-{
-  "01M4E7G1W82VKFPF5FJ9AVK1D9": {
-    "origin": "https://gru.api.terrascale.tech",
-    "issuer": "https://gru.auth.terrascale.tech/terrascale",
-    "project": "<project ULID>",
-    "key": "<whole canary tsk_ key>",
-    "database": "status_canary",
-    "collection": "canary",
-    "document": "<fixed uppercase document ULID>"
-  }
-}
-```
+- Use separate, narrowly scoped project keys for read/write canaries and
+  read-only management probes. Recurring probes must not gain database
+  provisioning privileges. Token exchange uses the trusted regional issuer;
+  customer-tenant and sign-in/service tokens cannot reach project routes.
+- Validate signature/type, exact issuer, audience, expiry/not-before,
+  `project_id`, database restriction and required scopes. Cache short-lived
+  tokens and exchange again once after an authentication rejection; never log keys.
+- Use separate fixed canonical document IDs. Attempt cleanup even after failed
+  writes. Verify `/readyz`; `/healthz` liveness cannot replace storage readiness.
+- Keep absent/unimplemented upstream contracts visibly unknown. The current
+  `TERRABASE_PROBES` and `DATA_API_CANARY` consumers remain delivery gaps; no
+  catalog bootstrap proves canary creation or credential interoperability.
+- Resolve and retain automatic incident evidence before removing any probe;
+  an unconfigured round cannot resolve an incident. Deletion of catalog data
+  and history still needs explicit approval of verified targets.
 
-The JSON above is `DATA_API_CANARY`. `TERRABASE_PROBES` has these entries:
+The required upstream authorization/SDK contracts and real-server integration
+qualification remain prerequisites for claiming safe probes. They are quality
+and security boundaries, not feature activation switches.
 
-```json
-{
-  "01M4E7G1W82VKFPF5FJ9AVK1DQ": {
-    "origin": "https://gru.api.terrascale.tech"
-  },
-  "01M4E7G1W82VKFPF5FJ9AVK1DF": {
-    "origin": "https://gru.api.terrascale.tech",
-    "issuer": "https://gru.auth.terrascale.tech/terrascale",
-    "project": "<project ULID>",
-    "key": "<whole document-probe tsk_ key>",
-    "database": "status_canary",
-    "collection": "probe_canary",
-    "document": "<separate fixed uppercase document ULID>"
-  },
-  "01M4E7G1W82VKFPF5FJ9AVK1DK": {
-    "origin": "https://gru.api.terrascale.tech",
-    "issuer": "https://gru.auth.terrascale.tech/terrascale",
-    "project": "<project ULID>",
-    "key": "<whole databases:read tsk_ key>"
-  }
-}
-```
-
-The unauthenticated health entry needs only `origin`. The TerraBase health probe requires an origin exposing `/readyz`; configure it only after verifying the deployed origin's readiness contract. `/healthz` is liveness and cannot replace readiness. The readiness SDK surface is still blocked on TS-592.
-
-Every push to `main` deploys from CI once the checks and tests pass: it bootstraps the D1 schema and catalog, deploys the four vantage Workers, then the status Worker, with the repository's `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` Forgejo secrets (they override the organization's). The token is supplied by the account owner and needs Workers Scripts Write, D1 Edit and Account Settings Read on the account, and Workers Routes Write on `terrascale.tech` for the custom domain. Each deployed version carries its commit as its tag and message, so `npx wrangler deployments list` shows what production runs. To deploy by hand, build, bootstrap D1, deploy the four vantage Workers, then the status Worker with:
-
-```sh
-nice -n 19 npm run deploy
-```
-
-For global read latency, enable D1 read replication on `ts-status-db`; the Worker already reads through sessions.
+The current main pipeline bootstraps schema/catalog and deploys vantage Workers
+before the status Worker after checks pass. Vendor token scope must cover only
+required Worker, route and D1 operations. Existing repo-secret consumption is
+not evidence of automatic Vault delivery. Deployments retain commit identity.
