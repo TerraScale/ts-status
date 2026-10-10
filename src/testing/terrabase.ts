@@ -152,7 +152,7 @@ export async function startTerraBase() {
         `--data-directory=${join(directory, "data")}`,
         `--client-certificate=${certificate}`,
         `--client-private-key=${privateKey}`,
-        `--dashboard-credential-file=${credentialFile}`,
+        `--management-credential-file=${credentialFile}`,
       ],
       { env },
     );
@@ -233,22 +233,23 @@ export async function startTerraBase() {
         throw new Error(`Provision ${new URL(url).pathname}: HTTP ${response.status} ${await response.text()}`);
       return (await response.json()) as { id: string; secret: string };
     };
+    // Management routes exist only on the admin listener; the client origin answers 401 invalid_key.
     const organization = (
-      await create(`${origin}/v1/management/organizations`, { name: "Status test" }, managementHeaders())
+      await create(`${admin}/v1/management/organizations`, { name: "Status test" }, managementHeaders(), true)
     ).id;
     if (!isId(organization))
       throw new Error(
         "TerraBase release returns legacy organization IDs; publish a release implementing TS-754 before running the integration suite.",
       );
-    const projectsPath = `${origin}/v1/management/organizations/${organization}/projects`;
-    const project = (await create(projectsPath, { name: "Canary" }, managementHeaders(organization))).id;
+    const projectsPath = `${admin}/v1/management/organizations/${organization}/projects`;
+    const project = (await create(projectsPath, { name: "Canary" }, managementHeaders(organization), true)).id;
     if (!isId(project))
       throw new Error(
         "TerraBase release returns legacy project IDs; publish a release implementing TS-754 before running the integration suite.",
       );
     const database = "status_canary";
     const createDatabase = async (name: string) =>
-      (await create(`${projectsPath}/${project}/databases`, { name }, managementHeaders(organization))).id;
+      (await create(`${projectsPath}/${project}/databases`, { name }, managementHeaders(organization), true)).id;
     const databaseId = await createDatabase(database);
     const issueKey = async (scopes: string[]) =>
       (
@@ -275,12 +276,11 @@ export async function startTerraBase() {
     const canary: CanaryConfig = { origin, project, database, collection, document: newId(), key };
     return {
       origin,
+      admin,
       fetcher,
       canary,
-      management: { origin, project, organization, userId, key: credential },
       issueKey,
       createDatabase,
-      managementHeaders,
       stop,
     };
   } catch (error) {

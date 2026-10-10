@@ -71,7 +71,9 @@ export function isCanaryConfig(value: unknown): value is CanaryConfig {
 export const collectionPath = (config: Pick<CanaryConfig, "project" | "database" | "collection">): string =>
   `/v1/projects/${config.project}/databases/${config.database}/collections/${config.collection}`;
 
-export const documentPath = (config: CanaryConfig): string => `${collectionPath(config)}/documents/${config.document}`;
+// The v1 by-key route takes the raw document ULID in the query, not the path.
+export const documentPath = (config: CanaryConfig): string =>
+  `${collectionPath(config)}/documents/by-key?id=${config.document}`;
 
 /** Validate the C# document write acknowledgement, including durability. */
 export function written(value: unknown): string {

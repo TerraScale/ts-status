@@ -22,18 +22,6 @@ const empty = (): RoundState => ({ streaks: {}, colos: {}, versions: {}, tracker
 const start = Date.parse("2026-10-04T10:00:00Z");
 
 describe("published TerraBase probes", () => {
-  it("preserves the real management DELETE's bodyless 204 response", async () => {
-    const database = await api.createDatabase("bodyless_response");
-    const { organization, project } = api.management;
-    const response = await api.fetcher(
-      `${api.origin}/v1/management/organizations/${organization}/projects/${project}/databases/${database}`,
-      { method: "DELETE", headers: api.managementHeaders(organization) },
-    );
-    expect(response.status).toBe(204);
-    expect(response.body).toBeNull();
-    expect(await response.text()).toBe("");
-  });
-
   it("preserves a real conditional document read's bodyless 304 response", async () => {
     expect(await runCanary(api.canary, "conditional read", api.fetcher)).toMatchObject({ ok: true });
     const response = await api.fetcher(api.origin + documentPath(api.canary), {
@@ -71,7 +59,7 @@ describe("published TerraBase probes", () => {
     const calls: { path: string; method: string; body: unknown }[] = [];
     const fetcher = (async (input, init) => {
       calls.push({
-        path: new URL(String(input)).pathname,
+        path: new URL(String(input)).pathname + new URL(String(input)).search,
         method: init?.method ?? "GET",
         body: init?.body ? JSON.parse(String(init.body)) : null,
       });
@@ -82,7 +70,7 @@ describe("published TerraBase probes", () => {
     }
     expect(calls.map((call) => call.method)).toEqual(["PUT", "GET", "POST", "DELETE", "PUT", "GET", "POST", "DELETE"]);
     const document = calls[0]!.path;
-    const id = document.split("/").at(-1)!;
+    const id = new URL(document, api.origin).searchParams.get("id")!;
     expect(calls[2]!.body).toEqual({ filter: { eq: ["$id", id] }, limit: 1 });
     expect(calls[0]!.body).toEqual({ canary: "first" });
     expect(calls[4]!.path).toBe(document);
@@ -90,32 +78,6 @@ describe("published TerraBase probes", () => {
       headers: { authorization: `Bearer ${api.canary.key}` },
     });
     expect(response.status).toBe(404);
-  });
-
-  it("requires both management identities and the service credential", async () => {
-    expect(await runTerraBase("management", api.management, "round", api.fetcher)).toMatchObject({
-      ok: true,
-      error: null,
-    });
-    for (const [patch, error] of [
-      [{ key: api.canary.key }, "HTTP 401 invalid_key"],
-      [{ userId: "not-a-member" }, "Invalid probe config"],
-    ] as const) {
-      expect(await runTerraBase("management", { ...api.management, ...patch }, "round", api.fetcher)).toEqual({
-        ok: false,
-        latencyMs: null,
-        error,
-      });
-    }
-    const path = `${api.origin}/v1/management/organizations/${api.management.organization}/projects?limit=1`;
-    for (const header of ["X-TerraBase-User-Id", "X-TerraBase-Organization-Id"]) {
-      const headers = new Headers(api.managementHeaders(api.management.organization));
-      headers.delete(header);
-      expect((await api.fetcher(path, { headers })).status).toBe(400);
-    }
-    const headers = new Headers(api.managementHeaders(api.management.organization));
-    headers.set("X-TerraBase-Organization-Id", "another-organization");
-    expect((await api.fetcher(path, { headers })).status).toBe(400);
   });
 
   it("cleans up a real committed write when its response is lost", async () => {
@@ -139,11 +101,7 @@ describe("published TerraBase probes", () => {
 
   it("validates the new config and treats absent and malformed secrets differently", () => {
     expect(isTerraBaseConfig("documents", api.canary)).toBe(true);
-    expect(isTerraBaseConfig("management", api.management)).toBe(true);
     expect(isTerraBaseConfig("health", { origin: api.origin })).toBe(true);
-    expect(isTerraBaseConfig("management", { ...api.management, userId: "status-\u00ff" })).toBe(false);
-    for (const patch of [{ project: "bad" }, { organization: "bad" }, { userId: "" }, { userId: "x\n" }, { key: "" }])
-      expect(isTerraBaseConfig("management", { ...api.management, ...patch })).toBe(false);
     expect(isTerraBaseConfig("documents", { ...api.canary, key: "tbk1_retired" })).toBe(false);
     expect(isConfigured("documents", { origin: api.origin })).toBe(false);
     expect(isConfigured("health", undefined)).toBe(false);
@@ -162,50 +120,17 @@ describe("published TerraBase probes", () => {
     });
   });
 
-  it.each(["用户", "\u0100", "\ud800", "\udfff", "😀"])(
-    "rejects header-unsafe management identity %j before making a request",
-    async (userId) => {
-      const management = { ...api.management, userId };
-      expect(isTerraBaseConfig("management", management)).toBe(false);
-      const db = testD1();
-      try {
-        db.sqlite.exec(
-          "UPDATE endpoints SET enabled = 0; UPDATE endpoints SET enabled = 1 WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1DK'",
-        );
-        const fetcher = vi.fn(api.fetcher);
-        vi.stubGlobal("fetch", fetcher);
-        await runRound(
-          {
-            STATUS_DB: db,
-            TERRABASE_PROBES: JSON.stringify({ "01M4E7G1W82VKFPF5FJ9AVK1DK": management }),
-          } as unknown as Env,
-          start,
-          empty(),
-        );
-        expect(fetcher).not.toHaveBeenCalled();
-        const sample = db.sqlite.prepare("SELECT state, results FROM probe_samples").get()!;
-        expect(sample.state).toBe("degraded");
-        expect(JSON.parse(sample.results as string)).toEqual([
-          { v: "canary", ok: 0, ms: null, e: "Invalid probe config" },
-        ]);
-      } finally {
-        db.sqlite.close();
-      }
-    },
-  );
-
   it("persists real successes, two rejected-key rounds, and unjudged rounds in D1", async () => {
     const db = testD1();
     try {
       db.sqlite.exec(
-        "UPDATE endpoints SET enabled = 0; UPDATE endpoints SET enabled = 1 WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1DF', '01M4E7G1W82VKFPF5FJ9AVK1DK', '01M4E7G1W82VKFPF5FJ9AVK1D9')",
+        "UPDATE endpoints SET enabled = 0; UPDATE endpoints SET enabled = 1 WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1DF', '01M4E7G1W82VKFPF5FJ9AVK1D9')",
       );
       const env = {
         STATUS_DB: db,
         DATA_API_CANARY: JSON.stringify({ "01M4E7G1W82VKFPF5FJ9AVK1D9": api.canary }),
         TERRABASE_PROBES: JSON.stringify({
           "01M4E7G1W82VKFPF5FJ9AVK1DF": api.canary,
-          "01M4E7G1W82VKFPF5FJ9AVK1DK": api.management,
         }),
       } as unknown as Env;
       vi.stubGlobal("fetch", api.fetcher);
@@ -215,7 +140,7 @@ describe("published TerraBase probes", () => {
           .prepare("SELECT endpoint_id AS id, state, ok, total FROM probe_samples ORDER BY at, endpoint_id")
           .all();
       expect(sampleStates()).toEqual(
-        ["01M4E7G1W82VKFPF5FJ9AVK1D9", "01M4E7G1W82VKFPF5FJ9AVK1DF", "01M4E7G1W82VKFPF5FJ9AVK1DK"].map((id) => ({
+        ["01M4E7G1W82VKFPF5FJ9AVK1D9", "01M4E7G1W82VKFPF5FJ9AVK1DF"].map((id) => ({
           id,
           state: "operational",
           ok: 1,
@@ -225,43 +150,34 @@ describe("published TerraBase probes", () => {
       env.DATA_API_CANARY = JSON.stringify({ "01M4E7G1W82VKFPF5FJ9AVK1D9": { ...api.canary, key: "tb_rejected" } });
       env.TERRABASE_PROBES = JSON.stringify({
         "01M4E7G1W82VKFPF5FJ9AVK1DF": { ...api.canary, key: "tb_rejected" },
-        "01M4E7G1W82VKFPF5FJ9AVK1DK": { ...api.management, key: "rejected-service-credential" },
       });
       state = await runRound(env, start + 30_000, state);
       state = await runRound(env, start + 60_000, state);
       expect(
         sampleStates()
-          .slice(3, 6)
+          .slice(2, 4)
           .map((row) => row.state),
-      ).toEqual(["degraded", "degraded", "degraded"]);
+      ).toEqual(["degraded", "degraded"]);
       expect(
         sampleStates()
-          .slice(6)
+          .slice(4, 6)
           .map((row) => row.state),
-      ).toEqual(["major_outage", "major_outage", "major_outage"]);
+      ).toEqual(["major_outage", "major_outage"]);
       expect(state.streaks).toEqual({
         "01M4E7G1W82VKFPF5FJ9AVK1D9": 2,
         "01M4E7G1W82VKFPF5FJ9AVK1DF": 2,
-        "01M4E7G1W82VKFPF5FJ9AVK1DK": 2,
       });
       env.TERRABASE_PROBES = undefined;
       await runRound(env, start + 90_000, state);
-      expect(sampleStates().slice(-2)).toEqual(
-        ["01M4E7G1W82VKFPF5FJ9AVK1DF", "01M4E7G1W82VKFPF5FJ9AVK1DK"].map((id) => ({
-          id,
-          state: "none",
-          ok: 0,
-          total: 0,
-        })),
-      );
+      expect(sampleStates().slice(-1)).toEqual([{ id: "01M4E7G1W82VKFPF5FJ9AVK1DF", state: "none", ok: 0, total: 0 }]);
       env.TERRABASE_PROBES = "not json";
       vi.spyOn(console, "error").mockImplementation(() => {});
       await runRound(env, start + 120_000, empty());
       expect(
         sampleStates()
-          .slice(-2)
+          .slice(-1)
           .map((row) => row.state),
-      ).toEqual(["degraded", "degraded"]);
+      ).toEqual(["degraded"]);
     } finally {
       db.sqlite.close();
     }

@@ -24,7 +24,6 @@ describe("probe catalog", () => {
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DB" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DF" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DH" },
-      { id: "01M4E7G1W82VKFPF5FJ9AVK1DK" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DQ" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DS" },
     ]);
@@ -35,8 +34,6 @@ describe("probe catalog", () => {
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DD" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DE" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DG" },
-      { id: "01M4E7G1W82VKFPF5FJ9AVK1DJ" },
-      { id: "01M4E7G1W82VKFPF5FJ9AVK1DM" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DN" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DP" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DR" },
@@ -82,13 +79,6 @@ describe("probe catalog", () => {
         url: "/v1/projects/{project}/databases/{database}/collections/{collection}",
       },
       {
-        component_id: "01M4E7G1W82VKFPF5FJ9AVK1D0",
-        region_code: "GRU",
-        kind: "canary",
-        probe: "management",
-        url: "/v1/management/organizations/{organization}/projects",
-      },
-      {
         component_id: "01M4E7G1W82VKFPF5FJ9AVK1D2",
         region_code: "GRU",
         kind: "canary",
@@ -96,7 +86,7 @@ describe("probe catalog", () => {
         url: "/readyz",
       },
     ]);
-    expect(sql.prepare("SELECT count(*) AS n FROM endpoints WHERE probe IS NOT NULL").get()).toEqual({ n: 9 });
+    expect(sql.prepare("SELECT count(*) AS n FROM endpoints WHERE probe IS NOT NULL").get()).toEqual({ n: 6 });
   });
 
   it("labels OIDC pending while keeping its non-404 failures in active authentication", () => {

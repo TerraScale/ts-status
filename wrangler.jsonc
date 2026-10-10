@@ -10,8 +10,8 @@
   "d1_databases": [
     {
       "binding": "STATUS_DB",
-      "database_name": "ts-status-db",
-      "database_id": "8a72dd69-2136-4398-8d70-92c0c2dade5a",
+      "database_name": "ts-status",
+      "database_id": "c2eca5bc-6045-4983-941a-4e01e4e0c749",
     },
   ],
   // Runs a probe round every 30 seconds (src/probe/coordinator.ts).

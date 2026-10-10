@@ -11,11 +11,11 @@
     "test": "vitest run",
     "deploy": "npm run build && npm run db:bootstrap:remote && npm run deploy:vantages && wrangler deploy",
     "deploy:vantages": "for config in dist/ts_status_vantage_*/wrangler.json; do wrangler deploy -c \"$config\" || exit 1; done",
-    "db:bootstrap:local": "wrangler d1 execute ts-status-db --local --file schema.sql",
-    "db:bootstrap:remote": "wrangler d1 execute ts-status-db --remote --file schema.sql"
+    "db:bootstrap:local": "wrangler d1 execute ts-status --local --file schema.sql",
+    "db:bootstrap:remote": "wrangler d1 execute ts-status --remote --file schema.sql"
   },
   "dependencies": {
-    "@terrascale/sdk": "0.0.2",
+    "@terrascale/sdk": "0.0.3",
     "ulid": "3.0.2"
   },
   "devDependencies": {

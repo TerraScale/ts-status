@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { isCanaryConfig, parseCanaries, written } from "./canary";
-import { isTerraBaseConfig, parseTerraBase } from "./terrabase";
+import { parseTerraBase } from "./terrabase";
 import { isSdkProbeConfig, runSdkDocuments } from "./sdk";
 
 const id = "01M4E7G1W82VKFPF5FJ9AVK1CV";
@@ -12,7 +12,6 @@ const canary = {
   document: id,
   key: "tb_test",
 };
-const management = { origin: canary.origin, project: id, organization: id, userId: id, key: "test-credential" };
 const sdk = {
   ...canary,
   issuer: "https://gru.auth.terrascale.tech/terrascale",
@@ -25,8 +24,8 @@ describe("probe entity IDs", () => {
     try {
       expect(parseCanaries(JSON.stringify({ [id]: canary }))).toEqual({ [id]: canary });
       expect(parseCanaries(JSON.stringify({ "data-api-canary-gru": canary }))).toEqual({});
-      expect(parseTerraBase(JSON.stringify({ [id]: management }))).toEqual({ [id]: management });
-      expect(parseTerraBase(JSON.stringify({ "management-api-gru": management }))).toBeNull();
+      expect(parseTerraBase(JSON.stringify({ [id]: canary }))).toEqual({ [id]: canary });
+      expect(parseTerraBase(JSON.stringify({ "documents-api-gru": canary }))).toBeNull();
     } finally {
       error.mockRestore();
     }
@@ -45,9 +44,8 @@ describe("probe entity IDs", () => {
     expect(collection.delete).not.toHaveBeenCalled();
   });
 
-  it("requires canonical ULIDs for project, document and management identities", () => {
+  it("requires canonical ULIDs for project and document identities", () => {
     expect(isCanaryConfig(canary)).toBe(true);
-    expect(isTerraBaseConfig("management", management)).toBe(true);
     expect(isSdkProbeConfig("documents", sdk)).toBe(true);
     for (const invalid of [
       id.toLowerCase(),
@@ -59,8 +57,6 @@ describe("probe entity IDs", () => {
         expect(isCanaryConfig({ ...canary, [field]: invalid })).toBe(false);
         expect(isSdkProbeConfig("documents", { ...sdk, [field]: invalid })).toBe(false);
       }
-      for (const field of ["project", "organization", "userId"])
-        expect(isTerraBaseConfig("management", { ...management, [field]: invalid })).toBe(false);
       expect(() =>
         written({ id: invalid, version: `tbv1-${"0".repeat(32)}`, offset: "1", durability: "local_durable" }),
       ).toThrow("Invalid response");

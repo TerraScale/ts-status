@@ -283,8 +283,6 @@ describe("app", () => {
       INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES
         ('01M4E7G1W82VKFPF5FJ9AVK1DQ', '2026-09-26 10:14:30', 'none', 0, 0, NULL,
           '[{"v":"canary","ok":null,"ms":null,"e":"Not configured"}]'),
-        ('01M4E7G1W82VKFPF5FJ9AVK1DK', '2026-09-26 10:14:30', 'none', 0, 0, NULL,
-          '[{"v":"canary","ok":null,"ms":null,"e":"Not configured"}]'),
         ('01M4E7G1W82VKFPF5FJ9AVK1DF', '2026-09-26 10:14:30', 'operational', 1, 1, 120,
           '[{"v":"canary","ok":1,"ms":120,"e":null}]');
       -- An incident outranks the note.

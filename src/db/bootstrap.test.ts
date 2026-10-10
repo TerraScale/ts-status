@@ -31,7 +31,7 @@ describe("clean D1 bootstrap", () => {
       await Promise.all([bootstrap(env), bootstrap(env)]);
       expect(executions).toBe(1);
       const ids = sqlite.prepare("SELECT id FROM endpoints ORDER BY id").all();
-      expect(ids).toHaveLength(22);
+      expect(ids).toHaveLength(19);
       expect(ids.every((row) => isId(row.id))).toBe(true);
       const incidentId = newId();
       sqlite

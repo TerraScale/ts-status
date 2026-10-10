@@ -64,9 +64,7 @@ Every entity ID is a plain, canonical uppercase 26-character Crockford ULID. `sr
 
 `schema.sql` is the idempotent clean bootstrap (one SQL statement per line for D1 `exec`); historical data migrations are removed. Fresh stores recreate the schema and catalog before serving requests or running scheduled probes. Repeated startup preserves incidents, subscriptions and operator catalog edits. Catalog IDs are fixed ULIDs; discover component IDs through `/api/v1/status` and endpoint IDs through a D1 catalog query. Probe secrets are keyed by endpoint ULID.
 
-TS-754 requires deleting the old D1 records and coordinator state before deploying this shape. The exact production D1 target is `ts-status-db` (`8a72dd69-2136-4398-8d70-92c0c2dade5a`), bound only as `STATUS_DB`. Verify that target against Cloudflare before the authorized wipe. Remove affected probe-secret entries and recreate them with canonical project/document IDs. Do not rewrite old IDs or retain compatibility paths.
-
-The retained TerraBase integration release predates the ULID contract and rejects ULID document keys. Upgrade the real-server test bootstrap and release pin when the upstream project/document contract is published; keep the integration tests as a deployment gate.
+Production uses the clean store `ts-status` (`c2eca5bc-6045-4983-941a-4e01e4e0c749`), created empty for TS-754; the pre-ULID `ts-status-db` (`8a72dd69-2136-4398-8d70-92c0c2dade5a`) is retained read-only until deletion is approved.
 
 ## Catalog
 

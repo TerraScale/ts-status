@@ -179,7 +179,6 @@ describe("runRound", () => {
       // Without TERRABASE_PROBES the TerraBase probes are not configured, never down.
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DF", state: "none", ok: 0, total: 0, values: null },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DH", state: "operational", ok: 3, total: 3, values: null },
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DK", state: "none", ok: 0, total: 0, values: null },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DQ", state: "none", ok: 0, total: 0, values: null },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DS", state: "degraded", ok: 0, total: 3, values: null },
     ]);
@@ -188,6 +187,41 @@ describe("runRound", () => {
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D8", version: "1.1.0" },
     ]);
     expect(db.sqlite.prepare("SELECT code FROM vantages").all()).toHaveLength(3);
+  });
+
+  it("runs with state keyed by retired endpoint IDs and stores none of it", async () => {
+    const db = testD1();
+    const vantage = {
+      fetch: async (_url: string, init: RequestInit) => {
+        const body = JSON.parse(String(init.body)) as ProbeRequest;
+        return Response.json({
+          vantage: "sfo",
+          colo: "SFO",
+          results: body.targets.map((target) => ({ key: target.key, status: 200, latencyMs: 40, error: null })),
+        } satisfies ProbeResponse);
+      },
+    };
+    const env = {
+      STATUS_DB: db,
+      VANTAGE_SFO: vantage,
+      VANTAGE_GRU: vantage,
+      VANTAGE_FRA: vantage,
+      VANTAGE_NRT: { fetch: async () => new Response("boom", { status: 500 }) },
+    } as unknown as Env;
+    const at = Date.parse("2026-09-26T10:01:00Z");
+    const state = await runRound(env, at, {
+      streaks: { legacy: 3 },
+      colos: {},
+      versions: { legacy: "0.9.0" },
+      trackers: {},
+    });
+    const enabled = db.sqlite.prepare("SELECT COUNT(*) AS n FROM endpoints WHERE enabled = 1").get() as { n: number };
+    expect(
+      db.sqlite.prepare("SELECT endpoint_id FROM probe_samples WHERE at = '2026-09-26 10:01:00'").all(),
+    ).toHaveLength(enabled.n);
+    expect(db.sqlite.prepare("SELECT endpoint_id FROM probe_samples WHERE endpoint_id = 'legacy'").all()).toEqual([]);
+    expect(db.sqlite.prepare("SELECT endpoint_id FROM deploys WHERE endpoint_id = 'legacy'").all()).toEqual([]);
+    expect(state.streaks).not.toHaveProperty("legacy");
   });
 });
 

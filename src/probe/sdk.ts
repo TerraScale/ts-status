@@ -75,6 +75,8 @@ export function probeCollection(
   fetcher: typeof fetch = fetch,
 ): V1Collection {
   if (!isSdkProbeConfig("documents", config)) throw new CanaryError("Invalid probe config");
+  // shortcut: SDK 0.0.3 accepts any bearer token; refuse JWTs here so none is dispatched, until the platform grant lands.
+  if (!accessToken.startsWith("tb_")) throw new TypeError("token must be a tb_ API key");
   const client = createTerraBaseClient({
     baseUrl: config.origin,
     project: config.project,

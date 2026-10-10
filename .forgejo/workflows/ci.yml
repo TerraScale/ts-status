@@ -118,7 +118,7 @@ jobs:
           # report green without deploying.
           : "${CLOUDFLARE_API_TOKEN:?deploy: CLOUDFLARE_API_TOKEN is required}"
           : "${CLOUDFLARE_ACCOUNT_ID:?deploy: CLOUDFLARE_ACCOUNT_ID is required}"
-          wrangler d1 execute ts-status-db --remote --file schema.sql
+          wrangler d1 execute ts-status --remote --file schema.sql
           # The commit marks each version: wrangler deployments list shows it.
           for config in dist/ts_status_vantage_*/wrangler.json; do
             wrangler deploy -c "$config" --tag "${COMMIT:0:12}" --message "$COMMIT" --var "VERSION:${COMMIT}"
