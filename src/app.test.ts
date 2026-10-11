@@ -25,13 +25,12 @@ function seededEnv(): Env & { STATUS_DB: TestD1 } {
     INSERT INTO incidents (id, kind, title, status, impact, scheduled_start, scheduled_end, created_at, updated_at) VALUES
       ('00000000000000000000000006', 'maintenance', 'Forgejo upgrade', 'scheduled', 'none',
        '2026-09-26 10:00:00', '2026-09-26 11:00:00', '2026-09-20 10:00:00', '2026-09-20 10:00:00'),
-      ('00000000000000000000000007', 'maintenance', 'Atlas migration', 'scheduled', 'none',
+      ('00000000000000000000000007', 'maintenance', 'Fly migration', 'scheduled', 'none',
        '2026-09-28 10:00:00', '2026-09-28 11:00:00', '2026-09-20 10:00:00', '2026-09-20 10:00:00');
-    INSERT INTO incident_components (incident_id, component_id) VALUES ('00000000000000000000000006', '01M4E7G1W82VKFPF5FJ9AVK1CZ'), ('00000000000000000000000007', '01M4E7G1W82VKFPF5FJ9AVK1CS');
+    INSERT INTO incident_components (incident_id, component_id) VALUES ('00000000000000000000000006', '01M4E7G1W82VKFPF5FJ9AVK1CZ'), ('00000000000000000000000007', '01M4E7G1W82VKFPF5FJ9AVK1CR');
     INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES
       ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 10:14:30', 'operational', 4, 4, 42, '[]'),
       ('01M4E7G1W82VKFPF5FJ9AVK1DS', '2026-09-26 10:14:30', 'operational', 4, 4, 30, '[]'),
-      ('01M4E7G1W82VKFPF5FJ9AVK1D5', '2026-09-26 10:14:30', 'operational', 4, 4, 80, '[]'),
       ('01M4E7G1W82VKFPF5FJ9AVK1DH', '2026-09-26 10:14:30', 'major_outage', 0, 4, NULL, '[]');
     INSERT INTO probe_hours (endpoint_id, hour, vantage, checks, failures, degraded, latency_sum, latency_max) VALUES
       ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 10:00:00', 'all', 30, 0, 0, 1260, 60);
@@ -130,7 +129,7 @@ describe("app", () => {
       const observations = await responses[0].json();
       expect(responses.every((response) => response.status === 200)).toBe(true);
       expect(await responses[1].json()).toEqual(observations);
-      expect(observations).toHaveLength(8);
+      expect(observations).toHaveLength(10);
       expect(observations).toEqual(expect.arrayContaining([expect.objectContaining({ target: "vantage", version })]));
       expect(fetch).toHaveBeenCalledTimes(2);
       expect(put).toHaveBeenCalledTimes(1);
@@ -166,7 +165,7 @@ describe("app", () => {
       observedAt: string;
     }[];
     expect(fetch).toHaveBeenCalledTimes(4);
-    expect(fresh).toHaveLength(8);
+    expect(fresh).toHaveLength(10);
     expect(fresh.every((row) => row.observedAt === "2026-09-26T10:15:10.000Z")).toBe(true);
     expect(exec).not.toHaveBeenCalled();
   });
@@ -270,9 +269,8 @@ describe("app", () => {
     expect(dashboard?.bars.at(-1)).toBe("operational");
     expect(data.groups[2]?.components[0]).toMatchObject({ id: "01M4E7G1W82VKFPF5FJ9AVK1CZ", status: "maintenance" });
     expect(data.regions.map((region) => [region.code, region.status])).toEqual([
-      ["SFO", "none"],
+      ["SJC", "none"],
       ["GRU", "operational"],
-      ["FRA", "none"],
     ]);
     expect(data.regions[1]?.clusters[0]).toMatchObject({ pingMs: 42, uptime: 1 });
   });
@@ -362,7 +360,7 @@ describe("app", () => {
   it("lists maintenance in progress and upcoming", async () => {
     const body = await (await app.fetch(request("/maintenance"), seededEnv(), ctx)).text();
     expect(body).toContain("In progress");
-    expect(body.indexOf("Forgejo upgrade")).toBeLessThan(body.indexOf("Atlas migration"));
+    expect(body.indexOf("Forgejo upgrade")).toBeLessThan(body.indexOf("Fly migration"));
     expect(body).toContain('data-prefix="Starts"');
   });
 
@@ -397,7 +395,7 @@ describe("app", () => {
     const response = await app.fetch(request("/ping"), seededEnv(), ctx);
     const body = await response.text();
     expect(response.headers.get("content-security-policy")).toContain("connect-src 'self' https://*.terrascale.tech");
-    expect(body).toContain('data-ping-url="https://gru.api.terrascale.tech/healthz"');
+    expect(body).toContain('data-ping-url="https://api.terrascale.tech/healthz"');
     expect(body).toContain('data-ping-url="/api/ping"');
     expect(body).toContain("Not yet live");
     expect(body.match(/class="st-ping-cell"/g)?.length).toBeGreaterThanOrEqual(4);
@@ -425,7 +423,7 @@ describe("app", () => {
     expect(summary.incidents[0]?.incident_updates).toHaveLength(2);
     // Both were last updated in the same second; the id breaks the tie.
     expect(summary.scheduled_maintenances.map((entry) => [entry.name, entry.status])).toEqual([
-      ["Atlas migration", "scheduled"],
+      ["Fly migration", "scheduled"],
       ["Forgejo upgrade", "in_progress"],
     ]);
     const upcoming = (await (
@@ -505,11 +503,11 @@ describe("app", () => {
     const data = (await response.json()) as RegionLatency;
     expect(data.generated_at).toBe("2026-09-26T10:15:00.000Z");
     expect(data.window).toBe("1h");
-    expect(data.regions.map((region) => region.code)).toEqual(["sfo", "gru", "fra"]);
+    expect(data.regions.map((region) => region.code)).toEqual(["sjc", "gru"]);
     expect(data.regions[1]).toEqual({
       code: "gru",
       name: "São Paulo",
-      ping_url: "https://gru.api.terrascale.tech/healthz",
+      ping_url: "https://api.terrascale.tech/healthz",
       status: "operational",
       consensus: { median_ms: 67, p95_ms: 97, samples: 4 },
       vantages: [
@@ -536,7 +534,7 @@ describe("app", () => {
     expect(env.STATUS_DB.batches).toBe(1);
     expect((await read("/api/latency?region=GRU")).regions[0]?.code).toBe("gru");
     expect((await read("/api/latency?region=unknown")).regions).toEqual([]);
-    expect((await read("/api/latency")).regions).toHaveLength(3);
+    expect((await read("/api/latency")).regions).toHaveLength(2);
     expect(env.STATUS_DB.batches).toBe(4);
   });
 

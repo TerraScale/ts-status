@@ -273,7 +273,7 @@ export async function startTerraBase() {
       { name: collection },
       { authorization: `Bearer ${key}` },
     );
-    const canary: CanaryConfig = { origin, project, database, collection, document: newId(), key };
+    const canary: CanaryConfig = { origin, region: "gru", project, database, collection, document: newId(), key };
     return {
       origin,
       admin,

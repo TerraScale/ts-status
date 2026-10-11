@@ -8,16 +8,14 @@ describe("probe catalog", () => {
 
   it("names the regions", () => {
     expect(sql.prepare("SELECT code, name FROM regions ORDER BY position").all()).toEqual([
-      { code: "SFO", name: "San Jose" },
+      { code: "SJC", name: "San Jose" },
       { code: "GRU", name: "São Paulo" },
-      { code: "FRA", name: "Frankfurt" },
     ]);
   });
 
   it("enables launched checks and observes pending OIDC discovery", () => {
     expect(sql.prepare("SELECT id FROM endpoints WHERE enabled = 1 ORDER BY id").all()).toEqual([
       { id: "01M4E7G1W82VKFPF5FJ9AVK1D4" },
-      { id: "01M4E7G1W82VKFPF5FJ9AVK1D5" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1D6" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1D7" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1D8" },
@@ -29,13 +27,10 @@ describe("probe catalog", () => {
     ]);
     expect(sql.prepare("SELECT id FROM endpoints WHERE enabled = 0 ORDER BY id").all()).toEqual([
       { id: "01M4E7G1W82VKFPF5FJ9AVK1D9" },
-      { id: "01M4E7G1W82VKFPF5FJ9AVK1DA" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DC" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DD" },
-      { id: "01M4E7G1W82VKFPF5FJ9AVK1DE" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DG" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DN" },
-      { id: "01M4E7G1W82VKFPF5FJ9AVK1DP" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DR" },
     ]);
   });
@@ -44,14 +39,13 @@ describe("probe catalog", () => {
     const rows = sql
       .prepare(
         `SELECT id, url, expect_status, assertions FROM endpoints
-          WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1D4', '01M4E7G1W82VKFPF5FJ9AVK1DC', '01M4E7G1W82VKFPF5FJ9AVK1DB', '01M4E7G1W82VKFPF5FJ9AVK1DA') ORDER BY id`,
+          WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1D4', '01M4E7G1W82VKFPF5FJ9AVK1DC', '01M4E7G1W82VKFPF5FJ9AVK1DB') ORDER BY id`,
       )
       .all();
     expect(rows.map((row) => [row.id, new URL(String(row.url)).host])).toEqual([
       ["01M4E7G1W82VKFPF5FJ9AVK1D4", "api.terrascale.tech"],
-      ["01M4E7G1W82VKFPF5FJ9AVK1DA", "fra.api.terrascale.tech"],
-      ["01M4E7G1W82VKFPF5FJ9AVK1DB", "gru.api.terrascale.tech"],
-      ["01M4E7G1W82VKFPF5FJ9AVK1DC", "sfo.api.terrascale.tech"],
+      ["01M4E7G1W82VKFPF5FJ9AVK1DB", "api.terrascale.tech"],
+      ["01M4E7G1W82VKFPF5FJ9AVK1DC", "api.terrascale.tech"],
     ]);
     for (const row of rows) {
       expect(new URL(String(row.url)).pathname).toBe(
@@ -86,7 +80,7 @@ describe("probe catalog", () => {
         url: "/readyz",
       },
     ]);
-    expect(sql.prepare("SELECT count(*) AS n FROM endpoints WHERE probe IS NOT NULL").get()).toEqual({ n: 6 });
+    expect(sql.prepare("SELECT count(*) AS n FROM endpoints WHERE probe IS NOT NULL").get()).toEqual({ n: 4 });
   });
 
   it("labels OIDC pending while keeping its non-404 failures in active authentication", () => {
@@ -166,32 +160,23 @@ describe("probe catalog", () => {
       indirect: number;
     };
 
-  it("checks Atlas discovery without naming a region", () => {
-    const atlas = endpoint("01M4E7G1W82VKFPF5FJ9AVK1D5");
-    expect(atlas.url).toBe("https://atlas.terrascale.tech/api/v1/regions");
-    expect(atlas.assertions).toBe('[{"path":"regions[0].code","op":"exists"},{"path":"hosts","op":"exists"}]');
-    expect(atlas.extract).toBe("{}");
-    const outcome = (body: unknown) =>
-      judge(parseSpec(atlas), { status: 200, error: null, body: JSON.stringify(body) }).outcome;
-    const live = {
-      regions: [
-        { code: "GRU", name: "São Paulo", available: true },
-        { code: "SFO", name: "San Francisco", available: true },
-      ],
-      hosts: { GRU: "gru.api.terrascale.tech", SFO: "sfo.api.terrascale.tech" },
-      updated: "2026-10-10T22:16:00Z",
-    };
-    expect(outcome(live)).toBe("ok");
-    expect(outcome({ ...live, regions: [] })).toBe("fail");
-  });
-
-  it("keeps the production GRU hostname for the canary and browser ping", () => {
+  it("serves every region from the public API host, preferring each region through Fly", () => {
     expect(sql.prepare("SELECT url FROM endpoints WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1D9'").get()).toEqual({
-      url: "https://gru.api.terrascale.tech",
+      url: "https://api.terrascale.tech",
     });
     expect(sql.prepare("SELECT ping_url FROM regions WHERE code = 'GRU'").get()).toEqual({
-      ping_url: "https://gru.api.terrascale.tech/healthz",
+      ping_url: "https://api.terrascale.tech/healthz",
     });
+    expect(
+      sql
+        .prepare(
+          "SELECT region_code, headers FROM endpoints WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1DB', '01M4E7G1W82VKFPF5FJ9AVK1DC') ORDER BY region_code",
+        )
+        .all(),
+    ).toEqual([
+      { region_code: "GRU", headers: '{"fly-prefer-region":"gru"}' },
+      { region_code: "SJC", headers: '{"fly-prefer-region":"sjc"}' },
+    ]);
   });
 
   it("checks the actual dashboard and C# auth readiness contracts", () => {

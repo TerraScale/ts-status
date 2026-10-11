@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { isCanaryConfig, parseCanaries, written } from "./canary";
-import { parseTerraBase } from "./terrabase";
+import { isTerraBaseConfig, parseTerraBase } from "./terrabase";
 import { isSdkProbeConfig, runSdkDocuments } from "./sdk";
 
 const id = "01M4E7G1W82VKFPF5FJ9AVK1CV";
 const canary = {
-  origin: "https://gru.api.terrascale.tech",
+  origin: "https://api.terrascale.tech",
+  region: "gru",
   project: id,
   database: "status_canary",
   collection: "canary",
@@ -42,6 +43,14 @@ describe("probe entity IDs", () => {
     expect(result).toEqual({ ok: false, latencyMs: null, error: "Invalid probe config" });
     expect(collection.put).not.toHaveBeenCalled();
     expect(collection.delete).not.toHaveBeenCalled();
+  });
+
+  it("requires a Fly region on every canary and TerraBase config", () => {
+    expect(isCanaryConfig({ ...canary, region: "sjc" })).toBe(true);
+    expect(isCanaryConfig({ ...canary, region: "SJC" })).toBe(false);
+    expect(isCanaryConfig({ ...canary, region: undefined })).toBe(false);
+    expect(isTerraBaseConfig("health", { origin: canary.origin, region: "gru" })).toBe(true);
+    expect(isTerraBaseConfig("health", { origin: canary.origin })).toBe(false);
   });
 
   it("requires canonical ULIDs for project and document identities", () => {

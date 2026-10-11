@@ -51,7 +51,7 @@ describe("published TerraBase probes", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("X-TerraBase-Region")).toBe(testRegion);
     expect(await response.json()).toMatchObject({ status: "ready", region: testRegion });
-    const result = await runTerraBase("health", { origin: api.origin }, "round", api.fetcher);
+    const result = await runTerraBase("health", { origin: api.origin, region: "gru" }, "round", api.fetcher);
     expect(result).toMatchObject({ ok: true, error: null });
   });
 
@@ -101,9 +101,9 @@ describe("published TerraBase probes", () => {
 
   it("validates the new config and treats absent and malformed secrets differently", () => {
     expect(isTerraBaseConfig("documents", api.canary)).toBe(true);
-    expect(isTerraBaseConfig("health", { origin: api.origin })).toBe(true);
+    expect(isTerraBaseConfig("health", { origin: api.origin, region: "gru" })).toBe(true);
     expect(isTerraBaseConfig("documents", { ...api.canary, key: "tbk1_retired" })).toBe(false);
-    expect(isConfigured("documents", { origin: api.origin })).toBe(false);
+    expect(isConfigured("documents", { origin: api.origin, region: "gru" })).toBe(false);
     expect(isConfigured("health", undefined)).toBe(false);
     expect(isConfigured("documents", null)).toBe(true);
     vi.spyOn(console, "error").mockImplementation(() => {});
