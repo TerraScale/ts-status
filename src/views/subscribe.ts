@@ -9,7 +9,6 @@ import type { Page } from "./layout";
 
 export interface SubscribeForm {
   components: readonly Component[];
-  email: boolean;
   error?: string;
   values?: { channel?: string; target?: string; components?: readonly string[] };
 }
@@ -31,7 +30,7 @@ const head = (eyebrow: string, title: string, detail: string | Html) => html`<he
 
 export function subscribeForm(form: SubscribeForm): Page {
   const chosen = new Set(form.values?.components ?? []);
-  const channel = form.values?.channel ?? (form.email ? "email" : "webhook");
+  const channel = form.values?.channel ?? "email";
   const option = (value: string, label: string) =>
     html`<label class="st-choice"><input type="radio" name="channel" value="${value}"${channel === value ? raw(" checked") : ""}> ${label}</label>`;
   return shell(
@@ -42,7 +41,7 @@ export function subscribeForm(form: SubscribeForm): Page {
     { id: "subscribe", title: "Where to send them" },
     html`<form class="st-form" method="post" action="/subscribe">
     <fieldset class="st-choices"><legend class="ts-sr-only">Channel</legend>
-      ${form.email ? option("email", "Email") : ""}${option("webhook", "Webhook (Discord, Slack or any HTTPS URL)")}
+      ${option("email", "Email")}${option("webhook", "Webhook (Discord, Slack or any HTTPS URL)")}
     </fieldset>
     <label class="st-field"><span>Email address or webhook URL</span>
       <input class="ts-input" name="target" required maxlength="500" autocomplete="email" value="${form.values?.target ?? ""}" placeholder="you@example.com or https://discord.com/api/webhooks/…">

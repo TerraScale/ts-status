@@ -10,13 +10,11 @@
    not wake anyone. Operator incidents notify at once. */
 
 import { newId } from "../ids";
-import { logEvent } from "../log";
 
 import { iso, sqlTime } from "../db/reads";
 import type { IncidentImpact, IncidentKind, IncidentStatus } from "../domain/status";
 import type { Env } from "../env";
 import { email, webhook, type Notice } from "./messages";
-import { send, type Connect, type SmtpConfig } from "./smtp";
 import { sign, webhookKey } from "./tokens";
 import { post } from "./webhooks";
 
@@ -88,27 +86,11 @@ interface Due {
 }
 
 export interface Delivery {
-  connect: Connect;
   fetcher?: typeof fetch;
 }
 
-/** The SMTP relay, when configured. The client speaks STARTTLS only, so a
-    port expecting TLS from the first byte (465) leaves email off. */
-export function smtpConfig(env: Env): (SmtpConfig & { from: string }) | null {
-  if (!env.SMTP_HOST || !env.SMTP_USERNAME || !env.SMTP_PASSWORD || !env.SMTP_FROM) return null;
-  const port = Number(env.SMTP_PORT ?? 587);
-  if (port === 465) {
-    logEvent("error", "SMTP_PORT 465 needs implicit TLS; use a STARTTLS port such as 587", { component: "outbox" });
-    return null;
-  }
-  return {
-    host: env.SMTP_HOST,
-    port,
-    username: env.SMTP_USERNAME,
-    password: env.SMTP_PASSWORD,
-    from: env.SMTP_FROM,
-  };
-}
+/** Sender of every subscription message; the domain is onboarded for Email Sending. */
+const SENDER = { email: "noreply@terrascale.tech", name: "TerraScale Status" };
 
 /** The links a subscriber's messages carry. */
 export async function links(env: Env & { SUBSCRIPTION_SECRET: string }, subscriberId: string) {
@@ -121,12 +103,7 @@ export async function links(env: Env & { SUBSCRIPTION_SECRET: string }, subscrib
   };
 }
 
-async function deliver(
-  env: Env & { SUBSCRIPTION_SECRET: string },
-  row: Due,
-  delivery: Delivery,
-  now: number,
-): Promise<void> {
+async function deliver(env: Env & { SUBSCRIPTION_SECRET: string }, row: Due, delivery: Delivery): Promise<void> {
   const origin = env.PUBLIC_ORIGIN ?? "https://status.terrascale.tech";
   const notice: Notice = {
     kind: row.kind,
@@ -147,13 +124,7 @@ async function deliver(
   };
   if (row.kind === "update" && (!notice.incident || !notice.update)) throw new Error("Update no longer exists");
   if (row.channel === "email") {
-    const config = smtpConfig(env);
-    if (!config) throw new Error("Email is not configured");
-    await send(delivery.connect, config, {
-      from: config.from,
-      to: row.target,
-      data: email(notice, config.from, row.target, now),
-    });
+    await env.EMAIL.send({ from: SENDER, to: row.target, ...email(notice) });
   } else {
     const request = await webhook(notice, await webhookKey(env.SUBSCRIPTION_SECRET, row.subscriberId));
     await post(row.target, request.body, request.headers, delivery.fetcher);
@@ -180,7 +151,7 @@ export async function deliverDue(
   const results = await Promise.all(
     rows.map(async (row) => {
       try {
-        await deliver(signed, row, delivery, now);
+        await deliver(signed, row, delivery);
         await env.STATUS_DB.prepare("UPDATE outbox SET sent_at = ?2, claim = NULL, last_error = NULL WHERE id = ?1")
           .bind(row.id, sqlTime(now))
           .run();

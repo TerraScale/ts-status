@@ -5,17 +5,23 @@ import type { Env } from "../env";
 import { testD1, type TestD1 } from "../testing/d1";
 import { runOutbox } from "./outbox";
 import { sign } from "./tokens";
-import type { Socket } from "./smtp";
 
 // Subscribing stamps rows with the real clock; the hold test uses fixed times.
 const BASE = Date.parse("2026-09-26T10:00:00Z");
 const DISCORD = "https://discord.com/api/webhooks/123/abc";
 
 function setup(extra: Partial<Env> = {}) {
+  const emails: { from: { email: string }; to: string; subject: string }[] = [];
   const env = {
     STATUS_DB: testD1(),
     SUBSCRIPTION_SECRET: "test-secret",
     PUBLIC_ORIGIN: "https://status.test",
+    EMAIL: {
+      send: async (message: (typeof emails)[number]) => {
+        emails.push(message);
+        return { messageId: newId() };
+      },
+    },
     ...extra,
   } as unknown as Env & { STATUS_DB: TestD1 };
   const posted: { url: string; body: Record<string, unknown>; headers: Headers }[] = [];
@@ -49,14 +55,17 @@ function setup(extra: Partial<Env> = {}) {
   };
   const get = (path: string) =>
     app.fetch(new Request(`https://status.test${path}`) as Request<unknown, IncomingRequestCfProperties>, env, ctx);
-  const outbox = (at: number) =>
-    runOutbox(env, at, {
-      connect: () => {
-        throw new Error("no smtp");
-      },
-      fetcher,
-    });
-  return { env, sql: env.STATUS_DB.sqlite, posted, form, get, outbox, fail: (value: boolean) => (failing = value) };
+  const outbox = (at: number) => runOutbox(env, at, { fetcher });
+  return {
+    env,
+    sql: env.STATUS_DB.sqlite,
+    posted,
+    emails,
+    form,
+    get,
+    outbox,
+    fail: (value: boolean) => (failing = value),
+  };
 }
 
 /** Confirms a subscriber through the link its confirmation carried. */
@@ -271,9 +280,8 @@ describe("subscriptions", () => {
     );
     expect((await t.form("/subscribe", { channel: "webhook", target: DISCORD, website: "spam" })).status).toBe(202);
     expect(t.sql.prepare("SELECT count(*) AS n FROM subscribers").get()).toEqual({ n: 0 });
-    // Without SMTP, email is not offered and falls back to webhook validation.
-    expect(await (await t.form("/subscribe", { channel: "email", target: "a@example.com" })).text()).toContain(
-      "Enter an HTTPS webhook URL",
+    expect(await (await t.form("/subscribe", { channel: "email", target: "not an address" })).text()).toContain(
+      "Enter a valid email address.",
     );
     t.sql.exec(
       `INSERT INTO subscribers (id, channel, target, flavor, confirmed_at) VALUES ('00000000000000000000000016', 'webhook', '${DISCORD}', 'discord', datetime('now'))`,
@@ -285,69 +293,19 @@ describe("subscriptions", () => {
     expect((await off.get("/subscribe")).status).toBe(503);
   });
 
-  it("sends email through the SMTP relay", async () => {
-    const t = setup({
-      SMTP_HOST: "smtp.test",
-      SMTP_USERNAME: "u@oci",
-      SMTP_PASSWORD: "p",
-      SMTP_FROM: "noreply@terrascale.tech",
-    });
+  it("sends email through the Email Sending binding", async () => {
+    const t = setup();
     await t.form("/subscribe", { channel: "email", target: "Ops@Example.com" });
     expect(t.sql.prepare("SELECT target, flavor FROM subscribers").get()).toEqual({
       target: "ops@example.com",
       flavor: "email",
     });
-    const sent: string[] = [];
-    const socket = (): Socket => {
-      let push: (text: string) => void = () => {};
-      let data = false;
-      return {
-        readable: new ReadableStream({
-          start(controller) {
-            push = (text) => controller.enqueue(new TextEncoder().encode(text));
-            push("220 ready\r\n");
-          },
-        }),
-        writable: new WritableStream({
-          write(chunk) {
-            const text = new TextDecoder().decode(chunk);
-            if (data) {
-              sent.push(text);
-              data = false;
-              return push("250 queued\r\n");
-            }
-            const verb = text.split(" ")[0]?.trim() ?? "";
-            if (verb === "DATA") data = true;
-            push(
-              {
-                EHLO: "250 ok\r\n",
-                AUTH: "235 ok\r\n",
-                DATA: "354 go\r\n",
-                QUIT: "221 bye\r\n",
-                STARTTLS: "220 go\r\n",
-              }[verb] ?? "250 ok\r\n",
-            );
-          },
-        }),
-        startTls: () => {
-          const next = socket();
-          // The upgraded socket greets nobody: drop its banner.
-          return {
-            ...next,
-            readable: next.readable.pipeThrough(
-              new TransformStream({
-                transform: (chunk, controller) =>
-                  new TextDecoder().decode(chunk).startsWith("220 ready") ? undefined : controller.enqueue(chunk),
-              }),
-            ),
-          };
-        },
-        close: async () => {},
-      };
-    };
-    // The immediate attempt had no relay in tests; the retry a minute on sends it.
-    expect(await runOutbox(t.env, Date.now() + 61_000, { connect: socket })).toEqual({ sent: 1, failed: 0 });
-    expect(sent[0]).toContain("Subject: Confirm your TerraScale status subscription");
-    expect(sent[0]).toContain("To: <ops@example.com>");
+    expect(t.emails).toEqual([
+      expect.objectContaining({
+        from: { email: "noreply@terrascale.tech", name: "TerraScale Status" },
+        to: "ops@example.com",
+        subject: "Confirm your TerraScale status subscription",
+      }),
+    ]);
   });
 });

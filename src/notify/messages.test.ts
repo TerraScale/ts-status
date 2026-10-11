@@ -21,21 +21,16 @@ const update: Notice = {
   update: { status: "investigating", body: "Looking <now>.", createdAt: "2026-09-26T10:00:00Z" },
 };
 
-const decode = (message: string, type: string) => {
-  const part =
-    message.split(`Content-Type: ${type}; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n`)[1] ?? "";
-  const encoded = part.split("\r\n--")[0]?.replaceAll("\r\n", "") ?? "";
-  return new TextDecoder().decode(Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0)));
-};
-
 describe("email", () => {
-  it("encodes headers and carries text, HTML and one-click unsubscribe", () => {
-    const message = email(update, "noreply@terrascale.tech", "a@example.com", 0);
-    expect(message).toMatch(/^Subject: =\?UTF-8\?B\?.+\?=$/m);
-    expect(message).toContain("List-Unsubscribe-Post: List-Unsubscribe=One-Click");
-    expect(decode(message, "text/plain")).toContain("Investigating: Looking <now>.");
-    expect(decode(message, "text/html")).toContain("Looking &lt;now&gt;.");
-    for (const line of message.split("\r\n")) expect(line.length).toBeLessThanOrEqual(998);
+  it("carries subject, text, HTML and one-click unsubscribe headers", () => {
+    const message = email(update);
+    expect(message.subject).toBe("[TerraScale] Investigating: Dashboard é down");
+    expect(message.text).toContain("Investigating: Looking <now>.");
+    expect(message.html).toContain("Looking &lt;now&gt;.");
+    expect(message.headers).toEqual({
+      "List-Unsubscribe": "<https://s.test/subscribe/manage?id=s&token=t>",
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
   });
 });
 

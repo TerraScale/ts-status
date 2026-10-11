@@ -26,7 +26,7 @@ placed near their named regions to measure the services from those locations.
 
 The repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are
 required and checked before deployment. The status Worker's operator,
-subscription, SMTP and service-probe credentials remain runtime secrets.
+subscription and service-probe credentials remain runtime secrets.
 
 The source commit tags each Cloudflare deployment and supplies the status
 Worker's `VERSION` binding. `GET https://status.terrascale.tech/health/version`

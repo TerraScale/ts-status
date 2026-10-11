@@ -32,7 +32,6 @@ export default defineConfig({
     include: ["src/**/*.test.ts"],
     alias: {
       "cloudflare:workers": join(root, "src/testing/cloudflare-workers.ts"),
-      "cloudflare:sockets": join(root, "src/testing/cloudflare-sockets.ts"),
     },
   },
   fmt: {
