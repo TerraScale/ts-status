@@ -54,7 +54,7 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 | `src/vantage/`    | The vantage Worker that probes targets for the coordinator              |
 | `src/api/`        | The v1, Statuspage-compatible and operator JSON APIs                    |
 | `src/feeds/`      | Atom, RSS and iCalendar feeds, and SVG status badges                    |
-| `src/notify/`     | Subscriptions, the outbox, email over SMTP and webhooks                 |
+| `src/notify/`     | Subscriptions, the outbox, email and webhooks                           |
 | `src/views/`      | HTML views and the client script                                        |
 | `src/styles/`     | Design tokens and styles, bundled and minified by Lightning CSS         |
 
@@ -166,12 +166,12 @@ Editing an automatic incident takes it over from the probe coordinator. Pausing 
 
 Visitors subscribe on `/subscribe` by email or webhook (Discord, Slack, or any public HTTPS URL), optionally to some components only, and confirm by double opt-in. Confirm and unsubscribe links are HMAC-signed with `SUBSCRIPTION_SECRET` and act only through POST forms, so link scanners cannot trigger them; emails carry RFC 8058 one-click unsubscribe, and generic webhooks an `x-terrascale-signature: sha256=…` HMAC of the body, keyed by the `signingKey` their confirmation request carries. Requests are rate limited per IP (per /64 for IPv6), a target gets at most one confirmation an hour and three in all, and a honeypot field drops bots. Delivery runs claim their messages first, so overlapping runs never send one twice.
 
-The minute cron enqueues up to 1,000 eligible subscriber/update pairs into the D1 `outbox` with one insert query and delivers up to 20 due messages, retrying failures with exponential backoff (8 attempts). Later runs resume the unqueued backlog. Automatic incidents notify only once they have lasted five minutes; one resolved sooner notifies nobody. Email goes through OCI Email Delivery's SMTP relay (STARTTLS on 587, over Cloudflare TCP sockets) with the credentials ts-auth uses.
+The minute cron enqueues up to 1,000 eligible subscriber/update pairs into the D1 `outbox` with one insert query and delivers up to 20 due messages, retrying failures with exponential backoff (8 attempts). Later runs resume the unqueued backlog. Automatic incidents notify only once they have lasted five minutes; one resolved sooner notifies nobody. Email goes through Cloudflare Email Sending (the `EMAIL` binding in `wrangler.jsonc`), from `noreply@terrascale.tech`.
 
 ## Deploy
 
 CI deploys qualified main revisions. OCI Vault must automatically provision and
-deliver operator, subscription, SMTP and probe credentials, and deliver the
+deliver operator, subscription and probe credentials, and deliver the
 vendor-issued Cloudflare deployment token stored once. There are no manual
 Worker-secret commands or email/probe activation steps.
 

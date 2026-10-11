@@ -12,7 +12,6 @@ import { isId } from "./ids";
 
 import { operator } from "./api/operator";
 import { regionLatencyDocument } from "./api/latency";
-import { connect } from "./notify/connect";
 import { deliverDue, runOutbox } from "./notify/outbox";
 import { subscriptions } from "./notify/subscribe";
 import { statuspage, type StatuspageDocument } from "./api/statuspage";
@@ -391,7 +390,7 @@ export default {
       const answer = await subscriptions(env, request, now);
       if (answer instanceof Response) return secure(answer, false);
       // Send a new confirmation right away instead of on the next cron run.
-      if (answer.deliver) ctx.waitUntil(deliverDue(env, now, { connect }, answer.deliver));
+      if (answer.deliver) ctx.waitUntil(deliverDue(env, now, {}, answer.deliver));
       const context = {
         now,
         origin: url.origin,
@@ -446,7 +445,7 @@ export default {
   async scheduled(controller, env, ctx): Promise<void> {
     await bootstrap(env);
     const now = controller.scheduledTime;
-    const work: Promise<unknown>[] = [coordinator(env).arm(), rollup(env, now), runOutbox(env, now, { connect })];
+    const work: Promise<unknown>[] = [coordinator(env).arm(), rollup(env, now), runOutbox(env, now, {})];
     if (new Date(now).getUTCMinutes() === CHECK_MINUTE) work.push(checkCertificates(env, now));
     ctx.waitUntil(Promise.all(work));
   },

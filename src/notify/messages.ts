@@ -2,8 +2,6 @@
    as an email (plain text and HTML) or a webhook payload for Discord,
    Slack, or anything else (signed JSON). */
 
-import { newId } from "../ids";
-
 import type { IncidentImpact, IncidentKind, IncidentStatus } from "../domain/status";
 import { escape } from "../html";
 import { hmacHex } from "./webhooks";
@@ -50,14 +48,6 @@ function lines(notice: Notice): string[] {
   ];
 }
 
-/** RFC 2047 encoding for header text outside ASCII. */
-const header = (text: string): string =>
-  /^[\x20-\x7e]*$/.test(text) ? text : `=?UTF-8?B?${btoa(String.fromCharCode(...new TextEncoder().encode(text)))}?=`;
-
-/** Base64 of UTF-8 text in 76-character lines. */
-const base64 = (text: string): string =>
-  (btoa(String.fromCharCode(...new TextEncoder().encode(text))).match(/.{1,76}/g) ?? []).join("\r\n");
-
 function html(notice: Notice): string {
   const [first, ...rest] = lines(notice);
   const link = notice.kind === "confirm" ? notice.links.confirm : notice.links.incident;
@@ -76,35 +66,17 @@ ${rest
 </div></body></html>`;
 }
 
-/** The full email message, headers and body. */
-export function email(notice: Notice, from: string, to: string, now: number): string {
-  const boundary = `ts-${newId()}`;
-  const text = [...lines(notice), "", `Unsubscribe: ${notice.links.manage}`].join("\r\n");
-  return [
-    `From: ${header("TerraScale Status")} <${from}>`,
-    `To: <${to}>`,
-    `Subject: ${header(subject(notice))}`,
-    `Date: ${new Date(now).toUTCString()}`,
-    `Message-ID: <${newId()}@status.terrascale.tech>`,
-    "MIME-Version: 1.0",
-    "Auto-Submitted: auto-generated",
-    `List-Unsubscribe: <${notice.links.manage}>`,
-    "List-Unsubscribe-Post: List-Unsubscribe=One-Click",
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
-    "",
-    `--${boundary}`,
-    "Content-Type: text/plain; charset=utf-8",
-    "Content-Transfer-Encoding: base64",
-    "",
-    base64(text),
-    `--${boundary}`,
-    "Content-Type: text/html; charset=utf-8",
-    "Content-Transfer-Encoding: base64",
-    "",
-    base64(html(notice)),
-    `--${boundary}--`,
-    "",
-  ].join("\r\n");
+/** The email parts for Cloudflare Email Sending, with one-click unsubscribe (RFC 8058). */
+export function email(notice: Notice) {
+  return {
+    subject: subject(notice),
+    text: [...lines(notice), "", `Unsubscribe: ${notice.links.manage}`].join("\n"),
+    html: html(notice),
+    headers: {
+      "List-Unsubscribe": `<${notice.links.manage}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    },
+  };
 }
 
 /** A webhook request body and headers for the subscriber's flavor. Generic

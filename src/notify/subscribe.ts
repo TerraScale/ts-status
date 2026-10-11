@@ -19,7 +19,7 @@ import {
   unavailablePage,
   unsubscribedPage,
 } from "../views/subscribe";
-import { links, MAX_ATTEMPTS, smtpConfig } from "./outbox";
+import { links, MAX_ATTEMPTS } from "./outbox";
 import { verify } from "./tokens";
 import { isEmail, webhookFlavor } from "./webhooks";
 
@@ -60,14 +60,13 @@ async function fields(request: Request): Promise<URLSearchParams> {
 
 async function subscribe(env: Env, request: Request, now: number): Promise<Answer> {
   const catalog = await components(env);
-  const email = smtpConfig(env) !== null;
   const form = await fields(request);
-  const channel = form.get("channel") === "email" && email ? "email" : "webhook";
+  const channel = form.get("channel") === "email" ? "email" : "webhook";
   const target = (form.get("target") ?? "").trim();
   const supplied = [...new Set(form.getAll("components"))];
   const chosen = supplied.filter((id) => catalog.some((component) => component.id === id));
   const retry = (error: string, status = 400): Answer => ({
-    page: subscribeForm({ components: catalog, email, error, values: { channel, target, components: chosen } }),
+    page: subscribeForm({ components: catalog, error, values: { channel, target, components: chosen } }),
     status,
   });
 
@@ -164,7 +163,7 @@ export async function subscriptions(env: Env, request: Request, now: number): Pr
   switch (`${method} ${url.pathname}`) {
     case "GET /subscribe":
       return {
-        page: subscribeForm({ components: await components(env), email: smtpConfig(env) !== null }),
+        page: subscribeForm({ components: await components(env) }),
         status: 200,
       };
     case "POST /subscribe":

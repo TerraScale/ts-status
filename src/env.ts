@@ -2,6 +2,18 @@
 
 import type { Coordinator } from "./probe/coordinator";
 
+/** The Email Sending binding's send method; the message fields we use. */
+export interface EmailSender {
+  send(message: {
+    from: { email: string; name: string };
+    to: string;
+    subject: string;
+    text: string;
+    html: string;
+    headers: Record<string, string>;
+  }): Promise<{ messageId: string }>;
+}
+
 export interface Env {
   /** Full source revision set by the main deployment job. */
   VERSION?: string;
@@ -17,12 +29,8 @@ export interface Env {
   PUBLIC_ORIGIN?: string;
   /** Signs subscription links and generic webhooks (a Worker secret). */
   SUBSCRIPTION_SECRET?: string;
-  /** OCI Email Delivery's SMTP relay (secrets), as ts-auth uses it. */
-  SMTP_HOST?: string;
-  SMTP_PORT?: string;
-  SMTP_USERNAME?: string;
-  SMTP_PASSWORD?: string;
-  SMTP_FROM?: string;
+  /** Cloudflare Email Sending, from the send_email binding in wrangler.jsonc. */
+  EMAIL: EmailSender;
   /** The data API canary's documents and scoped keys, as JSON keyed by
       canary endpoint id (a Worker secret; see src/probe/canary.ts). */
   DATA_API_CANARY?: string;
