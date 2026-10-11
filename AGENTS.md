@@ -15,10 +15,12 @@ AI IS NOT ALLOWED TO EDIT THIS FILE ONLY HUMANS CAN!
   subscriptions and probe coordination on Cloudflare D1/Durable Objects so a
   TerraBase outage cannot take down its status page. Other TerraScale products
   use TerraBase under the Ouroboros rule.
-- Atlas is authoritative for regional origins. Monitoring must discover every
-  admitted region and follow placement changes automatically; do not maintain
-  a static region list or copy probe credentials. Region identity does not
-  imply a DNS hostname. Never invent a route or hostname from it.
+- Fly is authoritative for regional origins. The global public host
+  `api.terrascale.tech` serves every region; the probe pins a region with the
+  `fly-prefer-region` header (regions gru and sjc today). Monitoring must
+  discover every region and follow placement changes automatically; do not
+  maintain a static region list or copy probe credentials. Region identity does
+  not imply a DNS hostname. Never invent a route or hostname from it.
 
 ## D1 data and the CI deploy token
 
@@ -27,10 +29,10 @@ AI IS NOT ALLOWED TO EDIT THIS FILE ONLY HUMANS CAN!
   User decision 2026-10-07: the status page must keep working while TerraBase
   is down. Never move ts-status data to TerraBase or add a TerraBase dependency
   to the data path.
-- The vendor-issued Cloudflare deployment token is stored once in OCI Vault
-  and must be delivered automatically to CI, scoped only to ts-status
-  (Workers scripts and routes, D1 Edit). The current repo-secret consumer is
-  an implementation gap. Never print or copy it; check scope on D1 error 7403.
+- The vendor-issued Cloudflare deployment token is stored once as a GitHub
+  Actions secret on this repo, read only by CI (GitHub Actions on Blacksmith
+  runners), scoped only to ts-status (Workers scripts and routes, D1 Edit).
+  Never print or copy it; check scope on D1 error 7403.
 
 ## Cloudflare: use the `cf` CLI
 The Cloudflare CLI `cf` (npm package `cf`, v1.0.0-beta.10, installed through the mise Node toolchain) is installed and logged in on all 3 T3 hosts (delta, beta, mariogk-dev) as `mariogk01@gmail.com`, whose account owns the `terrascale.tech` zone.
@@ -56,9 +58,9 @@ The Cloudflare CLI `cf` (npm package `cf`, v1.0.0-beta.10, installed through the
 ## Zero configuration (user decision 2026-10-09, do not revert)
 
 - Every feature is always on. No feature flags, on/off variables, opt-in settings, boolean enabled configuration keys, deploy toggles or kill switches in code, config or CI. Delete switches and their guarded paths.
-- Every region always serves. NetBird network membership admits a node automatically; it discovers every region, infers its own region from where it runs and starts serving without a per-region enable step.
-- OCI Vault automatically creates, delivers and configures every first-party production secret. Vendor-issued keys (such as Stripe and Cloudflare) are stored once in Vault and picked up automatically; nobody copies secrets by hand.
+- Every region always serves. Fly regions (gru and sjc today) start serving as soon as their machines boot, with no per-region enable step.
+- Production secrets are fly secrets on their Fly app, set once and never copied by hand. Vendor-issued keys (such as Stripe and Cloudflare) are set the same way; ts-status CI reads its Cloudflare token from its GitHub Actions secret.
 - Values have one correct setting in code. Expose no tuning knobs. Fakes, demo stores and skip-auth belong only in test code and test binaries.
 - CI rejects new switch-style configuration; ts-reviewer requests changes. Only unavoidable third-party names may have a narrow allowance with a one-line reason.
 
-Discover every public regional service automatically; OCI Vault supplies monitoring and Cloudflare credentials.
+Discover every public regional service automatically; probe and Cloudflare credentials come from secrets, never copied by hand.
