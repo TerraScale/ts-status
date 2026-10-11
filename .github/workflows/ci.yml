@@ -1,6 +1,6 @@
 name: CI
 
-# One required check: "ci". The TerraBase binary suites (canary, sdk, probe/terrabase, testing/terrabase) are skipped here: the pinned release is not downloadable since the Forgejo releases went away.
+# One required check: "ci". The TerraBase binary suites (canary, sdk, probe/terrabase, testing/terrabase) are skipped here: needs TerraBase release binaries on GitHub (.cos/fly-migration-plan.md).
 
 on:
   pull_request:
