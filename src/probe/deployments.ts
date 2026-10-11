@@ -2,7 +2,8 @@ import type { Env } from "../env";
 import type { TargetResult } from "./protocol";
 
 const SERVICES = [
-  ["ts-atlas", "https://atlas.terrascale.tech/health/version"],
+  ["ts-terrabase", "https://api.terrascale.tech/healthz"],
+  ["ts-auth", "https://auth.terrascale.tech/healthz"],
   ["ts-status", "https://status.terrascale.tech/health/version"],
   ["ts-dashboard", "https://ts-dashboard.fly.dev/health/ready"],
 ] as const;
@@ -17,8 +18,11 @@ export interface DeploymentObservation {
   observedAt: string;
 }
 
-const revision = (value: unknown): string | null =>
-  typeof value === "string" && /^[0-9a-f]{40}$/.test(value) ? value : null;
+/** The commit: the whole version, or the `+<revision>` build metadata ts-auth reports. */
+const revision = (value: unknown): string | null => {
+  const commit = typeof value === "string" ? value.split("+").pop() : undefined;
+  return commit !== undefined && /^[0-9a-f]{40}$/.test(commit) ? commit : null;
+};
 
 interface DeploymentProbe {
   version?: string;

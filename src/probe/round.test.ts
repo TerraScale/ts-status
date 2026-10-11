@@ -159,7 +159,6 @@ describe("runRound", () => {
       .all();
     expect(samples).toEqual([
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D4", state: "operational", ok: 3, total: 3, values: null },
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D5", state: "operational", ok: 3, total: 3, values: null },
       {
         endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D6",
         state: "operational",

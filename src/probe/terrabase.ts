@@ -13,6 +13,7 @@ import {
   documentPath,
   holdsDocument,
   isCanaryConfig,
+  isFlyRegion,
   written,
   type CanaryConfig,
   type CanaryResult,
@@ -23,8 +24,10 @@ import type { Sample } from "./round";
 export type TerraBaseProbe = "health" | "documents";
 
 export interface TerraBaseConfig {
-  /** The probed origin, e.g. https://gru.api.terrascale.tech. */
+  /** The public API origin, e.g. https://api.terrascale.tech. */
   origin: string;
+  /** The Fly region the requests prefer, e.g. gru. */
+  region: string;
   /** Document API key. */
   key?: string;
   project?: string;
@@ -94,7 +97,7 @@ function isOrigin(value: unknown): boolean {
 export function isTerraBaseConfig(probe: TerraBaseProbe, value: unknown): value is TerraBaseConfig {
   if (typeof value !== "object" || value === null) return false;
   const entry = value as Record<string, unknown>;
-  if (!isOrigin(entry.origin)) return false;
+  if (!isOrigin(entry.origin) || !isFlyRegion(entry.region)) return false;
   switch (probe) {
     case "health":
       return entry.key === undefined || isString(entry.key);
@@ -175,7 +178,7 @@ export async function runTerraBase(
   marker: string,
   fetcher: typeof fetch = fetch,
 ): Promise<CanaryResult> {
-  const headers: Record<string, string> = { "user-agent": USER_AGENT };
+  const headers: Record<string, string> = { "user-agent": USER_AGENT, "fly-prefer-region": config.region };
   if (config.key) headers.authorization = `Bearer ${config.key}`;
   const init = (extra: RequestInit = {}): RequestInit => ({ ...extra, headers: { ...headers, ...extra.headers } });
   // Every request answers 200 unless it says otherwise.

@@ -242,7 +242,6 @@ export function rangeSwitch(current: RangeKey, base: string): Html {
 
 export const PROVIDERS: Record<ClusterOverview["provider"], string> = {
   fly: "Fly.io",
-  oci: "Oracle Cloud",
   cloudflare: "Cloudflare",
   other: "Self-hosted",
 };

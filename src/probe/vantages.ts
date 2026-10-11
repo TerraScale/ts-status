@@ -25,7 +25,7 @@ export const VANTAGES: readonly Vantage[] = [
     binding: "VANTAGE_SFO",
     mapX: 18.8,
     mapY: 31.4,
-    region: "SFO",
+    region: "SJC",
   },
   {
     code: "gru",
@@ -43,7 +43,7 @@ export const VANTAGES: readonly Vantage[] = [
     binding: "VANTAGE_FRA",
     mapX: 69.3,
     mapY: 23.6,
-    region: "FRA",
+    region: null,
   },
   {
     code: "nrt",
