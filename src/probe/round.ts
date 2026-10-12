@@ -23,7 +23,7 @@ import {
   runTerraBase,
   type TerraBaseProbe,
 } from "./terrabase";
-import { VANTAGES, type Vantage } from "./vantages";
+import { VANTAGES, vantageStub, type Vantage } from "./vantages";
 
 export const ROUND_MS = 30_000;
 
@@ -120,13 +120,13 @@ export function evaluate(
 }
 
 /** Asks one vantage to probe the targets; null when it fails to answer. */
-async function ask(vantage: Vantage, fetcher: Fetcher, list: readonly Target[]): Promise<ProbeResponse | null> {
+async function ask(env: Env, vantage: Vantage, list: readonly Target[]): Promise<ProbeResponse | null> {
   // A cleared timer, unlike AbortSignal.timeout, never keeps the alarm
   // running once every vantage has answered.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), VANTAGE_TIMEOUT_MS);
   try {
-    const response = await fetcher.fetch("https://vantage/probe", {
+    const response = await vantageStub(env, vantage).fetch(`https://vantage/${vantage.code}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ targets: list }),
@@ -147,7 +147,7 @@ async function ask(vantage: Vantage, fetcher: Fetcher, list: readonly Target[]):
 export async function checkNow(env: Env, endpoints: readonly RoundEndpoint[]): Promise<Sample[]> {
   if (endpoints.length === 0) return [];
   const list = targets(endpoints);
-  const responses = await Promise.all(VANTAGES.map((vantage) => ask(vantage, env[vantage.binding], list)));
+  const responses = await Promise.all(VANTAGES.map((vantage) => ask(env, vantage, list)));
   return evaluate(endpoints, responses, {}).samples;
 }
 
@@ -301,7 +301,7 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
   // Fresh per attempt: a replayed round must not pass on an earlier write.
   const marker = `ts-status canary ${new Date(at).toISOString()} ${newId()}`;
   const [responses, canaryResults] = await Promise.all([
-    probed.length === 0 ? [] : Promise.all(VANTAGES.map((vantage) => ask(vantage, env[vantage.binding], list))),
+    probed.length === 0 ? [] : Promise.all(VANTAGES.map((vantage) => ask(env, vantage, list))),
     Promise.all(
       canaryRows.map(async (row): Promise<CanaryResult | null> => {
         const failed = (error: string): CanaryResult => ({ ok: false, latencyMs: null, error });

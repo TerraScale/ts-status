@@ -3,3 +3,4 @@
 
 export { default } from "./app";
 export { Coordinator } from "./probe/coordinator";
+export { VantagePoint } from "./vantage/point";

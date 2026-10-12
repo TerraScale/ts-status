@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Env } from "../env";
 import { deployments } from "./deployments";
+import { vantageNamespace } from "../testing/vantages";
 
 describe("regional deployment observations", () => {
   it("checks every fixed service through both vantages and includes their own revisions", async () => {
@@ -21,7 +22,10 @@ describe("regional deployment observations", () => {
         });
       },
     });
-    const rows = await deployments({ VANTAGE_GRU: vantage("GRU"), VANTAGE_SFO: vantage("SFO") } as unknown as Env, 0);
+    const rows = await deployments(
+      { VANTAGE: vantageNamespace({ gru: vantage("GRU"), sfo: vantage("SFO") }) } as unknown as Env,
+      0,
+    );
     expect(rows).toHaveLength(10);
     expect(rows.every((row) => row.version === version && row.observedAt === "1970-01-01T00:00:00.000Z")).toBe(true);
     expect(new Set(fetched)).toEqual(
@@ -38,17 +42,19 @@ describe("regional deployment observations", () => {
     const commit = "b".repeat(40);
     const rows = await deployments(
       {
-        VANTAGE_GRU: {
-          fetch: async () =>
-            Response.json({
-              results: [{ key: "ts-auth", status: 200, body: JSON.stringify({ version: `0.1.0-alpha+${commit}` }) }],
-            }),
-        },
-        VANTAGE_SFO: {
-          fetch: async () => {
-            throw new Error("unreachable");
+        VANTAGE: vantageNamespace({
+          gru: {
+            fetch: async () =>
+              Response.json({
+                results: [{ key: "ts-auth", status: 200, body: JSON.stringify({ version: `0.1.0-alpha+${commit}` }) }],
+              }),
           },
-        },
+          sfo: {
+            fetch: async () => {
+              throw new Error("unreachable");
+            },
+          },
+        }),
       } as unknown as Env,
       0,
     );
@@ -58,22 +64,24 @@ describe("regional deployment observations", () => {
   it("keeps failed vantages, old version formats and unhealthy responses unknown", async () => {
     const rows = await deployments(
       {
-        VANTAGE_GRU: {
-          fetch: async () => {
-            throw new Error("unreachable");
+        VANTAGE: vantageNamespace({
+          gru: {
+            fetch: async () => {
+              throw new Error("unreachable");
+            },
           },
-        },
-        VANTAGE_SFO: {
-          fetch: async () =>
-            Response.json({
-              version: "old",
-              results: [
-                { key: "ts-terrabase", status: 200, body: "not json" },
-                { key: "ts-status", status: 503, body: JSON.stringify({ version: "a".repeat(40) }) },
-                { key: "ts-dashboard", status: 200, body: JSON.stringify({ version: "short" }) },
-              ],
-            }),
-        },
+          sfo: {
+            fetch: async () =>
+              Response.json({
+                version: "old",
+                results: [
+                  { key: "ts-terrabase", status: 200, body: "not json" },
+                  { key: "ts-status", status: 503, body: JSON.stringify({ version: "a".repeat(40) }) },
+                  { key: "ts-dashboard", status: 200, body: JSON.stringify({ version: "short" }) },
+                ],
+              }),
+          },
+        }),
       } as unknown as Env,
       0,
     );
@@ -100,19 +108,21 @@ describe("regional deployment observations", () => {
     const version = "a".repeat(40);
     const rows = await deployments(
       {
-        VANTAGE_GRU: { fetch: async () => Response.json(body) },
-        VANTAGE_SFO: {
-          fetch: async () =>
-            Response.json({
-              version,
-              colo: "SFO",
-              results: ["ts-terrabase", "ts-auth", "ts-status", "ts-dashboard"].map((key) => ({
-                key,
-                status: 200,
-                body: JSON.stringify({ version }),
-              })),
-            }),
-        },
+        VANTAGE: vantageNamespace({
+          gru: { fetch: async () => Response.json(body) },
+          sfo: {
+            fetch: async () =>
+              Response.json({
+                version,
+                colo: "SFO",
+                results: ["ts-terrabase", "ts-auth", "ts-status", "ts-dashboard"].map((key) => ({
+                  key,
+                  status: 200,
+                  body: JSON.stringify({ version }),
+                })),
+              }),
+          },
+        }),
       } as unknown as Env,
       0,
     );
@@ -128,8 +138,10 @@ describe("regional deployment observations", () => {
   it("keeps non-JSON vantage responses unknown", async () => {
     const rows = await deployments(
       {
-        VANTAGE_GRU: { fetch: async () => new Response("not JSON") },
-        VANTAGE_SFO: { fetch: async () => Response.json({ version: "a".repeat(40), results: [] }) },
+        VANTAGE: vantageNamespace({
+          gru: { fetch: async () => new Response("not JSON") },
+          sfo: { fetch: async () => Response.json({ version: "a".repeat(40), results: [] }) },
+        }),
       } as unknown as Env,
       0,
     );

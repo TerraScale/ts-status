@@ -4,6 +4,8 @@
   "main": "src/worker.ts",
   "compatibility_date": "2026-09-13",
   "workers_dev": true,
+  // One production deploy from main; no per-version preview URLs.
+  "preview_urls": false,
   "routes": [{ "pattern": "status.terrascale.tech", "custom_domain": true }],
   // Keeps the probe coordinator armed and rolls samples up (src/probe/rollup.ts).
   "triggers": { "crons": ["* * * * *"] },
@@ -16,21 +18,23 @@
   ],
   // Cloudflare Email Sending for subscription mail (src/notify/outbox.ts).
   "send_email": [{ "name": "EMAIL", "remote": true }],
-  // Runs a probe round every 30 seconds (src/probe/coordinator.ts).
-  "durable_objects": { "bindings": [{ "name": "COORDINATOR", "class_name": "Coordinator" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Coordinator"] }],
+  // The coordinator runs a probe round every 30 seconds (src/probe/coordinator.ts)
+  // and asks every vantage point (src/vantage/point.ts) to probe.
+  "durable_objects": {
+    "bindings": [
+      { "name": "COORDINATOR", "class_name": "Coordinator" },
+      { "name": "VANTAGE", "class_name": "VantagePoint" },
+    ],
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Coordinator"] },
+    { "tag": "v2", "new_sqlite_classes": ["VantagePoint"] },
+  ],
   "vars": { "PUBLIC_ORIGIN": "https://status.terrascale.tech" },
   // Subscription requests and admin sign-in attempts per client IP
   // (src/notify/subscribe.ts, src/admin/index.ts).
   "ratelimits": [
     { "name": "SUBSCRIBE_LIMITER", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } },
     { "name": "ADMIN_LOGIN_LIMITER", "namespace_id": "1002", "simple": { "limit": 5, "period": 60 } },
-  ],
-  // The vantage Workers (src/probe/vantages.ts), built from vite.config.ts.
-  "services": [
-    { "binding": "VANTAGE_SFO", "service": "ts-status-vantage-sfo" },
-    { "binding": "VANTAGE_GRU", "service": "ts-status-vantage-gru" },
-    { "binding": "VANTAGE_FRA", "service": "ts-status-vantage-fra" },
-    { "binding": "VANTAGE_NRT", "service": "ts-status-vantage-nrt" },
   ],
 }

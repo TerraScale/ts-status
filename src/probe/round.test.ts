@@ -4,6 +4,7 @@ import type { Env } from "../env";
 import { testD1 } from "../testing/d1";
 import type { ProbeRequest, ProbeResponse } from "./protocol";
 import { evaluate, roundOf, runRound, targets, type RoundEndpoint } from "./round";
+import { vantageNamespace } from "../testing/vantages";
 
 const plain: CheckSpec = { expectStatus: "2xx", keyword: null, assertions: [], extract: {}, indirect: false };
 const atlas = (code: string): CheckSpec => ({
@@ -160,10 +161,12 @@ describe("runRound", () => {
     };
     const env = {
       STATUS_DB: db,
-      VANTAGE_SFO: counted("sfo"),
-      VANTAGE_GRU: counted("gru"),
-      VANTAGE_FRA: counted("fra"),
-      VANTAGE_NRT: { fetch: async () => new Response("boom", { status: 500 }) },
+      VANTAGE: vantageNamespace({
+        sfo: counted("sfo"),
+        gru: counted("gru"),
+        fra: counted("fra"),
+        nrt: { fetch: async () => new Response("boom", { status: 500 }) },
+      }),
     } as unknown as Env;
     const at = Date.parse("2026-09-26T10:00:30Z");
     const first = await runRound(env, at, { streaks: {}, colos: {}, versions: {}, trackers: {} });
@@ -227,10 +230,7 @@ describe("runRound", () => {
     db.sqlite.exec("UPDATE components SET lifecycle = 'planned' WHERE id != '01M4E7G1W82VKFPF5FJ9AVK1D3'");
     const env = {
       STATUS_DB: db,
-      VANTAGE_SFO: vantage("sfo"),
-      VANTAGE_GRU: vantage("gru"),
-      VANTAGE_FRA: vantage("fra"),
-      VANTAGE_NRT: vantage("nrt"),
+      VANTAGE: vantageNamespace({ sfo: vantage("sfo"), gru: vantage("gru"), fra: vantage("fra"), nrt: vantage("nrt") }),
     } as unknown as Env;
     await runRound(env, Date.parse("2026-09-26T10:00:30Z"), { streaks: {}, colos: {}, versions: {}, trackers: {} });
     expect(db.sqlite.prepare("SELECT endpoint_id FROM probe_samples").all()).toEqual([
@@ -242,10 +242,12 @@ describe("runRound", () => {
     const db = testD1();
     const env = {
       STATUS_DB: db,
-      VANTAGE_SFO: vantage("sfo"),
-      VANTAGE_GRU: vantage("gru"),
-      VANTAGE_FRA: vantage("fra"),
-      VANTAGE_NRT: { fetch: async () => new Response("boom", { status: 500 }) },
+      VANTAGE: vantageNamespace({
+        sfo: vantage("sfo"),
+        gru: vantage("gru"),
+        fra: vantage("fra"),
+        nrt: { fetch: async () => new Response("boom", { status: 500 }) },
+      }),
     } as unknown as Env;
     const at = Date.parse("2026-09-26T10:01:00Z");
     const state = await runRound(env, at, {
@@ -274,11 +276,10 @@ describe("automatic incidents", () => {
     let round = 0;
     const env = {
       STATUS_DB: db,
-      ...Object.fromEntries(
-        ["sfo", "gru", "fra", "nrt"].map((code) => [
-          `VANTAGE_${code.toUpperCase()}`,
-          vantage(code, (url) => failing(url, round)),
-        ]),
+      VANTAGE: vantageNamespace(
+        Object.fromEntries(
+          ["sfo", "gru", "fra", "nrt"].map((code) => [code, vantage(code, (url) => failing(url, round))]),
+        ),
       ),
     } as unknown as Env;
     let state = { streaks: {}, colos: {}, versions: {}, trackers: {} };

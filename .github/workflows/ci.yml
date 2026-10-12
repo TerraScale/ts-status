@@ -57,3 +57,16 @@ jobs:
           VERSION: ${{ github.sha }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      # A healthy older Worker must not pass: production has to serve this commit.
+      - name: Smoke check production
+        run: |
+          for attempt in $(seq 1 30); do
+            version=$(curl -fsS https://status.terrascale.tech/health/version | jq -r .version || true)
+            if [ "$version" = "$GITHUB_SHA" ]; then
+              curl -fsS -o /dev/null https://status.terrascale.tech/api/v1/status
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "status.terrascale.tech serves ${version:-nothing}, expected $GITHUB_SHA" >&2
+          exit 1
