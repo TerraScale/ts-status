@@ -6,6 +6,7 @@ import { RANGES } from "../domain/range";
 import { html } from "../html";
 import { Measurements } from "../measure";
 import type { Overview, RegionOverview } from "../overview";
+import { vantageLabel } from "../domain/coverage";
 import { VANTAGES } from "../probe/vantages";
 import { card, clusterRow, empty, incidentItem, ms, rangeSwitch, regionHref, stat, statusBadge } from "./components";
 import { providersOf, regionLabel } from "./home";
@@ -21,6 +22,7 @@ export function regionPage(view: Overview, entry: RegionOverview, details: Detai
     details.deploys,
     view.range,
     now,
+    view.monitoring.coverage,
   );
   const names = new Map(view.groups.flatMap((item) => item.components).map((item) => [item.id, item.name]));
   const range = RANGES[view.range].label;
@@ -42,7 +44,7 @@ export function regionPage(view: Overview, entry: RegionOverview, details: Detai
           `${entry.name} is coming soon; its clusters will be measured here once they serve traffic.`,
         )
       : html`<dl class="ts-stats" aria-label="Latest latency from each vantage">
-    ${VANTAGES.map((vantage) => stat(vantage.name, ms(entry.vantagePings[vantage.code] ?? null), "latest median"))}
+    ${VANTAGES.map((vantage) => stat(vantageLabel(view.monitoring.coverage, vantage), ms(entry.vantagePings[vantage.code] ?? null), "latest median"))}
   </dl>
 
   ${card(

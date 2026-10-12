@@ -71,3 +71,12 @@ export function coverage({ vantages, seen, lastRoundAt, now }: CoverageInput): C
     vantages: list,
   };
 }
+
+/** A vantage's name, plus where it really runs unless that is proven to be
+    its area: EWR data is never shown as plain "South America". */
+export function vantageLabel(coverage: Coverage, vantage: { code: string; name: string }): string {
+  const entry = coverage.vantages.find((item) => item.code === vantage.code);
+  if (entry?.state === "mismatched") return `${vantage.name} (runs in ${entry.observed})`;
+  if (entry?.state === "unverified") return `${vantage.name} (location unproven)`;
+  return vantage.name;
+}

@@ -29,7 +29,7 @@ import type { Page } from "./layout";
 export function componentPage(view: Overview, entry: ComponentOverview, details: Details, now: number): Page {
   const measurements = new Measurements(details.periods);
   const ids = entry.clusters.map((cluster) => cluster.id);
-  const charts = latencyCharts(measurements, ids, details.deploys, view.range, now);
+  const charts = latencyCharts(measurements, ids, details.deploys, view.range, now, view.monitoring.coverage);
   const total = sumCounts(entry.bars.flatMap((bucket) => (bucket.counts ? [bucket.counts] : [])));
   const group = view.groups.find((item) => item.id === entry.groupId);
   const names = new Map(view.groups.flatMap((item) => item.components).map((item) => [item.id, item.name]));
