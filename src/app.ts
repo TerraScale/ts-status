@@ -209,7 +209,7 @@ const route = createRouter<Route>({
         startOfHour(now) - HOUR,
         true,
       );
-      return json(regionLatencyDocument(regions, new Measurements(periods), now));
+      return json(regionLatencyDocument(regions, new Measurements(periods), now, view.monitoring.coverage));
     },
   },
   "/api/v1/status": {

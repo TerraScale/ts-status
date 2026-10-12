@@ -152,6 +152,13 @@ samples. Regions without a configured ping URL retain `ping_url: null`. Outages 
 maintenance and unmeasured regions map to `planned`. The optional case-insensitive `?region=gru`
 filters to one region; an unknown code returns an empty list.
 
+Each vantage also says where it runs now: `label` (its `name`, plus the data center when that is
+outside its area, e.g. `South America (runs in EWR)`), `requested_location` (the location hint),
+`observed_colo` (null without proof), `last_answer_at` and `coverage` (`verified`, `unverified`,
+`mismatched` or `missing`). `monitoring_coverage` summarizes the latest round: `level` (`full`,
+`degraded` or `insufficient`), `answered`, `verified`, `total` and `minimum`. Coverage describes
+the latest round, while the stats cover the last completed hour.
+
 ## Admin
 
 <https://status.terrascale.tech/admin> is the only way to change anything: publish, edit, update, resolve or delete incidents, warnings and maintenance windows; record deploy markers; add, edit and delete groups, components, endpoints and regions; remove subscribers; and check endpoints from every vantage on demand ("Check now", nothing stored). Editing an automatic incident takes it over from the probe coordinator. Planning or deleting a component, or deleting its last endpoint, is refused while an automatic incident is open for it: resolve the incident first.
