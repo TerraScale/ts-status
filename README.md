@@ -64,19 +64,19 @@ Production uses the D1 store `ts-status` (`c2eca5bc-6045-4983-941a-4e01e4e0c749`
 
 Status is measured, never hand-edited. Components sit in display groups and are checked by regional or global endpoints:
 
-| Group     | Component      | Endpoints                                                                 |
-| --------- | -------------- | ------------------------------------------------------------------------- |
-| TerraBase | TerraBase API  | `api.terrascale.tech/readyz` in gru, sjc and fra                          |
-| TerraBase | Data API       | Unauthenticated document read in gru, sjc and fra; the gru canary         |
-| TerraBase | Document API   | The document canary probe in gru, sjc and fra                             |
-| TerraBase | Replication    | None yet: "Pending launch" until TerraBase publishes replication health   |
-| Platform  | Authentication | `auth.terrascale.tech/readyz` in gru, sjc and fra; the tenant OIDC issuer |
-| Platform  | Documentation  | `docs.terrascale.tech`                                                    |
-| Platform  | Website        | `terrascale.tech`                                                         |
-| Platform  | Email          | Cloudflare Email Sending, from Cloudflare's status page                   |
-| Platform  | Dashboard      | None yet: "Coming soon"                                                   |
+| Group     | Component      | Endpoints                                                                             |
+| --------- | -------------- | ------------------------------------------------------------------------------------- |
+| TerraBase | TerraBase API  | `api.terrascale.tech/readyz` in gru, sjc and fra                                      |
+| TerraBase | Data API       | Unauthenticated document read in gru, sjc and fra; the gru canary                     |
+| TerraBase | Document API   | The document canary probe in gru, sjc and fra                                         |
+| TerraBase | Replication    | `ts-terrabase.fly.dev/health/replication` in gru, sjc and fra, ok from its own region |
+| Platform  | Authentication | `auth.terrascale.tech/readyz` in gru, sjc and fra; the tenant OIDC issuer             |
+| Platform  | Documentation  | `docs.terrascale.tech`                                                                |
+| Platform  | Website        | `terrascale.tech`                                                                     |
+| Platform  | Email          | Cloudflare Email Sending, from Cloudflare's status page                               |
+| Platform  | Dashboard      | None yet: "Coming soon"                                                               |
 
-A component is either active (measured) or "Coming soon" (shown, never probed). An active component without endpoints shows "Pending launch": TerraBase's replication status (`GET /replication`) is loopback-only today, so per-region replication endpoints are added in the admin page once it is public. Edit the catalog, regions and groups in the admin page; see the [`status-endpoint`](skills/status-endpoint/SKILL.md) skill.
+A component is either active (measured) or "Coming soon" (shown, never probed). Replication is probed per region and passes only when TerraBase reports `status: ok` from the pinned region. Until a region's first passing round it shows "Pending launch", so an unhealthy report opens no incident before then. Edit the catalog, regions and groups in the admin page; see the [`status-endpoint`](skills/status-endpoint/SKILL.md) skill.
 
 ## Local development
 
