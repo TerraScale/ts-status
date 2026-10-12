@@ -6,7 +6,14 @@ import { defineConfig } from "vite-plus";
 const root = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  plugins: process.env.VITEST ? [] : [cloudflare()],
+  plugins: process.env.VITEST
+    ? []
+    : [
+        cloudflare({
+          // Workers Builds sets the commit; baked into the build so any deploy command reports it.
+          config: (config) => ({ vars: { ...config.vars, VERSION: process.env.WORKERS_CI_COMMIT_SHA ?? "unknown" } }),
+        }),
+      ],
   css: { transformer: "lightningcss" },
   build: { cssMinify: "lightningcss" },
   // Reachable over the tailnet during development.

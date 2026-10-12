@@ -179,7 +179,7 @@ The minute cron enqueues up to 1,000 eligible subscriber/update pairs into the D
 
 ## Deploy
 
-CI (GitHub Actions on Blacksmith) checks every pull request and deploys every green main build: it bootstraps D1 from `schema.sql`, then deploys the one status Worker. Pull requests get no preview deploy and the Worker has no preview URLs. The Cloudflare deployment token is the repo secret `CLOUDFLARE_API_TOKEN`, scoped to ts-status.
+Cloudflare Workers Builds deploys every push to main with `npm run deploy`: it builds, bootstraps D1 from `schema.sql`, then deploys the one status Worker. There is no GitHub Actions workflow, so run `npm run lint`, `npm run check` and `npm test` before merging. Pull requests get no preview build and the Worker has no preview URLs.
 
 Worker secrets: `SUBSCRIPTION_SECRET`, `ADMIN_PASSWORD_HASH`, `ADMIN_SESSION_SECRET`, and the probe secrets `TERRABASE_PROBES` and `DATA_API_CANARY`. Set them with `wrangler secret put` or `cf workers secrets update`; never print them.
 

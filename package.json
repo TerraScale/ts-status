@@ -9,7 +9,7 @@
     "check": "tsc --noEmit",
     "lint": "vp lint && vp fmt --check",
     "test": "vitest run",
-    "deploy": "npm run build && npm run db:bootstrap:remote && wrangler deploy --var VERSION:${VERSION:-unknown}",
+    "deploy": "npm run build && npm run db:bootstrap:remote && wrangler deploy",
     "db:bootstrap:local": "wrangler d1 execute ts-status --local --file schema.sql",
     "db:bootstrap:remote": "wrangler d1 execute ts-status --remote --file schema.sql"
   },
