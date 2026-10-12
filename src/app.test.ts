@@ -682,10 +682,54 @@ describe("app", () => {
       status: "operational",
       consensus: { median_ms: 67, p95_ms: 97, samples: 4 },
       vantages: [
-        { code: "sfo", name: "US West", median_ms: 175, p95_ms: 198, samples: 2 },
-        { code: "gru", name: "South America", median_ms: 25, p95_ms: 48, samples: 2 },
-        { code: "fra", name: "Europe", median_ms: null, p95_ms: null, samples: 0 },
-        { code: "nrt", name: "Asia Pacific", median_ms: null, p95_ms: null, samples: 0 },
+        {
+          code: "sfo",
+          name: "US West",
+          median_ms: 175,
+          p95_ms: 198,
+          samples: 2,
+          label: "US West",
+          requested_location: "wnam",
+          observed_colo: null,
+          last_answer_at: null,
+          coverage: "missing",
+        },
+        {
+          code: "gru",
+          name: "South America",
+          median_ms: 25,
+          p95_ms: 48,
+          samples: 2,
+          label: "South America",
+          requested_location: "sam",
+          observed_colo: null,
+          last_answer_at: null,
+          coverage: "missing",
+        },
+        {
+          code: "fra",
+          name: "Europe",
+          median_ms: null,
+          p95_ms: null,
+          samples: 0,
+          label: "Europe",
+          requested_location: "weur",
+          observed_colo: null,
+          last_answer_at: null,
+          coverage: "missing",
+        },
+        {
+          code: "nrt",
+          name: "Asia Pacific",
+          median_ms: null,
+          p95_ms: null,
+          samples: 0,
+          label: "Asia Pacific",
+          requested_location: "apac",
+          observed_colo: null,
+          last_answer_at: null,
+          coverage: "missing",
+        },
       ],
     });
     expect(data.regions[1]).toMatchObject({
@@ -695,6 +739,45 @@ describe("app", () => {
     });
     await app.fetch(request("/api/latency?bust=1"), env, ctx);
     expect(env.STATUS_DB.batches).toBe(1);
+  });
+
+  it("says where each vantage behind region latency really runs", async () => {
+    const env = seededEnv();
+    env.STATUS_DB.sqlite.exec(`
+      INSERT INTO vantages (code, colo, seen_at) VALUES
+        ('sfo', 'DFW', '2026-09-26 10:14:30'),
+        ('gru', 'EWR', '2026-09-26 10:14:30'),
+        ('fra', 'FRA', '2026-09-26 10:14:30'),
+        ('nrt', 'NRT', '2026-09-26 09:00:00');
+    `);
+    const data = (await (await app.fetch(request("/api/latency?region=gru"), env, ctx)).json()) as RegionLatency;
+    expect(data.monitoring_coverage).toEqual({ level: "degraded", answered: 3, verified: 1, total: 4, minimum: 2 });
+    const vantages = data.regions[0]?.vantages ?? [];
+    // Stable identifiers stay; the label and coverage say where the data comes from.
+    expect(
+      vantages.map(({ code, name, label, observed_colo, coverage }) => [code, name, label, observed_colo, coverage]),
+    ).toEqual([
+      ["sfo", "US West", "US West (runs in DFW)", "DFW", "mismatched"],
+      ["gru", "South America", "South America (runs in EWR)", "EWR", "mismatched"],
+      ["fra", "Europe", "Europe", "FRA", "verified"],
+      ["nrt", "Asia Pacific", "Asia Pacific", "NRT", "missing"],
+    ]);
+    expect(vantages[3]).toMatchObject({ requested_location: "apac", last_answer_at: "2026-09-26T09:00:00.000Z" });
+  });
+
+  it("reports no latency coverage when rounds are stale", async () => {
+    vi.setSystemTime(Date.parse("2026-09-26T10:30:00Z"));
+    const env = seededEnv();
+    env.STATUS_DB.sqlite.exec(
+      `INSERT INTO vantages (code, colo, seen_at) VALUES ('gru', 'GRU', '2026-09-26 10:14:30');`,
+    );
+    const data = (await (await app.fetch(request("/api/latency?region=gru"), env, ctx)).json()) as RegionLatency;
+    expect(data.monitoring_coverage).toMatchObject({ level: "insufficient", answered: 0 });
+    expect(data.regions[0]?.vantages.find((entry) => entry.code === "gru")).toMatchObject({
+      label: "South America",
+      observed_colo: "GRU",
+      coverage: "missing",
+    });
   });
 
   it("filters region latency and caches each filter separately", async () => {
