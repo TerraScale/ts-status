@@ -5,6 +5,7 @@ import { isId } from "../ids";
 import type { ProbeRequest, ProbeResponse } from "../probe/protocol";
 import { testD1, type TestD1 } from "../testing/d1";
 import { checkPassword, COOKIE, hashPassword, issue, sameBytes, SESSION_MS } from "./auth";
+import { vantageNamespace } from "../testing/vantages";
 
 const PASSWORD = "correct horse battery staple 42";
 const SECRET = "s".repeat(43);
@@ -32,10 +33,12 @@ async function setup(options: { allowed?: boolean; secrets?: boolean } = {}) {
     ADMIN_LOGIN_LIMITER: {
       limit: async ({ key }: { key: string }) => (attempts.push(key), { success: options.allowed ?? true }),
     },
-    VANTAGE_SFO: vantage("sfo"),
-    VANTAGE_GRU: vantage("gru"),
-    VANTAGE_FRA: vantage("fra"),
-    VANTAGE_NRT: vantage("nrt", 503),
+    VANTAGE: vantageNamespace({
+      sfo: vantage("sfo"),
+      gru: vantage("gru"),
+      fra: vantage("fra"),
+      nrt: vantage("nrt", 503),
+    }),
   } as unknown as Env & { STATUS_DB: TestD1 };
 
   const call = (path: string, init: RequestInit = {}) =>

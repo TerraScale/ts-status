@@ -3,6 +3,7 @@ import app from "./app";
 import type { Env } from "./env";
 import { regionLatencyDocument } from "./api/latency";
 import { testD1, type TestD1 } from "./testing/d1";
+import { vantageNamespace } from "./testing/vantages";
 
 const NOW = "2026-09-26T10:15:00Z";
 type RegionLatency = ReturnType<typeof regionLatencyDocument>;
@@ -52,7 +53,7 @@ function request(path: string, method = "GET"): Request<unknown, IncomingRequest
 
 describe("worker", () => {
   it("exports only its handler and Durable Objects, as workerd requires of the entry module", async () => {
-    expect(Object.keys(await import("./worker")).sort()).toEqual(["Coordinator", "default"]);
+    expect(Object.keys(await import("./worker")).sort()).toEqual(["Coordinator", "VantagePoint", "default"]);
   });
 });
 
@@ -95,7 +96,7 @@ describe("app", () => {
       await gate;
       return Response.json({ version, results: [] });
     });
-    const env = { VANTAGE_GRU: { fetch }, VANTAGE_SFO: { fetch } } as unknown as Env;
+    const env = { VANTAGE: vantageNamespace({ gru: { fetch }, sfo: { fetch } }) } as unknown as Env;
     const responses = Promise.all([
       app.fetch(request("/api/v1/deployments?bust=1"), env, ctx),
       app.fetch(request("/api/v1/deployments?target=https://other.test"), env, ctx),
@@ -118,7 +119,7 @@ describe("app", () => {
   it("returns valid observations to every waiter when the deployment cache write fails", async () => {
     const version = "a".repeat(40);
     const fetch = vi.fn(async () => Response.json({ version, results: [] }));
-    const env = { VANTAGE_GRU: { fetch }, VANTAGE_SFO: { fetch } } as unknown as Env;
+    const env = { VANTAGE: vantageNamespace({ gru: { fetch }, sfo: { fetch } }) } as unknown as Env;
     const error = new Error("cache unavailable");
     const put = vi.spyOn(caches.default, "put").mockRejectedValue(error);
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -154,7 +155,7 @@ describe("app", () => {
 
   it("expires deployment observations after ten seconds without refreshing cached timestamps or reading D1", async () => {
     const fetch = vi.fn(async () => Response.json({ version: "a".repeat(40), results: [] }));
-    const env = { ...seededEnv(), VANTAGE_GRU: { fetch }, VANTAGE_SFO: { fetch } } as unknown as Env;
+    const env = { ...seededEnv(), VANTAGE: vantageNamespace({ gru: { fetch }, sfo: { fetch } }) } as unknown as Env;
     const exec = vi.spyOn(env.STATUS_DB, "exec").mockRejectedValue(new Error("D1 unavailable"));
     const first = await (await app.fetch(request("/api/v1/deployments"), env, ctx)).json();
     vi.setSystemTime(Date.parse(NOW) + 9_999);

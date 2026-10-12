@@ -1,14 +1,15 @@
-/* The vantage points: one small Worker each, placed near a cloud region
-   so every endpoint is probed from four continents. Durable Objects cannot
-   be placed in South America, so vantages are Workers with explicit
-   placement, reached from the coordinator through service bindings. */
+/* The vantage points: one VantagePoint Durable Object each, created near a
+   location hint so every endpoint is probed from four continents. A hint is
+   a preference: Cloudflare may create an object elsewhere (South America
+   most often), and every answer reports the data center it really ran in. */
+
+import type { Env } from "../env";
 
 export interface Vantage {
   code: "sfo" | "gru" | "fra" | "nrt";
   name: string;
-  /** Cloudflare places the Worker's fetch handler near this cloud region. */
-  placement: string;
-  binding: "VANTAGE_SFO" | "VANTAGE_GRU" | "VANTAGE_FRA" | "VANTAGE_NRT";
+  /** The location hint the vantage's Durable Object is created near. */
+  placement: DurableObjectLocationHint;
   /** Position in region map viewBox units (MAP_WIDTH × MAP_HEIGHT in
       views/charts/geometry), just off the hub of the region it sits in. */
   mapX: number;
@@ -21,8 +22,7 @@ export const VANTAGES: readonly Vantage[] = [
   {
     code: "sfo",
     name: "US West",
-    placement: "aws:us-west-1",
-    binding: "VANTAGE_SFO",
+    placement: "wnam",
     mapX: 18.8,
     mapY: 31.4,
     region: "SJC",
@@ -30,8 +30,7 @@ export const VANTAGES: readonly Vantage[] = [
   {
     code: "gru",
     name: "South America",
-    placement: "aws:sa-east-1",
-    binding: "VANTAGE_GRU",
+    placement: "sam",
     mapX: 47.4,
     mapY: 62.4,
     region: "GRU",
@@ -39,8 +38,7 @@ export const VANTAGES: readonly Vantage[] = [
   {
     code: "fra",
     name: "Europe",
-    placement: "aws:eu-central-1",
-    binding: "VANTAGE_FRA",
+    placement: "weur",
     mapX: 69.3,
     mapY: 23.6,
     region: "FRA",
@@ -48,12 +46,13 @@ export const VANTAGES: readonly Vantage[] = [
   {
     code: "nrt",
     name: "Asia Pacific",
-    placement: "aws:ap-northeast-1",
-    binding: "VANTAGE_NRT",
+    placement: "apac",
     mapX: 120.5,
     mapY: 29.8,
     region: null,
   },
 ];
 
-export const vantageWorkerName = (vantage: Pick<Vantage, "code">): string => `ts-status-vantage-${vantage.code}`;
+/** The vantage's Durable Object; it stays where it was first created. */
+export const vantageStub = (env: Pick<Env, "VANTAGE">, vantage: Pick<Vantage, "code" | "placement">) =>
+  env.VANTAGE.get(env.VANTAGE.idFromName(vantage.code), { locationHint: vantage.placement });

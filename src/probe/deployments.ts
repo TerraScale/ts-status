@@ -1,5 +1,6 @@
 import type { Env } from "../env";
 import type { TargetResult } from "./protocol";
+import { VANTAGES, vantageStub } from "./vantages";
 
 const SERVICES = [
   ["ts-terrabase", "https://api.terrascale.tech/healthz"],
@@ -53,7 +54,7 @@ function isDeploymentProbe(value: unknown): value is DeploymentProbe {
   );
 }
 
-/** Fixed public targets only: callers cannot use the regional bindings as a proxy. */
+/** Fixed public targets only: callers cannot use the vantages as a proxy. */
 export async function deployments(env: Env, now: number): Promise<DeploymentObservation[]> {
   const observedAt = new Date(now).toISOString();
   const targets = SERVICES.map(([key, url]) => ({
@@ -62,16 +63,14 @@ export async function deployments(env: Env, now: number): Promise<DeploymentObse
     headers: '{"Cache-Control":"no-cache"}',
     body: true,
   }));
-  const regions = [
-    ["GRU", env.VANTAGE_GRU],
-    ["SFO", env.VANTAGE_SFO],
-  ] as const;
+  const regions = VANTAGES.filter((vantage) => vantage.code === "gru" || vantage.code === "sfo");
   return (
     await Promise.all(
-      regions.map(async ([region, vantage]) => {
+      regions.map(async (vantage) => {
+        const region = vantage.code.toUpperCase();
         let probe: DeploymentProbe | null = null;
         try {
-          const response = await vantage.fetch("https://vantage/probe", {
+          const response = await vantageStub(env, vantage).fetch(`https://vantage/${vantage.code}`, {
             method: "POST",
             body: JSON.stringify({ targets }),
             signal: AbortSignal.timeout(8_000),

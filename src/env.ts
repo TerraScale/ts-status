@@ -1,6 +1,7 @@
 /* The Worker's bindings. */
 
 import type { Coordinator } from "./probe/coordinator";
+import type { VantagePoint } from "./vantage/point";
 
 /** The Email Sending binding's send method; the message fields we use. */
 export interface EmailSender {
@@ -19,10 +20,8 @@ export interface Env {
   VERSION?: string;
   STATUS_DB: D1Database;
   COORDINATOR: DurableObjectNamespace<Coordinator>;
-  VANTAGE_SFO: Fetcher;
-  VANTAGE_GRU: Fetcher;
-  VANTAGE_FRA: Fetcher;
-  VANTAGE_NRT: Fetcher;
+  /** One object per vantage (src/probe/vantages.ts). */
+  VANTAGE: DurableObjectNamespace<VantagePoint>;
   /** The admin password's PBKDF2 hash (a Worker secret; see src/admin/auth.ts). */
   ADMIN_PASSWORD_HASH?: string;
   /** Signs admin session cookies and CSRF tokens (a Worker secret). */

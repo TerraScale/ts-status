@@ -15,8 +15,8 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 
 ## How it measures
 
-- **Four vantage points.** Small Workers placed near `aws:us-west-1`, `aws:sa-east-1`, `aws:eu-central-1` and `aws:ap-northeast-1` probe every endpoint; each reports the data center it ran in.
-- **30-second rounds.** A single coordinator Durable Object, next to the D1 primary, runs a round on every half minute through the vantages' service bindings and stores one sample per endpoint.
+- **Four vantage points.** `VantagePoint` Durable Objects in the status Worker, created with the location hints `wnam`, `sam`, `weur` and `apac`, probe every endpoint; each reports the data center it ran in. A hint is a preference: Cloudflare may create an object elsewhere (South America most often), and the page shows where it really runs.
+- **30-second rounds.** A single coordinator Durable Object, next to the D1 primary, runs a round on every half minute through the vantage Durable Objects and stores one sample per endpoint.
 - **Consensus.** A round needs two answering vantages; an endpoint is down only when most of them fail, degraded when some do or it is slower than 1.5 s, and shown down only after two down rounds in a row. A vantage that does not answer is left out, never counted as a failure. An endpoint's `blocked_status` names a status something in front of the service is known to refuse the probe with: that result is a probe error ("Probe blocked"), also left out.
 - **Fly regions.** TerraBase (`https://api.terrascale.tech`, Fly app `ts-terrabase`) and ts-auth (`https://auth.terrascale.tech`) run one machine in every Fly region: gru (São Paulo), sjc (San Francisco Bay Area) and fra (Frankfurt) today. Each regional endpoint pins its region with the `fly-prefer-region` header, and the readiness checks require the answer's `region` to match, so a region whose machine is gone fails instead of being answered by another region.
 - **Deep checks.** Besides answering, an endpoint can be required to return an expected status, contain a keyword, or satisfy JSON assertions:
@@ -45,7 +45,7 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 | `src/overview.ts` | The overview shared by the page and the JSON API                        |
 | `src/measure.ts`  | Counts, latency percentiles and series from per-vantage rollups         |
 | `src/probe/`      | Coordinator, probe rounds, rollups, retention and TLS expiry            |
-| `src/vantage/`    | The vantage Worker that probes targets for the coordinator              |
+| `src/vantage/`    | The vantage Durable Object that probes targets for the coordinator      |
 | `src/api/`        | The v1 and Statuspage-compatible JSON APIs                              |
 | `src/feeds/`      | Atom, RSS and iCalendar feeds, and SVG status badges                    |
 | `src/notify/`     | Subscriptions, the outbox, email and webhooks                           |
@@ -88,7 +88,7 @@ nice -n 19 npm run dev
 
 For the admin page locally, put an `ADMIN_PASSWORD_HASH` (see [Admin](#admin)) and an `ADMIN_SESSION_SECRET` in `.dev.vars` (git-ignored).
 
-The dev server listens on every interface (reachable over the tailnet) and reloads on change. The local D1 database lives under `.wrangler/state`. The four vantage Workers run alongside the status Worker. Arm the coordinator (and roll up samples) with `curl 'http://localhost:5173/cdn-cgi/handler/scheduled'`; rounds then run every 30 seconds.
+The dev server listens on every interface (reachable over the tailnet) and reloads on change. The local D1 database lives under `.wrangler/state`. Arm the coordinator (and roll up samples) with `curl 'http://localhost:5173/cdn-cgi/handler/scheduled'`; rounds then run every 30 seconds.
 
 ## Contract tests
 
@@ -179,7 +179,7 @@ The minute cron enqueues up to 1,000 eligible subscriber/update pairs into the D
 
 ## Deploy
 
-CI (GitHub Actions on Blacksmith) checks every pull request and deploys every green main build: it bootstraps D1 from `schema.sql`, deploys the four vantage Workers, then the status Worker. The Cloudflare deployment token is the repo secret `CLOUDFLARE_API_TOKEN`, scoped to ts-status.
+Cloudflare Workers Builds deploys every push to main with `npm run deploy`: it builds, bootstraps D1 from `schema.sql`, then deploys the one status Worker. There is no GitHub Actions workflow, so run `npm run lint`, `npm run check` and `npm test` before merging. Pull requests get no preview build and the Worker has no preview URLs.
 
 Worker secrets: `SUBSCRIPTION_SECRET`, `ADMIN_PASSWORD_HASH`, `ADMIN_SESSION_SECRET`, and the probe secrets `TERRABASE_PROBES` and `DATA_API_CANARY`. Set them with `wrangler secret put` or `cf workers secrets update`; never print them.
 
