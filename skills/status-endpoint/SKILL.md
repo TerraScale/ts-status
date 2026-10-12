@@ -1,55 +1,51 @@
-# TerraScale status catalog: components, regions and clusters
+# TerraScale status catalog: components, regions and endpoints
 
-Use this repo skill to inspect or correct status catalog metadata when the
-human requests it. The [zero-configuration contract](../../docs/zero-configuration.md)
-requires automatic discovery/probing of every admitted region and service.
-Current lifecycle/endpoint switches and manual catalog reconciliation are
-runtime gaps; do not use a launch, pause or enable step to admit a region.
-Unknown or unavailable measurements must stay honest. OCI Vault must deliver
-operator/probe credentials automatically; this document establishes no live
-mutation authorization.
-
-Generate new IDs with `node --input-type=module -e 'import { monotonicFactory } from "ulid"; console.log(monotonicFactory()())'`. Never use a name, UUID or prefix as an entity ID.
+Use this repo skill to inspect or change what https://status.terrascale.tech
+measures. Every change goes through the admin page,
+https://status.terrascale.tech/admin (Catalog). Its password is in
+`~/.config/terrascale/ts-status-admin.txt` on delta, mariogk-dev and beta;
+never print it. There is no API token and no direct D1 edit.
 
 ## Model
 
-- `component_groups`: display groups with ULID IDs (platform, TerraBase, developer tools), ordered by `position`.
-- `components`: what customers use, keyed by canonical ULIDs returned by `/api/v1/status`. `lifecycle` is `active` or `planned`; planned components are listed as "Planned" and never measured.
-- `regions`: one row per region (`code` such as `GRU`, `name`, `country`, and `map_x`/`map_y`, the hub position on the 136×80 region map viewBox). Regions without enabled endpoints show as "Planned".
-- `endpoints`: one health check per cluster of a component. `region_code` names the region, or is null for global services such as edge Workers; `url` answers 2xx when healthy; `headers` is a JSON object sent with every probe; `provider` is `fly`, `oci`, `cloudflare`, or `other`.
+- **Groups** order components on the page (TerraBase, Platform).
+- **Components** are what customers use. "Active" ones are probed; "Coming
+  soon" ones are shown and never probed (the dashboard today). An active
+  component without endpoints shows "Pending launch" (replication today).
+- **Regions** are Fly regions: `GRU` São Paulo, `SJC` San Francisco Bay Area,
+  `FRA` Frankfurt. Map x/y place the hub on the 136×80 region map.
+- **Endpoints** are one check each. A regional endpoint names its region and
+  pins it with the header `{"fly-prefer-region":"gru"}`; global ones have no
+  region. `provider` is `fly`, `cloudflare` or `other`.
 
-Every endpoint also carries a check:
+Every endpoint carries a check:
 
-- `expect_status`: `2xx` by default, or codes such as `200,204`.
+- `expectStatus`: `2xx`, or codes such as `200,204`.
 - `keyword`: text the body must contain.
-- `assertions`: a JSON array of `{"path", "op", "value"}` on the JSON body; `op` is `eq`, `ne`, `lt`, `gt`, `exists` or `contains`, and paths are dotted keys with array selectors, e.g. `status` or `regions[code=GRU].available`.
-- `extract`: a JSON object of named paths recorded with every sample. A `version` that changes is recorded as a deploy in `deploys`; TerraBase cells extract `lag_ms`.
-- `indirect`: `1` when the URL reports on the component instead of serving it (TerraBase cells are judged from atlas's region catalog). If it cannot be fetched, the component is unknown, not down.
+- `assertions`: a JSON list of `{"path", "op", "value"}` on the JSON body;
+  `op` is `eq`, `ne`, `lt`, `gt`, `exists` or `contains`, and paths are dotted
+  keys with array selectors such as `regions[code=GRU].available`. Regional
+  readiness asserts `{"path":"region","op":"eq","value":"gru"}` so another
+  region answering fails.
+- `extract`: named paths recorded with every sample; a changing `version` is
+  recorded as a deploy.
+- `indirect`: the URL reports on the component (Cloudflare's status page for
+  Email), so failing to reach it is unknown, not down.
+- `blockedStatus`: a status something in front of the service is known to
+  refuse probes with; it counts as a probe error, not an outage.
+- `kind` `canary` runs in the coordinator with a secret keyed by endpoint ID
+  (`DATA_API_CANARY`, or `TERRABASE_PROBES` with probe `documents`).
 
-A component's status is measured from four vantage points: a cluster is degraded when some vantages fail or it answers slower than 1.5 s, and down once most vantages fail two rounds in a row. A component or region is down only when all of its clusters are, and partially down when some are.
+## Add a region
 
-## Verify discovered services
-
-Use Atlas-authoritative origins and actual readiness/health contracts. Every
-admitted service must be probed without lifecycle or endpoint activation.
-The current catalog's `active`/`planned` and endpoint booleans remain legacy
-implementation inventory, not operator setup instructions.
-
-Keep automatic incidents and their history intact. Resolve an incident before
-an approved removal; a missing probe must never be presented as recovery.
-
-## Catalog reconciliation requirements
-
-Automatic discovery must identify the component, region, cluster and authoritative
-health URL, allocate canonical IDs and retain measurement history. Verify readiness
-before claiming health. A Fly anycast hostname or preferred-region hint does not
-prove that a Machine serves in that region; register only observed serving origins.
-
-Region display metadata and map positions may be corrected with authorization;
-such edits must not enable/disable service or suppress health evidence. The current
-manual catalog path is a pending runtime gap. No SQL mutation recipe is required
-for a new region to serve or be monitored.
+1. Add the region (code, name, country, map position).
+2. Add its endpoints: copy each gru endpoint, change the region, cluster,
+   `fly-prefer-region` header and `region` assertion.
+3. Press "Check now" on each new endpoint. New endpoints show "Pending launch"
+   until their first passing round, then count toward uptime.
 
 ## Remove
 
-Deleting an endpoint also deletes its probe history (`ON DELETE CASCADE`). Verify every change on `GET https://status.terrascale.tech/api/v1/status`.
+Deleting an endpoint or component deletes its probe history. Deleting is
+refused while an automatic incident is open for the component: resolve it
+first. Verify every change on https://status.terrascale.tech/api/v1/status.

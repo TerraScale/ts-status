@@ -9,6 +9,7 @@ import { byHour, RANGES, rangeStart, type RangeKey } from "./domain/range";
 import { median } from "./domain/consensus";
 import {
   aggregate,
+  COMING_SOON,
   componentState,
   countsOf,
   endpointStatus,
@@ -19,6 +20,7 @@ import {
   meanLatency,
   NOT_CONFIGURED,
   overallStatus,
+  PENDING_LAUNCH,
   PROBE_STALE_MS,
   probeState,
   probeUptime,
@@ -91,6 +93,8 @@ export interface RegionOverview extends Region {
   /** Each vantage's latest median latency to the region's clusters. */
   vantagePings: Record<string, number | null>;
   clusters: ClusterOverview[];
+  /** Shown in place of the status label while no cluster is live yet. */
+  note: string | null;
 }
 
 export interface Monitoring {
@@ -148,6 +152,15 @@ const hostOf = (url: string): string => {
   }
 };
 
+/** The note of something served by several clusters when none of them is
+    measured yet: not configured when no secret names any, else pending, as
+    is something with no clusters at all yet. */
+function sharedNote(notes: readonly (string | null)[]): string | null {
+  if (notes.some((note) => note === null)) return null;
+  if (notes.length === 0) return PENDING_LAUNCH;
+  return notes.every((note) => note === NOT_CONFIGURED) ? NOT_CONFIGURED : PENDING_LAUNCH;
+}
+
 /** Consensus counts per endpoint, keyed by the period's start. */
 type Periods = Map<string, Map<number, ProbeCounts>>;
 
@@ -200,7 +213,7 @@ function bars(counter: Counter, endpoints: readonly Endpoint[], range: RangeKey,
   });
 }
 
-/** Every component's enabled endpoints, in catalog order. */
+/** Every component's endpoints, in catalog order. */
 function endpointsByComponent(endpoints: readonly Endpoint[]): Map<string, Endpoint[]> {
   const byComponent = new Map<string, Endpoint[]>();
   for (const endpoint of endpoints) {
@@ -246,7 +259,9 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
     );
   };
   const components = new Map(snapshot.components.map((component) => [component.id, component]));
-  const status = (endpoint: Endpoint) => endpointStatus(latest.get(endpoint.id), now);
+  // Not live yet: its failures are expected, so it shows no state at all.
+  const pending = (endpoint: Endpoint): boolean => endpoint.liveSince === null;
+  const status = (endpoint: Endpoint) => (pending(endpoint) ? "none" : endpointStatus(latest.get(endpoint.id), now));
   const endpointsOf = endpointsByComponent(snapshot.endpoints);
   const windows = incidentWindows(snapshot.incidents, now);
   // Every incident paired once with the window it was open.
@@ -289,8 +304,8 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
       cluster: endpoint.cluster,
       provider: endpoint.provider,
       status: status(endpoint),
-      note: unconfigured(endpoint) ? NOT_CONFIGURED : null,
-      pingMs: fresh(endpoint)?.latencyMs ?? null,
+      note: unconfigured(endpoint) ? NOT_CONFIGURED : pending(endpoint) ? PENDING_LAUNCH : null,
+      pingMs: pending(endpoint) ? null : (fresh(endpoint)?.latencyMs ?? null),
       meanLatency: meanLatency(total),
       uptime: uptimeOf(list),
       bars: list,
@@ -311,16 +326,22 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
       component.lifecycle === "planned"
         ? "none"
         : componentState(aggregate(endpoints.map(status)), component.id, snapshot.incidents, now);
+    const own = endpoints.flatMap((endpoint) => clusters.get(endpoint.id) ?? []);
     return {
       ...component,
       status: state,
       // An incident or maintenance window outranks the note.
-      note: state === "none" && endpoints.length > 0 && endpoints.every(unconfigured) ? NOT_CONFIGURED : null,
+      note:
+        component.lifecycle === "planned"
+          ? COMING_SOON
+          : state === "none"
+            ? sharedNote(own.map((cluster) => cluster.note))
+            : null,
       bars: list,
       latency: latencyOf(list),
       uptime: uptimeOf(list),
-      clusters: endpoints.flatMap((endpoint) => clusters.get(endpoint.id) ?? []),
-      vantagePings: vantagePings(endpoints.flatMap((endpoint) => fresh(endpoint) ?? [])),
+      clusters: own,
+      vantagePings: vantagePings(endpoints.flatMap((endpoint) => (pending(endpoint) ? [] : (fresh(endpoint) ?? [])))),
     };
   });
   const active = componentList.filter((component) => component.lifecycle === "active");
@@ -330,12 +351,14 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
     const endpoints = measured.filter((endpoint) => endpoint.regionCode === region.code);
     const own = endpoints.flatMap((endpoint) => clusters.get(endpoint.id) ?? []);
     const pings = own.flatMap((entry) => (entry.pingMs === null ? [] : [entry.pingMs]));
+    const state = aggregate(own.map((entry) => entry.status));
     return {
       ...region,
-      status: aggregate(own.map((entry) => entry.status)),
+      status: state,
       pingMs: pings.length === 0 ? null : Math.round(pings.reduce((sum, ping) => sum + ping, 0) / pings.length),
-      vantagePings: vantagePings(endpoints.flatMap((endpoint) => fresh(endpoint) ?? [])),
+      vantagePings: vantagePings(endpoints.flatMap((endpoint) => (pending(endpoint) ? [] : (fresh(endpoint) ?? [])))),
       clusters: own,
+      note: state === "none" ? sharedNote(own.map((entry) => entry.note)) : null,
     };
   });
 
@@ -377,7 +400,9 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
       .filter((group) => group.components.length > 0),
     regions,
     endpoints: measured,
-    expiring: [...new Set(measured.map((endpoint) => hostOf(endpoint.url)))].flatMap((host) => {
+    expiring: [
+      ...new Set(measured.filter((endpoint) => !pending(endpoint)).map((endpoint) => hostOf(endpoint.url))),
+    ].flatMap((host) => {
       const certificate = certificates.get(host);
       return certificate?.notAfter && Date.parse(certificate.notAfter) - now < EXPIRY_WARNING_MS ? [certificate] : [];
     }),

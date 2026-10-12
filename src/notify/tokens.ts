@@ -13,13 +13,13 @@ async function key(secret: string): Promise<CryptoKey> {
   ]);
 }
 
-const base64url = (bytes: Uint8Array): string =>
+export const base64url = (bytes: Uint8Array): string =>
   btoa(String.fromCharCode(...bytes))
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replace(/=+$/, "");
 
-function decode(text: string): Uint8Array | null {
+export function decode(text: string): Uint8Array | null {
   try {
     const padded = text.replaceAll("-", "+").replaceAll("_", "/");
     return Uint8Array.from(atob(padded + "=".repeat((4 - (padded.length % 4)) % 4)), (char) => char.charCodeAt(0));

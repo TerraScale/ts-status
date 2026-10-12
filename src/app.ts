@@ -10,7 +10,7 @@
 import { bootstrap } from "./db/bootstrap";
 import { isId } from "./ids";
 
-import { operator } from "./api/operator";
+import { admin } from "./admin";
 import { regionLatencyDocument } from "./api/latency";
 import { deliverDue, runOutbox } from "./notify/outbox";
 import { subscriptions } from "./notify/subscribe";
@@ -274,14 +274,7 @@ const route = createRouter<Route>({
         );
       const component = view.groups.flatMap((group) => group.components).find((entry) => entry.id === params.id);
       if (!component) return text(badge("TerraScale", "none", "Unknown component"), "image/svg+xml", {}, 404);
-      return text(
-        badge(
-          component.name,
-          component.status,
-          component.lifecycle === "planned" ? "Planned" : (component.note ?? undefined),
-        ),
-        "image/svg+xml",
-      );
+      return text(badge(component.name, component.status, component.note ?? undefined), "image/svg+xml");
     },
   },
   "/embed": {
@@ -375,9 +368,9 @@ export default {
         false,
       );
     }
-    const operatorRequest = url.pathname.startsWith("/api/operator/");
+    const adminRequest = url.pathname === "/admin" || url.pathname.startsWith("/admin/");
     const subscriptionRequest = url.pathname === "/subscribe" || url.pathname.startsWith("/subscribe/");
-    if (operatorRequest || subscriptionRequest) {
+    if (adminRequest || subscriptionRequest) {
       try {
         await bootstrap(env);
       } catch (error) {
@@ -385,7 +378,21 @@ export default {
         return unavailable();
       }
     }
-    if (operatorRequest) return secure(await operator(request, env, now), false);
+    if (adminRequest) {
+      const answer = await admin(request, env, now);
+      if (answer instanceof Response) return secure(answer, false);
+      const context = {
+        now,
+        origin: url.origin,
+        fragment: false,
+        params: {},
+        query: {},
+        policy: { formAction: "'self'" },
+      };
+      const response = await page(answer.page, context, answer.status);
+      for (const [name, value] of Object.entries(answer.headers ?? {})) response.headers.set(name, value);
+      return secure(response, false);
+    }
     if (subscriptionRequest) {
       const answer = await subscriptions(env, request, now);
       if (answer instanceof Response) return secure(answer, false);

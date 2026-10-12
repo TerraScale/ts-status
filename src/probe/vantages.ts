@@ -43,7 +43,7 @@ export const VANTAGES: readonly Vantage[] = [
     binding: "VANTAGE_FRA",
     mapX: 69.3,
     mapY: 23.6,
-    region: null,
+    region: "FRA",
   },
   {
     code: "nrt",

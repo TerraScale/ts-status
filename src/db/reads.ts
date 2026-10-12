@@ -94,8 +94,9 @@ const CURRENT_INCIDENTS = `SELECT ${INCIDENT_COLUMNS} FROM incidents
 const REGIONS = `SELECT code, name, country, map_x AS mapX, map_y AS mapY, ping_url AS pingUrl, ping_label AS pingLabel
   FROM regions ORDER BY position, code`;
 
-const ENDPOINTS = `SELECT id, component_id AS componentId, region_code AS regionCode, cluster, provider, url
-  FROM endpoints WHERE enabled = 1 ORDER BY position, id`;
+const ENDPOINTS = `SELECT id, component_id AS componentId, region_code AS regionCode, cluster, provider, url,
+    ${iso("live_since")} AS liveSince
+  FROM endpoints ORDER BY position, id`;
 
 const CERTIFICATES = `SELECT host, ${iso("not_after")} AS notAfter, issuer, ${iso("checked_at")} AS checkedAt, error FROM tls_certs`;
 
@@ -103,14 +104,12 @@ const CERTIFICATES = `SELECT host, ${iso("not_after")} AS notAfter, issuer, ${is
 const LATEST = `SELECT s.endpoint_id AS endpointId, ${iso("s.at")} AS at, s.state, s.ok, s.total,
     s.latency_ms AS latencyMs, s.results
   FROM endpoints e JOIN probe_samples s ON s.endpoint_id = e.id
-    AND s.at = (SELECT max(at) FROM probe_samples WHERE endpoint_id = e.id)
-  WHERE e.enabled = 1`;
+    AND s.at = (SELECT max(at) FROM probe_samples WHERE endpoint_id = e.id)`;
 
 const periods = (table: "probe_hours" | "probe_days", column: "hour" | "day") =>
   `SELECT p.endpoint_id AS endpointId, ${iso(`p.${column}`)} AS start, p.checks, p.failures, p.degraded,
     p.latency_sum AS latencySum, p.hist
-  FROM endpoints e JOIN ${table} p ON p.endpoint_id = e.id AND p.${column} >= ?1 AND p.vantage = 'all'
-  WHERE e.enabled = 1`;
+  FROM endpoints e JOIN ${table} p ON p.endpoint_id = e.id AND p.${column} >= ?1 AND p.vantage = 'all'`;
 
 const VANTAGES = `SELECT code, colo FROM vantages`;
 
@@ -143,9 +142,6 @@ const HOUR_SERIES = `SELECT p.endpoint_id AS endpointId, ${iso("p.hour")} AS sta
     p.latency_sum AS latencySum, p.hist
   FROM endpoints e JOIN probe_hours p ON p.endpoint_id = e.id AND p.hour >= ?1 AND p.hour < ?2 AND p.vantage = 'all'
   WHERE e.id IN (SELECT value FROM json_each(?3))`;
-
-const ALL_ENDPOINTS = `SELECT id, component_id AS componentId, region_code AS regionCode, cluster, provider, url
-  FROM endpoints ORDER BY position, id`;
 
 function parseResults(text: string): VantageSample[] {
   try {
@@ -274,7 +270,7 @@ export async function loadIncident(env: Env, id: string, now: number): Promise<I
     db.prepare(INCIDENT).bind(id),
     db.prepare(UPDATES).bind(id),
     db.prepare(COMPONENTS),
-    db.prepare(ALL_ENDPOINTS),
+    db.prepare(ENDPOINTS),
   ]);
   const incident = incidents(found)[0];
   if (!incident) return null;

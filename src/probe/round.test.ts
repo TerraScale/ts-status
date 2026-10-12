@@ -100,48 +100,69 @@ describe("evaluate", () => {
   });
 });
 
+/** A vantage answering every catalog target as its service would when up,
+    except those `failing` names, which answer 503. */
+function vantage(code: string, failing: (url: string) => boolean = () => false, version = () => "1.0.0") {
+  return {
+    fetch: async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as ProbeRequest;
+      return Response.json({
+        vantage: code,
+        colo: code.toUpperCase(),
+        results: body.targets.map((target) => {
+          const region = (JSON.parse(target.headers) as Record<string, string>)["fly-prefer-region"];
+          const answer = (status: number, json?: unknown) => ({
+            key: target.key,
+            status,
+            latencyMs: 40,
+            error: null,
+            body: target.body ? (json === undefined ? "TerraScale" : JSON.stringify(json)) : undefined,
+          });
+          if (failing(target.url)) return answer(503, {});
+          if (target.url.endsWith("/readyz")) return answer(200, { status: "ready", version: version(), region });
+          if (target.url.includes("/v1/")) return answer(401, { error: { code: "invalid_key" } });
+          if (target.url.includes("openid-configuration"))
+            return answer(200, {
+              issuer: "https://auth.terrascale.tech/terrascale",
+              jwks_uri: "https://auth.terrascale.tech/terrascale/jwks",
+            });
+          if (target.url.includes("cloudflarestatus")) return answer(200, { component: { status: "operational" } });
+          return answer(200);
+        }),
+      } satisfies ProbeResponse);
+    },
+  };
+}
+
+const READY = [
+  "01M4E7G1W82VKFPF5FJ9AVK1D6",
+  "01M4E7G1W82VKFPF5FJ9AVK1DQ",
+  "01M4E7G1W82VKFPF5FJ9AVK1DR",
+  "01M4E7G1W82VKFPF5FJ9AVK1DX",
+  "01M4E7G1W82VKFPF5FJ9AVK1DY",
+  "01M4E7G1W82VKFPF5FJ9AVK1DZ",
+];
+
 describe("runRound", () => {
-  it("stores one sample per endpoint, each vantage's location once, and new versions as deploys", async () => {
+  it("stores one sample per endpoint, launches passing ones, and records new versions as deploys", async () => {
     const db = testD1();
     let version = "1.0.0";
     const asked: string[] = [];
-    const vantage = (code: string) => ({
-      fetch: async (_url: string, init: RequestInit) => {
-        const body = JSON.parse(String(init.body)) as ProbeRequest;
-        asked.push(code);
-        return Response.json({
-          vantage: code,
-          colo: code.toUpperCase(),
-          results: body.targets.map((target) => ({
-            key: target.key,
-            status: target.url.includes("openid-configuration")
-              ? 404
-              : target.url.includes("api.terrascale.tech/v1/")
-                ? 401
-                : 200,
-            latencyMs: 40,
-            error: null,
-            body: target.body
-              ? JSON.stringify({
-                  status: target.url.includes("git") ? "pass" : target.url.includes("auth") ? "ready" : "ok",
-                  version,
-                  regions: [{ code: "GRU", available: true }],
-                  hosts: { GRU: "gru.api.terrascale.tech" },
-                  error: { code: "invalid_key" },
-                })
-              : undefined,
-          })),
-        } satisfies ProbeResponse);
-      },
-    });
+    const counted = (code: string) => {
+      const inner = vantage(
+        code,
+        (url) => url === "https://terrascale.tech/",
+        () => version,
+      );
+      return { fetch: (url: string, init: RequestInit) => (asked.push(code), inner.fetch(url, init)) };
+    };
     const env = {
       STATUS_DB: db,
-      VANTAGE_SFO: vantage("sfo"),
-      VANTAGE_GRU: vantage("gru"),
-      VANTAGE_FRA: vantage("fra"),
+      VANTAGE_SFO: counted("sfo"),
+      VANTAGE_GRU: counted("gru"),
+      VANTAGE_FRA: counted("fra"),
       VANTAGE_NRT: { fetch: async () => new Response("boom", { status: 500 }) },
     } as unknown as Env;
-    // The website must mention TerraScale; this stand-in answers JSON, so it fails.
     const at = Date.parse("2026-09-26T10:00:30Z");
     const first = await runRound(env, at, { streaks: {}, colos: {}, versions: {}, trackers: {} });
     // Retrying the same round stores nothing new.
@@ -151,60 +172,74 @@ describe("runRound", () => {
 
     expect(asked).toHaveLength(9);
     expect(first.colos).toEqual({ sfo: "SFO", gru: "GRU", fra: "FRA" });
-    expect(first.versions).toEqual({ "01M4E7G1W82VKFPF5FJ9AVK1D6": "1.0.0", "01M4E7G1W82VKFPF5FJ9AVK1D8": "1.0.0" });
+    expect(first.versions).toEqual(Object.fromEntries(READY.map((id) => [id, "1.0.0"])));
     const samples = db.sqlite
       .prepare(
-        `SELECT endpoint_id, state, ok, total, "values" FROM probe_samples WHERE at = '2026-09-26 10:00:30' ORDER BY endpoint_id`,
+        `SELECT endpoint_id, state, ok, total FROM probe_samples WHERE at = '2026-09-26 10:00:30' ORDER BY endpoint_id`,
       )
       .all();
     expect(samples).toEqual([
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D4", state: "operational", ok: 3, total: 3, values: null },
-      {
-        endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D6",
-        state: "operational",
-        ok: 3,
-        total: 3,
-        values: '{"version":"1.0.0"}',
-      },
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D7", state: "none", ok: 0, total: 0, values: null },
-      {
-        endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D8",
-        state: "operational",
-        ok: 3,
-        total: 3,
-        values: '{"version":"1.0.0"}',
-      },
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DB", state: "operational", ok: 3, total: 3, values: null },
-      // Without TERRABASE_PROBES the TerraBase probes are not configured, never down.
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DF", state: "none", ok: 0, total: 0, values: null },
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DH", state: "operational", ok: 3, total: 3, values: null },
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DQ", state: "none", ok: 0, total: 0, values: null },
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DS", state: "degraded", ok: 0, total: 3, values: null },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D6", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D7", state: "operational", ok: 3, total: 3 },
+      // Without DATA_API_CANARY or TERRABASE_PROBES the canaries are not configured, never down.
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D9", state: "none", ok: 0, total: 0 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DB", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DC", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DD", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DF", state: "none", ok: 0, total: 0 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DG", state: "none", ok: 0, total: 0 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DH", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DQ", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DR", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DS", state: "degraded", ok: 0, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DX", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DY", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DZ", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1E0", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1E1", state: "none", ok: 0, total: 0 },
     ]);
-    expect(db.sqlite.prepare("SELECT endpoint_id, version FROM deploys").all()).toEqual([
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D6", version: "1.1.0" },
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1D8", version: "1.1.0" },
+    // Every endpoint that passed launched with its first round; the failing website and the canaries wait.
+    expect(
+      db.sqlite.prepare("SELECT id, live_since FROM endpoints WHERE live_since IS NULL ORDER BY id").all(),
+    ).toEqual([
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1D9", live_since: null },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DF", live_since: null },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DG", live_since: null },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DS", live_since: null },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1E1", live_since: null },
     ]);
+    expect(db.sqlite.prepare("SELECT DISTINCT live_since FROM endpoints WHERE live_since IS NOT NULL").all()).toEqual([
+      { live_since: "2026-09-26 10:00:30" },
+    ]);
+    expect(db.sqlite.prepare("SELECT endpoint_id, version FROM deploys ORDER BY endpoint_id").all()).toEqual(
+      READY.map((id) => ({ endpoint_id: id, version: "1.1.0" })),
+    );
     expect(db.sqlite.prepare("SELECT code FROM vantages").all()).toHaveLength(3);
+  });
+
+  it("probes only active components", async () => {
+    const db = testD1();
+    db.sqlite.exec("UPDATE components SET lifecycle = 'planned' WHERE id != '01M4E7G1W82VKFPF5FJ9AVK1D3'");
+    const env = {
+      STATUS_DB: db,
+      VANTAGE_SFO: vantage("sfo"),
+      VANTAGE_GRU: vantage("gru"),
+      VANTAGE_FRA: vantage("fra"),
+      VANTAGE_NRT: vantage("nrt"),
+    } as unknown as Env;
+    await runRound(env, Date.parse("2026-09-26T10:00:30Z"), { streaks: {}, colos: {}, versions: {}, trackers: {} });
+    expect(db.sqlite.prepare("SELECT endpoint_id FROM probe_samples").all()).toEqual([
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DS" },
+    ]);
   });
 
   it("runs with state keyed by retired endpoint IDs and stores none of it", async () => {
     const db = testD1();
-    const vantage = {
-      fetch: async (_url: string, init: RequestInit) => {
-        const body = JSON.parse(String(init.body)) as ProbeRequest;
-        return Response.json({
-          vantage: "sfo",
-          colo: "SFO",
-          results: body.targets.map((target) => ({ key: target.key, status: 200, latencyMs: 40, error: null })),
-        } satisfies ProbeResponse);
-      },
-    };
     const env = {
       STATUS_DB: db,
-      VANTAGE_SFO: vantage,
-      VANTAGE_GRU: vantage,
-      VANTAGE_FRA: vantage,
+      VANTAGE_SFO: vantage("sfo"),
+      VANTAGE_GRU: vantage("gru"),
+      VANTAGE_FRA: vantage("fra"),
       VANTAGE_NRT: { fetch: async () => new Response("boom", { status: 500 }) },
     } as unknown as Env;
     const at = Date.parse("2026-09-26T10:01:00Z");
@@ -214,10 +249,14 @@ describe("runRound", () => {
       versions: { legacy: "0.9.0" },
       trackers: {},
     });
-    const enabled = db.sqlite.prepare("SELECT COUNT(*) AS n FROM endpoints WHERE enabled = 1").get() as { n: number };
+    const measured = db.sqlite
+      .prepare(
+        "SELECT COUNT(*) AS n FROM endpoints e JOIN components c ON c.id = e.component_id WHERE c.lifecycle = 'active'",
+      )
+      .get() as { n: number };
     expect(
       db.sqlite.prepare("SELECT endpoint_id FROM probe_samples WHERE at = '2026-09-26 10:01:00'").all(),
-    ).toHaveLength(enabled.n);
+    ).toHaveLength(measured.n);
     expect(db.sqlite.prepare("SELECT endpoint_id FROM probe_samples WHERE endpoint_id = 'legacy'").all()).toEqual([]);
     expect(db.sqlite.prepare("SELECT endpoint_id FROM deploys WHERE endpoint_id = 'legacy'").all()).toEqual([]);
     expect(state.streaks).not.toHaveProperty("legacy");
@@ -225,74 +264,54 @@ describe("runRound", () => {
 });
 
 describe("automatic incidents", () => {
-  it("opens an incident for a component down for a minute and resolves it after five healthy minutes", async () => {
+  const run = async (failing: (url: string, round: number) => boolean, rounds = 20) => {
     const db = testD1();
-    let up = false;
-    const vantage = (code: string) => ({
-      fetch: async (_url: string, init: RequestInit) => {
-        const body = JSON.parse(String(init.body)) as ProbeRequest;
-        return Response.json({
-          vantage: code,
-          colo: null,
-          results: body.targets.map((target) => {
-            const failing = !up && target.url.includes("git.terrascale.tech");
-            const json = {
-              status: target.url.includes("git") ? "pass" : target.url.includes("auth") ? "ready" : "ok",
-              regions: [{ code: "GRU", available: true }],
-              hosts: { GRU: "gru.api.terrascale.tech" },
-              error: { code: "invalid_key" },
-            };
-            return {
-              key: target.key,
-              status: failing
-                ? 503
-                : target.url.includes("openid-configuration")
-                  ? 404
-                  : target.url.includes("api.terrascale.tech/v1/")
-                    ? 401
-                    : 200,
-              latencyMs: 40,
-              error: null,
-              body: target.url === "https://terrascale.tech/" ? "TerraScale" : JSON.stringify(json),
-            };
-          }),
-        } satisfies ProbeResponse);
-      },
-    });
+    let round = 0;
     const env = {
       STATUS_DB: db,
-      VANTAGE_SFO: vantage("sfo"),
-      VANTAGE_GRU: vantage("gru"),
-      VANTAGE_FRA: vantage("fra"),
-      VANTAGE_NRT: vantage("nrt"),
+      ...Object.fromEntries(
+        ["sfo", "gru", "fra", "nrt"].map((code) => [
+          `VANTAGE_${code.toUpperCase()}`,
+          vantage(code, (url) => failing(url, round)),
+        ]),
+      ),
     } as unknown as Env;
-
     let state = { streaks: {}, colos: {}, versions: {}, trackers: {} };
     const start = Date.parse("2026-09-26T10:00:00Z");
-    for (let round = 0; round < 20; round++) {
-      if (round === 6) up = true;
-      state = await runRound(env, start + round * 30_000, state);
-    }
+    for (; round < rounds; round++) state = await runRound(env, start + round * 30_000, state);
+    return db;
+  };
 
+  it("opens an incident for a component down for a minute and resolves it after five healthy minutes", async () => {
+    // Up at first, so it launches; down from 10:00:30 to 10:03:00.
+    const db = await run((url, round) => url.startsWith("https://docs.") && round >= 1 && round <= 6);
     const incidents = db.sqlite
       .prepare("SELECT title, status, impact, source, auto_key, created_at, resolved_at FROM incidents")
       .all();
     expect(incidents).toEqual([
       {
-        title: "Git and CI is down",
+        title: "Documentation is down",
         status: "resolved",
         impact: "critical",
         source: "auto",
         auto_key: null,
         // Opened a minute after the first failing round.
-        created_at: "2026-09-26 10:01:00",
-        resolved_at: "2026-09-26 10:08:00",
+        created_at: "2026-09-26 10:01:30",
+        resolved_at: "2026-09-26 10:08:30",
       },
     ]);
     const updates = db.sqlite.prepare("SELECT status FROM incident_updates ORDER BY created_at").all();
     expect(updates.map((row) => row.status)).toEqual(["investigating", "monitoring", "resolved"]);
     expect(db.sqlite.prepare("SELECT component_id FROM incident_components").all()).toEqual([
-      { component_id: "01M4E7G1W82VKFPF5FJ9AVK1CZ" },
+      { component_id: "01M4E7G1W82VKFPF5FJ9AVK1CX" },
     ]);
+  });
+
+  it("opens nothing for a service that has not launched yet, and launches it on its first passing round", async () => {
+    const db = await run((url, round) => url.startsWith("https://auth.") && round < 8, 10);
+    expect(db.sqlite.prepare("SELECT count(*) AS n FROM incidents").get()).toEqual({ n: 0 });
+    expect(
+      db.sqlite.prepare("SELECT DISTINCT live_since FROM endpoints WHERE url LIKE 'https://auth.%'").all(),
+    ).toEqual([{ live_since: "2026-09-26 10:04:00" }]);
   });
 });

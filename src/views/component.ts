@@ -4,7 +4,7 @@
 import type { Details } from "../db/details";
 import { RANGES } from "../domain/range";
 import { percentile } from "../domain/histogram";
-import { probeUptime, sumCounts } from "../domain/status";
+import { COMING_SOON, probeUptime, sumCounts } from "../domain/status";
 import { formatUptime } from "../format";
 import { html } from "../html";
 import { Measurements } from "../measure";
@@ -42,14 +42,14 @@ export function componentPage(view: Overview, entry: ComponentOverview, details:
     <p class="ts-eyebrow"><a class="ts-link" href="/">Status</a> · ${group?.name ?? "Component"}</p>
     <div class="ts-row">
       <h1 class="st-title">${entry.name}</h1>
-      ${statusBadge(entry.status, planned ? "Planned" : (entry.note ?? undefined))}
+      ${statusBadge(entry.status, planned ? COMING_SOON : (entry.note ?? undefined))}
     </div>
     <p class="ts-muted">${entry.description}</p>
   </header>
 
   ${
     planned
-      ? empty("Not launched yet", `${entry.name} is planned. It will be measured here once it launches.`)
+      ? empty("Not launched yet", `${entry.name} is coming soon. It will be measured here once it launches.`)
       : html`<dl class="ts-stats" aria-label="${entry.name} over the last ${range}">
     ${stat("Uptime", formatUptime(probeUptime(total)), `last ${range}`)}
     ${stat("Median", ms(percentile(total.hist, 0.5)), "response time")}

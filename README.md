@@ -1,8 +1,6 @@
 # ts-status
 
-Read the [required zero-configuration operating contract](docs/zero-configuration.md).
-Current configuration paths described below are implementation limitations, not
-production activation instructions.
+Read the [zero-configuration operating contract](docs/zero-configuration.md).
 
 TerraScale's public status page at <https://status.terrascale.tech>: a TypeScript Cloudflare Worker that renders HTML at the edge from Cloudflare D1. Status is the sole Ouroboros exception: its history, incidents, subscriptions and coordinator remain on D1/Durable Objects so a TerraBase outage cannot disable the status page; other TerraScale products use TerraBase. It uses the ts-dashboard design system (`../ts-dashboard/DESIGN_SYSTEM.md`): the same tokens, Oxanium type, and flat hairline components.
 
@@ -19,23 +17,18 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 
 - **Four vantage points.** Small Workers placed near `aws:us-west-1`, `aws:sa-east-1`, `aws:eu-central-1` and `aws:ap-northeast-1` probe every endpoint; each reports the data center it ran in.
 - **30-second rounds.** A single coordinator Durable Object, next to the D1 primary, runs a round on every half minute through the vantages' service bindings and stores one sample per endpoint.
-- **Consensus.** A round needs two answering vantages; an endpoint is down only when most of them fail, degraded when some do or it is slower than 1.5 s, and shown down only after two down rounds in a row. A vantage that does not answer is left out, never counted as a failure. An endpoint's `blocked_status` names the status its probe is known to be refused with by something in front of the service: that result is a probe error ("Probe blocked"), also left out. Cloudflare answers the vantages' requests to dash and git, which answer everyone else, with 403, so only those two set it; any other unexpected status, 403 included, still fails.
-- **Deep checks.** Besides answering, an endpoint can be required to return an expected status, contain a keyword, or satisfy JSON assertions. The global API router and GRU's public C# document handler are checked with an unauthenticated `GET /v1/projects/{project}/databases/{database}/collections/{collection}/documents/{id}`: `401 invalid_key` proves the handler is reachable, not that authenticated reads/writes work. Atlas's `GET /api/v1/regions` must list at least one region with a `code` and include a `hosts` map; the check names no region, so new regions need no catalog change. Atlas normalizes region codes to uppercase. Region identity is separate from DNS: production TerraBase is `https://gru.api.terrascale.tech`, served by Caddy on OCI `gru-1`, and the display region is `GRU`. Dashboard readiness at `https://dash.terrascale.tech/health/ready` returns `200 {"status":"ok","version":…}`. Authentication readiness at `https://auth.terrascale.tech/readyz` returns `200 {"status":"ready","version":…}`; an unavailable storage authority returns 503. Both checks record version changes. The draft TS-598 target for OIDC discovery is `https://gru.auth.terrascale.tech/terrascale/.well-known/openid-configuration`: a 200 must name the exact regional `/terrascale` issuer and its JWKS. The global auth origin is an Atlas proxy, not the issuer. The active catalog's pending discovery observation remains unknown ("Not available yet") on its configured 404; readiness continues to drive authentication status until the upstream contract ships. The current catalog still excludes some regions/components; that is an
-  implementation gap. Every discovered regional service must be monitored
-  automatically. Missing measurements remain unknown, never fabricated healthy.
-- **Data API canary (draft target).** With `DATA_API_CANARY` configured and `data-api-canary-gru` enabled, the coordinator will write each round's marker into a dedicated canary document and read it back through the TS-592 SDK. Authentication uses a project-scoped, database-restricted ts-auth key with `documents:read documents:write`, exchanged for a short-lived bearer token; the key itself is not a bearer token. A rejected exchange, a failed commit, an unreadable write, or an enabled canary missing its secret fails the round; two failures in a row are an outage.
-- **TerraBase probes (draft target).** TS-598 defines identity and token exchange; TS-589 defines TerraBase's project-scoped resource authorization, and TS-592 must expose those contracts through `@terrascale/sdk`. Origins and credentials come from `TERRABASE_PROBES`. An endpoint omitted from the secret shows "Not configured", with no uptime contribution. Malformed configuration, a timeout (5 seconds per request), an unexpected status or an invalid payload fails the round.
-
-  | Component        | Requests, in order                                                                 | Credential                                                                       |
-  | ---------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-  | TerraBase health | `GET /readyz` must return `200` with `status: "ready"`                             | None; readiness is unauthenticated                                               |
-  | Document API     | Write → read → query → delete a dedicated document through the TS-592 SDK          | Project key restricted to `status_canary`, with `documents:read documents:write` |
-  | Management API   | Read/list the dedicated project's databases through the TS-589/TS-592 resource API | Separate project key with only `databases:read`; no identity-management calls    |
-
-  **Draft blocker:** `src/probe/sdk.ts` prepares credential validation, platform-grant arguments and SDK document operations against the published TS-598/TS-589 contract. It is deliberately not connected to `round.ts`: `@terrascale/sdk@0.0.2` supports only legacy `tb_` document CRUD and has no platform-grant, management or readiness SDK surface. Keep this PR draft until TS-589 and TS-592 ship. Production wiring, token exchange/cache/refresh, management/readiness SDK calls, catalog changes and a JWT-capable real fixture remain merge gates. The target configuration below is not ready to deploy; no TS-598/TS-589/TS-592 interoperability tests have been run.
-
-- **TLS expiry.** A Worker cannot see a served certificate, so once an hour the cron refreshes, from certificate transparency logs (Cert Spotter), the latest valid certificate of every monitored host not checked in a day. A latest certificate expiring within two weeks means renewal has stalled: the page warns, and cluster rows show every host's expiry.
-- **Automatic incidents.** After every round the coordinator steps a state machine per component: down for a minute (or degraded for ten) opens an incident with its timeline, a worse state raises its impact, passing checks move it to monitoring, and five healthy minutes resolve it. Maintenance windows suppress it, and incidents operators take over are left alone.
+- **Consensus.** A round needs two answering vantages; an endpoint is down only when most of them fail, degraded when some do or it is slower than 1.5 s, and shown down only after two down rounds in a row. A vantage that does not answer is left out, never counted as a failure. An endpoint's `blocked_status` names a status something in front of the service is known to refuse the probe with: that result is a probe error ("Probe blocked"), also left out.
+- **Fly regions.** TerraBase (`https://api.terrascale.tech`, Fly app `ts-terrabase`) and ts-auth (`https://auth.terrascale.tech`) run one machine in every Fly region: gru (São Paulo), sjc (San Francisco Bay Area) and fra (Frankfurt) today. Each regional endpoint pins its region with the `fly-prefer-region` header, and the readiness checks require the answer's `region` to match, so a region whose machine is gone fails instead of being answered by another region.
+- **Deep checks.** Besides answering, an endpoint can be required to return an expected status, contain a keyword, or satisfy JSON assertions:
+  - TerraBase and ts-auth readiness: `GET /readyz` must return `200 {"status":"ready","version":…,"region":"gru"}`; the version is recorded, so deploys show on the latency charts.
+  - Data API: an unauthenticated `GET /v1/projects/{project}/databases/{database}/collections/{collection}/documents/{id}` must answer `401 invalid_key`, which proves the request reached the document handler in that region.
+  - Authentication: the platform tenant's OIDC discovery at `https://auth.terrascale.tech/terrascale/.well-known/openid-configuration` must name the issuer `https://auth.terrascale.tech/terrascale` and a JWKS. Every tenant has its own issuer at `/<tenant>`.
+  - Documentation (`https://docs.terrascale.tech`) and the website (`https://terrascale.tech`) must answer 2xx; the website must mention TerraScale.
+  - Email: Cloudflare Email Sending has no health endpoint, so its component on Cloudflare's status page is read instead. That check is `indirect`: when the status page cannot be reached the result is unknown, not down.
+- **Pending launch.** An endpoint counts only from its first passing round (`live_since`). Until then it shows "Pending launch" in grey, opens no incident and adds nothing to uptime, so a service that is not live yet never looks like an outage. Rounds before the launch are left out of the rollups.
+- **Canaries.** The Data API canary (`DATA_API_CANARY`) writes each round's marker into a dedicated canary document and reads it back; the Document API probes (`TERRABASE_PROBES`) write, read, query and delete a canary document in each region. Both secrets are JSON keyed by endpoint ULID with the origin (`https://api.terrascale.tech`), the Fly `region`, and a project-scoped key restricted to the canary database. An endpoint the secret does not name shows "Not configured" and counts toward nothing; a malformed entry, a timeout (5 seconds per request) or a failed write fails the round.
+- **TLS expiry.** A Worker cannot see a served certificate, so once an hour the cron refreshes, from certificate transparency logs (Cert Spotter), the latest valid certificate of every monitored host not checked in a day (indirect sources such as Cloudflare's status page are skipped). A latest certificate expiring within two weeks means renewal has stalled: the page warns, and cluster rows show every host's expiry.
+- **Automatic incidents.** After every round the coordinator steps a state machine per component: down for a minute (or degraded for ten) opens an incident with its timeline, a worse state raises its impact, passing checks move it to monitoring, and five healthy minutes resolve it. Maintenance windows suppress it, and incidents operators take over in the admin page are left alone.
 - **Rollups.** The minute cron rebuilds hourly rollups (per vantage and for the consensus, with latency histograms) from the samples and daily rollups from the hours. Samples are kept 48 hours, hours 90 days and days 400 days.
 
 ## Layout
@@ -45,14 +38,15 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 | `src/worker.ts`   | Worker entry: re-exports the handler and the coordinator Durable Object |
 | `src/app.ts`      | Routes, edge cache, cron entry point                                    |
 | `src/router.ts`   | `/incidents/:id`-style path patterns                                    |
-| `src/http/`       | Cache keys, content security policy, security headers, operator auth    |
+| `src/http/`       | Cache keys, content security policy, security headers                   |
+| `src/admin/`      | The admin page: sign-in, sessions, CSRF and every operator action       |
 | `src/db/`         | D1 queries                                                              |
 | `src/domain/`     | Status domain: states, catalog, incidents, consensus, probe maths       |
 | `src/overview.ts` | The overview shared by the page and the JSON API                        |
 | `src/measure.ts`  | Counts, latency percentiles and series from per-vantage rollups         |
 | `src/probe/`      | Coordinator, probe rounds, rollups, retention and TLS expiry            |
 | `src/vantage/`    | The vantage Worker that probes targets for the coordinator              |
-| `src/api/`        | The v1, Statuspage-compatible and operator JSON APIs                    |
+| `src/api/`        | The v1 and Statuspage-compatible JSON APIs                              |
 | `src/feeds/`      | Atom, RSS and iCalendar feeds, and SVG status badges                    |
 | `src/notify/`     | Subscriptions, the outbox, email and webhooks                           |
 | `src/views/`      | HTML views and the client script                                        |
@@ -62,15 +56,27 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 
 Every entity ID is a plain, canonical uppercase 26-character Crockford ULID. `src/ids.ts` uses the maintained `ulid` library's monotonic generator. Requests reject UUIDs, prefixes, lowercase aliases, invalid alphabet characters and overflow. D1 enforces the same contract for primary IDs. Region/vantage codes, hostnames, database/collection names and composite measurement keys are natural keys, not entity IDs. TerraBase document bodies contain only data; the document key is the entity ID.
 
-`schema.sql` is the idempotent clean bootstrap (one SQL statement per line for D1 `exec`); historical data migrations are removed. Fresh stores recreate the schema and catalog before serving requests or running scheduled probes. Repeated startup preserves incidents, subscriptions and operator catalog edits. Catalog IDs are fixed ULIDs; discover component IDs through `/api/v1/status` and endpoint IDs through a D1 catalog query. Probe secrets are keyed by endpoint ULID.
+`schema.sql` is the idempotent clean bootstrap (one SQL statement per line for D1 `exec`); historical data migrations are removed. Fresh stores recreate the schema and catalog before serving requests or running scheduled probes. Repeated startup preserves incidents, subscriptions and catalog edits made in the admin page. Seeded catalog IDs are fixed ULIDs; the admin page shows every component and endpoint ID. Probe secrets are keyed by endpoint ULID.
 
-Production uses the clean store `ts-status` (`c2eca5bc-6045-4983-941a-4e01e4e0c749`), created empty for TS-754; the pre-ULID `ts-status-db` (`8a72dd69-2136-4398-8d70-92c0c2dade5a`) is retained read-only until deletion is approved.
+Production uses the D1 store `ts-status` (`c2eca5bc-6045-4983-941a-4e01e4e0c749`).
 
 ## Catalog
 
-Status is measured, never hand-edited. Components sit in display groups and are checked by regional or global endpoints. Planned components are shown without contributing to measured status. The current catalog measures only a subset of services; automatic discovery
-and probing of every region remain implementation gaps. The GRU browser ping uses public `/healthz`. Origins must follow Atlas discovery automatically; Vault delivers scoped probe
-credentials without manual pinning or copying. The [`status-endpoint`](skills/status-endpoint/SKILL.md) skill manages the catalog.
+Status is measured, never hand-edited. Components sit in display groups and are checked by regional or global endpoints:
+
+| Group     | Component      | Endpoints                                                                 |
+| --------- | -------------- | ------------------------------------------------------------------------- |
+| TerraBase | TerraBase API  | `api.terrascale.tech/readyz` in gru, sjc and fra                          |
+| TerraBase | Data API       | Unauthenticated document read in gru, sjc and fra; the gru canary         |
+| TerraBase | Document API   | The document canary probe in gru, sjc and fra                             |
+| TerraBase | Replication    | None yet: "Pending launch" until TerraBase publishes replication health   |
+| Platform  | Authentication | `auth.terrascale.tech/readyz` in gru, sjc and fra; the tenant OIDC issuer |
+| Platform  | Documentation  | `docs.terrascale.tech`                                                    |
+| Platform  | Website        | `terrascale.tech`                                                         |
+| Platform  | Email          | Cloudflare Email Sending, from Cloudflare's status page                   |
+| Platform  | Dashboard      | None yet: "Coming soon"                                                   |
+
+A component is either active (measured) or "Coming soon" (shown, never probed). An active component without endpoints shows "Pending launch": TerraBase's replication status (`GET /replication`) is loopback-only today, so per-region replication endpoints are added in the admin page once it is public. Edit the catalog, regions and groups in the admin page; see the [`status-endpoint`](skills/status-endpoint/SKILL.md) skill.
 
 ## Local development
 
@@ -79,6 +85,8 @@ npm ci
 nice -n 19 npm run db:bootstrap:local
 nice -n 19 npm run dev
 ```
+
+For the admin page locally, put an `ADMIN_PASSWORD_HASH` (see [Admin](#admin)) and an `ADMIN_SESSION_SECRET` in `.dev.vars` (git-ignored).
 
 The dev server listens on every interface (reachable over the tailnet) and reloads on change. The local D1 database lives under `.wrangler/state`. The four vantage Workers run alongside the status Worker. Arm the coordinator (and roll up samples) with `curl 'http://localhost:5173/cdn-cgi/handler/scheduled'`; rounds then run every 30 seconds.
 
@@ -91,7 +99,7 @@ nice -n 19 npm run build
 nice -n 19 npm test
 ```
 
-The existing legacy TerraBase probe suites launch the actual `terrabase-linux-amd64` release pinned by tag and SHA256 in `src/testing/terrabase-release.json`. They verify the executable before running it, provision an isolated organization/project/database through its real APIs, and use a temporary TLS certificate and data directory. Only ts-status's own D1 storage is substituted. Linux x64 and OpenSSL are required. The harness downloads through authenticated `fj` or `FORGEJO_READ_TOKEN` and caches the verified binary; `TERRABASE_BINARY=/path/to/terrabase-linux-amd64` supplies an existing copy, which must match the same SHA256. CI reads `ORG_READ_TOKEN`, which must have access to the private release; no credential is stored in the repo.
+The existing legacy TerraBase probe suites launch the actual `terrabase-linux-amd64` release pinned by tag and SHA256 in `src/testing/terrabase-release.json`. They verify the executable before running it, provision an isolated organization/project/database through its real APIs, and use a temporary TLS certificate and data directory. Only ts-status's own D1 storage is substituted. Linux x64 and OpenSSL are required. `TERRABASE_BINARY=/path/to/terrabase-linux-amd64` supplies the binary, which must match the pinned SHA256. CI skips these suites until TerraBase release binaries are published on GitHub.
 
 The pinned release includes client-listener `/readyz` and region identity. The legacy readiness integration test runs unconditionally and checks `status: "ready"`, the configured `region`, and `X-TerraBase-Region` against that binary. `src/probe/sdk.test.ts` verifies the prepared SDK document operations against the same real release using its legacy fixture credential, and explicitly records the published SDK's JWT/grant restrictions. These baseline tests do not establish platform credential interoperability. That gate must wait for the upstream releases and a matching pinned TerraBase binary; it has not been run.
 
@@ -134,7 +142,7 @@ Every versioned API uses v1. Statuspage-compatible documents use the `.json` suf
 and `/api/v1/scheduled-maintenances/active.json`. The extensionless
 `/api/v1/status` and `/api/v1/incidents` retain their TerraScale payloads and query parameters.
 
-Operators publish incidents with the [`status-warning`](skills/status-warning/SKILL.md) skill.
+Operators publish incidents in the [admin page](#admin) ([`status-warning`](skills/status-warning/SKILL.md) skill).
 
 `GET /api/latency` is public, allows any CORS origin and is cached for 10 seconds. It returns
 `generated_at` (RFC3339), `window: "1h"` and `regions`, each with a lowercase `code`, `name`,
@@ -145,22 +153,25 @@ samples. Regions without a configured ping URL retain `ping_url: null`. Outages 
 maintenance and unmeasured regions map to `planned`. The optional case-insensitive `?region=gru`
 filters to one region; an unknown code returns an empty list.
 
-The operator API under `/api/operator` still requires a scoped bearer token.
-OCI Vault must provision/deliver it automatically. The current `OPERATOR_TOKEN`
-consumer is a delivery gap; authorization remains mandatory:
+## Admin
 
-| Method and path                            | Does                                                                               |
-| ------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `POST /api/operator/incidents`             | Publishes an incident, warning or maintenance window                               |
-| `GET /api/operator/incidents/:id`          | Reads a record with its updates and components                                     |
-| `PATCH /api/operator/incidents/:id`        | Edits title, impact, components or schedule                                        |
-| `DELETE /api/operator/incidents/:id`       | Removes a record published by mistake                                              |
-| `POST /api/operator/incidents/:id/updates` | Posts an update, changing status (and impact)                                      |
-| `POST /api/operator/deploys`               | Records a deploy marker for an endpoint                                            |
-| `PATCH /api/operator/components/:id`       | Legacy lifecycle control; runtime removal pending automatic catalog reconciliation |
-| `PATCH /api/operator/endpoints/:id`        | Legacy endpoint switch; runtime removal pending automatic discovery                |
+<https://status.terrascale.tech/admin> is the only way to change anything: publish, edit, update, resolve or delete incidents, warnings and maintenance windows; record deploy markers; add, edit and delete groups, components, endpoints and regions; remove subscribers; and check endpoints from every vantage on demand ("Check now", nothing stored). Editing an automatic incident takes it over from the probe coordinator. Planning or deleting a component, or deleting its last endpoint, is refused while an automatic incident is open for it: resolve the incident first.
 
-Editing an automatic incident takes it over from the probe coordinator. Pausing a component, or its last enabled endpoint, answers `409` while an automatic incident is open for it: resolve the incident first.
+- **One password.** Its PBKDF2-SHA256 hash (100,000 iterations, the Workers maximum) is the Worker secret `ADMIN_PASSWORD_HASH`, as `pbkdf2-sha256$100000$<salt>$<hash>` (base64url). The plaintext lives only in `~/.config/terrascale/ts-status-admin.txt` (mode 600) on the dev servers.
+- **Sessions.** Signing in sets `__Host-ts_status_admin`, an HttpOnly, Secure, SameSite=Strict cookie holding an expiry one hour out and a nonce, signed with HMAC-SHA256 under the Worker secret `ADMIN_SESSION_SECRET`. Nothing is stored server-side; rotating the secret signs everyone out.
+- **CSRF.** Every form carries a token derived from the session nonce, and every POST must come from this origin.
+- **Rate limit.** Sign-in attempts are limited to five a minute per client (`ADMIN_LOGIN_LIMITER`). Password and signature checks are constant time. Admin responses are never cached and carry `noindex`.
+
+To change the password, hash a new one and set both secrets:
+
+```sh
+node --input-type=module -e '
+import { webcrypto as c } from "node:crypto";
+const pw = process.argv[1], salt = c.getRandomValues(new Uint8Array(16)), b64 = (x) => Buffer.from(x).toString("base64url");
+const key = await c.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveBits"]);
+const bits = await c.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: 100000 }, key, 256);
+console.log(`pbkdf2-sha256$100000$${b64(salt)}$${b64(new Uint8Array(bits))}`);' "$(cat ~/.config/terrascale/ts-status-admin.txt)"
+```
 
 ## Subscriptions
 
@@ -170,49 +181,8 @@ The minute cron enqueues up to 1,000 eligible subscriber/update pairs into the D
 
 ## Deploy
 
-CI deploys qualified main revisions. OCI Vault must automatically provision and
-deliver operator, subscription and probe credentials, and deliver the
-vendor-issued Cloudflare deployment token stored once. There are no manual
-Worker-secret commands or email/probe activation steps.
+CI (GitHub Actions on Blacksmith) checks every pull request and deploys every green main build: it bootstraps D1 from `schema.sql`, deploys the four vantage Workers, then the status Worker. The Cloudflare deployment token is the repo secret `CLOUDFLARE_API_TOKEN`, scoped to ts-status.
 
-**Current gaps:** CI still consumes Forgejo deployment secrets and the Worker
-expects pre-existing runtime secrets. The catalog still has lifecycle/endpoint
-switches. This documentation implements neither Vault delivery nor automatic
-catalog reconciliation; it must not claim all regions are already measured.
+Worker secrets: `SUBSCRIPTION_SECRET`, `ADMIN_PASSWORD_HASH`, `ADMIN_SESSION_SECRET`, and the probe secrets `TERRABASE_PROBES` and `DATA_API_CANARY`. Set them with `wrangler secret put` or `cf workers secrets update`; never print them.
 
-### Probe provisioning (draft; wait for TS-589/TS-592)
-
-Provision a **dedicated status canary organization, project and database** only after the upstream contracts ship. Never point a write probe at customer data. These are target operator instructions; bootstrapping the catalog does not provision anything. Status history, incidents, subscriptions and probe coordination stay on Cloudflare D1/Durable Objects, the sole Ouroboros exception; TerraBase is only a probe target.
-
-Automatic provisioning must resolve every admitted region through Atlas and
-refresh placement changes without deriving hostnames from region IDs. It must
-create a dedicated canary organization/project/database and separate collections,
-never point write probes at customer data, and deliver probe credentials through
-OCI Vault without copying them.
-
-Retain these authorization and integrity requirements:
-
-- Use separate, narrowly scoped project keys for read/write canaries and
-  read-only management probes. Recurring probes must not gain database
-  provisioning privileges. Token exchange uses the trusted regional issuer;
-  customer-tenant and sign-in/service tokens cannot reach project routes.
-- Validate signature/type, exact issuer, audience, expiry/not-before,
-  `project_id`, database restriction and required scopes. Cache short-lived
-  tokens and exchange again once after an authentication rejection; never log keys.
-- Use separate fixed canonical document IDs. Attempt cleanup even after failed
-  writes. Verify `/readyz`; `/healthz` liveness cannot replace storage readiness.
-- Keep absent/unimplemented upstream contracts visibly unknown. The current
-  `TERRABASE_PROBES` and `DATA_API_CANARY` consumers remain delivery gaps; no
-  catalog bootstrap proves canary creation or credential interoperability.
-- Resolve and retain automatic incident evidence before removing any probe;
-  an unconfigured round cannot resolve an incident. Deletion of catalog data
-  and history still needs explicit approval of verified targets.
-
-The required upstream authorization/SDK contracts and real-server integration
-qualification remain prerequisites for claiming safe probes. They are quality
-and security boundaries, not feature activation switches.
-
-The current main pipeline bootstraps schema/catalog and deploys vantage Workers
-before the status Worker after checks pass. Vendor token scope must cover only
-required Worker, route and D1 operations. Existing repo-secret consumption is
-not evidence of automatic Vault delivery. Deployments retain commit identity.
+Canary keys must be project-scoped to a dedicated status canary organization, project and database, never customer data, with only `documents:read documents:write`.

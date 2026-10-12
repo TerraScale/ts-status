@@ -5,8 +5,9 @@ import { rollupStatements } from "./rollup";
 
 const at = (text: string) => Date.parse(text);
 
-function seed() {
+function seed(liveSince: string | null = "2026-09-26 10:00:00") {
   const db = testD1();
+  db.sqlite.prepare("UPDATE endpoints SET live_since = ? WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1DH'").run(liveSince);
   const insert = db.sqlite.prepare(
     "INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES (?, ?, ?, ?, ?, ?, ?)",
   );
@@ -59,8 +60,22 @@ describe("rollupStatements", () => {
     expect(JSON.parse(String(days[0]?.hist)).slice(0, 3)).toEqual([0, 1, 1]);
   });
 
+  it("leaves out rounds before an endpoint's launch, and every round while it is pending", async () => {
+    const now = at("2026-09-26T10:10:00Z");
+    const launched = seed("2026-09-26 10:00:30");
+    await launched.batch(rollupStatements(launched, ["01M4E7G1W82VKFPF5FJ9AVK1DH"], now));
+    expect(launched.sqlite.prepare("SELECT checks, failures FROM probe_hours WHERE vantage = 'all'").get()).toEqual({
+      checks: 2,
+      failures: 1,
+    });
+    const pending = seed(null);
+    await pending.batch(rollupStatements(pending, ["01M4E7G1W82VKFPF5FJ9AVK1DH"], now));
+    expect(pending.sqlite.prepare("SELECT count(*) AS n FROM probe_hours").get()).toEqual({ n: 0 });
+  });
+
   it("judges every canary round, though a canary is a single check", async () => {
     const db = testD1();
+    db.sqlite.exec("UPDATE endpoints SET live_since = '2026-09-26 00:00:00'");
     const insert = db.sqlite.prepare(
       "INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES ('01M4E7G1W82VKFPF5FJ9AVK1D9', ?, ?, ?, 1, ?, ?)",
     );

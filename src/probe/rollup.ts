@@ -23,13 +23,16 @@ const DAY_EVERY_MINUTES = 10;
 const JUDGED = `(total >= ${MIN_VANTAGES} OR (total > 0 AND (SELECT kind FROM endpoints WHERE id = ?1) = 'canary'))`;
 const DOWN = "(total - ok) * 2 > total";
 
+// Rounds before an endpoint's launch say nothing about its uptime.
+const LAUNCHED = "at >= (SELECT live_since FROM endpoints WHERE id = ?1)";
+
 const ROLL_ALL = `INSERT OR REPLACE INTO probe_hours
     (endpoint_id, hour, vantage, checks, failures, degraded, latency_sum, latency_max, hist)
   SELECT endpoint_id, ?2, 'all', count(*), sum(${DOWN}), sum(state = 'degraded'),
     coalesce(sum(CASE WHEN NOT ${DOWN} THEN latency_ms END), 0),
     coalesce(max(CASE WHEN NOT ${DOWN} THEN latency_ms END), 0),
     ${histogramSql("latency_ms", `NOT ${DOWN}`)}
-  FROM probe_samples WHERE endpoint_id = ?1 AND at >= ?2 AND at < ?3 AND ${JUDGED}
+  FROM probe_samples WHERE endpoint_id = ?1 AND at >= ?2 AND at < ?3 AND ${LAUNCHED} AND ${JUDGED}
   HAVING count(*) > 0`;
 
 const ROLL_VANTAGES = `INSERT OR REPLACE INTO probe_hours
@@ -42,7 +45,7 @@ const ROLL_VANTAGES = `INSERT OR REPLACE INTO probe_hours
     SELECT json_extract(result.value, '$.v') AS vantage, json_extract(result.value, '$.ok') AS ok,
       json_extract(result.value, '$.ms') AS ms
     FROM probe_samples, json_each(probe_samples.results) AS result
-    WHERE endpoint_id = ?1 AND at >= ?2 AND at < ?3
+    WHERE endpoint_id = ?1 AND at >= ?2 AND at < ?3 AND ${LAUNCHED}
   ) WHERE ok IS NOT NULL GROUP BY vantage`;
 
 const ROLL_DAY = `INSERT OR REPLACE INTO probe_days
@@ -84,7 +87,7 @@ export function rollupStatements(db: D1Database, endpointIds: readonly string[],
   ]);
 }
 
-/** Rolls up and prunes every endpoint, disabled ones included. */
+/** Rolls up and prunes every endpoint, planned ones included. */
 export async function rollup(env: Env, now: number): Promise<void> {
   const { results } = await env.STATUS_DB.prepare("SELECT id FROM endpoints").all<{ id: string }>();
   const statements = rollupStatements(

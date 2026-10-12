@@ -3,12 +3,12 @@
 
 import type { Details } from "../db/details";
 import { RANGES } from "../domain/range";
-import { STATE_LABELS } from "../domain/status";
 import { html } from "../html";
 import { Measurements } from "../measure";
 import type { Overview, RegionOverview } from "../overview";
 import { VANTAGES } from "../probe/vantages";
 import { card, clusterRow, empty, incidentItem, ms, rangeSwitch, regionHref, stat, statusBadge } from "./components";
+import { providersOf, regionLabel } from "./home";
 import { latencyCharts } from "./latency";
 import type { Page } from "./layout";
 
@@ -30,16 +30,16 @@ export function regionPage(view: Overview, entry: RegionOverview, details: Detai
     <p class="ts-eyebrow"><a class="ts-link" href="/#regions">Regions</a> · ${entry.code}</p>
     <div class="ts-row">
       <h1 class="st-title">${entry.name}</h1>
-      ${statusBadge(entry.status, planned ? "Planned" : STATE_LABELS[entry.status])}
+      ${statusBadge(entry.status, regionLabel(entry))}
     </div>
-    <p class="ts-muted">${entry.country}</p>
+    <p class="ts-muted">${entry.country} · ${providersOf(entry)}</p>
   </header>
 
   ${
     planned
       ? empty(
           "No clusters yet",
-          `${entry.name} is planned; its clusters will be measured here once they serve traffic.`,
+          `${entry.name} is coming soon; its clusters will be measured here once they serve traffic.`,
         )
       : html`<dl class="ts-stats" aria-label="Latest latency from each vantage">
     ${VANTAGES.map((vantage) => stat(vantage.name, ms(entry.vantagePings[vantage.code] ?? null), "latest median"))}

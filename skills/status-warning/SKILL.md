@@ -1,61 +1,41 @@
 # TerraScale status incidents, warnings and maintenance
 
-Use this repo skill when the human asks to publish, update, or resolve a TerraScale incident or status warning, or to schedule maintenance. Use the operator API; component status itself is measured by the health probes and needs no manual edits.
+Use this repo skill when the human asks to publish, update or resolve a
+TerraScale incident or warning, or to schedule maintenance. Use the admin page,
+https://status.terrascale.tech/admin; its password is in
+`~/.config/terrascale/ts-status-admin.txt` on delta, mariogk-dev and beta.
+Never print it. Component status itself is measured and needs no edits.
 
 ## Model
 
-- `kind` is `incident`, `warning`, or `maintenance`. `impact` is `none`, `minor` (degraded), `major` (partial outage), or `critical` (major outage).
-- Incidents move `investigating` → `identified` → `monitoring` → `resolved`; maintenance is `scheduled` → `in_progress` → `completed` and follows its schedule unless completed early.
-- Every change of status is an update with a customer-facing `message`; the page shows the latest.
-- `components` lists the affected canonical ULIDs returned by `/api/v1/status`. With none, the incident concerns the whole platform and colors the headline directly.
+- Kind: `incident`, `warning` or `maintenance`. Impact: `none`, `minor`
+  (degraded), `major` (partial outage) or `critical` (major outage).
+- Incidents move investigating → identified → monitoring → resolved;
+  maintenance is scheduled → in progress → completed, and follows its schedule
+  unless completed early.
+- Every status change is an update with a customer-facing message. Subscribers
+  get every update.
+- Components: tick the affected ones; none ticked means the whole platform.
 
-The probe coordinator opens incidents on its own when a component stays down for a minute or degraded for ten, and resolves them after five healthy minutes. Any operator edit through the API takes an automatic incident over, and the coordinator then leaves it alone. During maintenance covering a component, no automatic incident opens for it.
-
-## Calling the API
-
-The token is the Worker secret `OPERATOR_TOKEN`; the human keeps it in `TS_STATUS_OPERATOR_TOKEN`. Never print it, pass it on a command line that gets logged, or commit it. Send JSON from a file so quotes and newlines survive:
-
-```sh
-api() { curl -fsS -X "$1" "https://status.terrascale.tech/api/operator$2" \
-  -H "authorization: Bearer $TS_STATUS_OPERATOR_TOKEN" -H 'content-type: application/json' ${3:+--data @"$3"}; }
-```
+The probe coordinator opens incidents on its own when a component stays down
+for a minute or degraded for ten, and resolves them after five healthy
+minutes. Editing or updating an automatic incident in the admin page takes it
+over; the coordinator then leaves it alone. During maintenance covering a
+component, no automatic incident opens for it.
 
 ## Publish
 
-Ask the human for the title, the customer-facing message, the impact, and the affected components if they have not supplied them. Validate that the message is factual and specific.
+Ask the human for the title, the message, the impact and the affected
+components if they have not given them. Keep the message factual and specific.
+On Incidents → Publish, choose the kind, fill in the form and press Publish.
+Maintenance needs its start and end, in UTC.
 
-```sh
-cat > incident.json <<'JSON'
-{ "kind": "incident", "title": "Dashboard sign-in errors", "impact": "major",
-  "components": ["01M4E7G1W82VKFPF5FJ9AVK1CV"], "message": "Some sign-ins fail with an error. We are investigating." }
-JSON
-api POST /incidents incident.json   # → {"id": "…", "url": "/incidents/…"}
-```
+## Update, resolve, edit, delete
 
-Use `"kind": "warning"` for an operational warning (it starts in `monitoring`).
+Open the incident from Incidents. "Post an update" changes the status (and
+optionally the impact); only resolve when the human asks. "Edit" changes the
+title, impact, components or a maintenance window. "Delete" is only for
+records published by mistake.
 
-## Update or resolve
-
-Only resolve when the human asks.
-
-```sh
-echo '{ "status": "resolved", "message": "Sign-ins work again." }' > update.json
-api POST /incidents/ID/updates update.json
-```
-
-An update may also change `impact`. `PATCH /incidents/ID` edits `title`, `impact`, `components`, or a maintenance window's `scheduledStart` and `scheduledEnd`; `DELETE /incidents/ID` removes a record published by mistake.
-
-## Schedule maintenance
-
-```sh
-cat > maintenance.json <<'JSON'
-{ "kind": "maintenance", "title": "Forgejo upgrade", "components": ["01M4E7G1W82VKFPF5FJ9AVK1CZ"],
-  "scheduledStart": "2026-10-01T02:00:00Z", "scheduledEnd": "2026-10-01T03:00:00Z",
-  "message": "Git and CI will be unavailable for up to an hour." }
-JSON
-api POST /incidents maintenance.json
-```
-
-End it early with an update of status `completed`.
-
-Verify every change on `https://status.terrascale.tech/incidents/ID`. Do not publish speculative incidents.
+Verify every change on https://status.terrascale.tech/incidents/ID. Do not
+publish speculative incidents.

@@ -252,8 +252,10 @@ export function clusterRow(
   range: RangeKey,
   title: "component" | "cluster" = "component",
 ): Html {
-  const summary = `${entry.componentName} on ${entry.cluster}: ${formatUptime(entry.uptime)} of checks up over the last ${RANGES[range].label}, currently ${STATE_LABELS[entry.status].toLowerCase()}`;
-  const where = `${PROVIDERS[entry.provider]} · ${entry.cluster}${entry.regionCode ? ` · ${entry.regionCode}` : " · global"}`;
+  const summary = `${entry.componentName} on ${entry.cluster}: ${formatUptime(entry.uptime)} of checks up over the last ${RANGES[range].label}, currently ${(entry.note ?? STATE_LABELS[entry.status]).toLowerCase()}`;
+  // A Fly cluster is named after its region ("gru"), so the region is said once.
+  const region = entry.regionCode?.toLowerCase();
+  const where = `${PROVIDERS[entry.provider]} · ${entry.cluster}${region === undefined ? " · global" : region === entry.cluster ? "" : ` · ${region}`}`;
   const certificate = entry.certificate?.notAfter
     ? html` · <span class="st-tls" title="${entry.certificate.issuer ?? "TLS certificate"}"${Date.parse(entry.certificate.notAfter) - Date.now() < EXPIRY_WARNING_MS ? raw(' data-state="degraded"') : ""}>TLS until ${formatDay(Date.parse(entry.certificate.notAfter))}</span>`
     : "";

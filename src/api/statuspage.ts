@@ -1,9 +1,10 @@
 /* Statuspage-compatible JSON served under /api/v1,
    so existing tools and integrations that read status pages can read this
-   one. Planned components are left out: Statuspage has no such state. */
+   one. Planned components and those pending launch are left out:
+   Statuspage has no such state. */
 
 import type { Component, Incident, IncidentUpdate, Status, TimelineState } from "../domain/status";
-import { aggregate, HEADLINES, maintenancePhase, updatesByIncident } from "../domain/status";
+import { aggregate, HEADLINES, maintenancePhase, PENDING_LAUNCH, updatesByIncident } from "../domain/status";
 import type { Overview } from "../overview";
 
 const PAGE_ID = "01M4E7GK59RY4WPKPBBKFEDF48";
@@ -57,7 +58,9 @@ function components(feed: Feed) {
   const list: Record<string, unknown>[] = [];
   let position = 1;
   for (const group of feed.view.groups) {
-    const members = group.components.filter((component) => component.lifecycle === "active");
+    const members = group.components.filter(
+      (component) => component.lifecycle === "active" && component.note !== PENDING_LAUNCH,
+    );
     if (members.length === 0) continue;
     list.push({
       id: group.id,

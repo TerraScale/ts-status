@@ -4,7 +4,7 @@
 
 import regionMap from "../assets/region-map.svg?raw";
 import { byHour, RANGES } from "../domain/range";
-import { HEADLINES, STATES, STATE_LABELS, type TimelineState } from "../domain/status";
+import { COMING_SOON, HEADLINES, STATES, STATE_LABELS, type TimelineState } from "../domain/status";
 import { formatClock, formatDay, formatUptime } from "../format";
 import { html, raw, type Html } from "../html";
 import {
@@ -30,6 +30,7 @@ import {
   legend,
   ms,
   probeRows,
+  PROVIDERS,
   rangeSwitch,
   regionHref,
   stat,
@@ -44,6 +45,10 @@ const LEGEND: TimelineState[] = [...STATES, "none"];
 
 const lower = (state: TimelineState): string => STATE_LABELS[state].toLowerCase();
 
+/** Who serves a region, such as "Fly.io". */
+export const providersOf = (entry: RegionOverview): string =>
+  [...new Set(entry.clusters.map((cluster) => PROVIDERS[cluster.provider]))].join(", ") || "No clusters yet";
+
 function axis(view: Overview): Html {
   return html`<div class="st-axis" aria-hidden="true"><span>${RANGES[view.range].label} ago</span><span>Now</span></div>`;
 }
@@ -55,7 +60,7 @@ function component(entry: ComponentOverview, view: Overview) {
     <h4 class="ts-strong">${entry.name}</h4>
     <p class="ts-meta">${entry.description}</p>
   </div>
-  <div class="st-service-state">${statusBadge("none", "Planned")}</div>
+  <div class="st-service-state">${statusBadge("none", COMING_SOON)}</div>
 </li>`;
   }
   const range = RANGES[view.range].label;
@@ -81,6 +86,10 @@ function group(entry: GroupOverview, view: Overview) {
 </section>`;
 }
 
+/** A region's state label: coming soon without clusters, else its note or state. */
+export const regionLabel = (entry: RegionOverview): string =>
+  entry.clusters.length === 0 ? COMING_SOON : (entry.note ?? STATE_LABELS[entry.status]);
+
 function region(entry: RegionOverview, view: Overview) {
   const planned = entry.clusters.length === 0;
   return html`<section class="st-region" aria-labelledby="region-${entry.code}">
@@ -88,11 +97,11 @@ function region(entry: RegionOverview, view: Overview) {
     <div class="ts-row">
       <span class="st-region-code">${entry.code}</span>
       <h3 id="region-${entry.code}" class="ts-strong"><a class="st-incident-link" href="${regionHref(entry.code)}">${entry.name}</a></h3>
-      <span class="ts-meta">${entry.country}</span>
+      <span class="ts-meta">${entry.country} · ${providersOf(entry)}</span>
     </div>
     <div class="ts-row">
-      ${planned ? "" : html`<span class="ts-meta ts-num">Ping ${ms(entry.pingMs)}</span>`}
-      ${statusBadge(entry.status, planned ? "Planned" : STATE_LABELS[entry.status])}
+      ${planned || entry.note ? "" : html`<span class="ts-meta ts-num">Ping ${ms(entry.pingMs)}</span>`}
+      ${statusBadge(entry.status, regionLabel(entry))}
     </div>
   </header>
   ${
@@ -110,7 +119,7 @@ function map(view: Overview) {
   const regions = view.regions;
   const live = regions.filter((entry) => entry.clusters.length > 0);
   const colos = new Map(view.monitoring.vantages.map((vantage) => [vantage.code, vantage.colo]));
-  const label = `Region map: ${regions.map((entry) => `${entry.name} ${entry.clusters.length === 0 ? "planned" : lower(entry.status)}`).join(", ")}`;
+  const label = `Region map: ${regions.map((entry) => `${entry.name} ${regionLabel(entry).toLowerCase()}`).join(", ")}`;
 
   const arcs = live.flatMap((entry) =>
     VANTAGES.flatMap((vantage) => {
@@ -146,9 +155,9 @@ function map(view: Overview) {
     const planned = entry.clusters.length === 0;
     const cardData = JSON.stringify({
       rows: planned
-        ? [["Status", "Planned"]]
+        ? [["Status", COMING_SOON]]
         : [
-            ["Status", STATE_LABELS[entry.status]],
+            ["Status", regionLabel(entry)],
             ["Ping", ms(entry.pingMs)],
             ["Clusters", String(entry.clusters.length)],
             ...VANTAGES.map((vantage): [string, string] => [
@@ -157,7 +166,7 @@ function map(view: Overview) {
             ]),
           ],
     });
-    return html`<g class="st-hub" data-state="${entry.status}"${planned ? raw(' data-lifecycle="planned"') : ""} transform="translate(${entry.mapX} ${entry.mapY})" tabindex="0" role="img" aria-label="${entry.name}: ${planned ? "planned" : lower(entry.status)}" data-title="${entry.code} · ${entry.name}" data-card="${cardData}">
+    return html`<g class="st-hub" data-state="${entry.status}"${planned ? raw(' data-lifecycle="planned"') : ""} transform="translate(${entry.mapX} ${entry.mapY})" tabindex="0" role="img" aria-label="${entry.name}: ${regionLabel(entry).toLowerCase()}" data-title="${entry.code} · ${entry.name}" data-card="${cardData}">
     <circle class="st-hub-pulse" r="2.4"></circle><circle class="st-hub-ring" r="2.4"></circle><circle r="1.1"></circle>
     <text x="3" y="1.1">${entry.code}</text>
   </g>`;
@@ -232,7 +241,8 @@ export function homePage(view: Overview): Page {
   // neither side of the stat.
   const measured = active.filter((entry) => entry.status !== "none");
   const operational = measured.filter((entry) => entry.status === "operational").length;
-  const live = view.regions.filter((entry) => entry.clusters.length > 0).length;
+  // A region is live once any of its clusters has passed a check.
+  const live = view.regions.filter((entry) => entry.clusters.length > 0 && entry.note === null).length;
   const headline = HEADLINES[view.status];
   const title = view.status === "operational" ? "TerraScale Status" : `${headline} · TerraScale Status`;
   const range = RANGES[view.range].label;
@@ -278,7 +288,7 @@ export function homePage(view: Overview): Page {
 
   <dl class="ts-stats" aria-label="Platform summary">
     ${stat("Components", `${operational}/${measured.length}`, "operational now")}
-    ${stat("Regions", `${live}/${view.regions.length}`, live === view.regions.length ? "all live" : `${view.regions.length - live} planned`)}
+    ${stat("Regions", `${live}/${view.regions.length}`, live === view.regions.length ? "all live" : `${view.regions.length - live} pending launch`)}
     ${stat("Uptime", formatUptime(view.uptime), `last ${range}`)}
     ${stat("Active incidents", String(view.activeIncidents.length), view.activeIncidents.length === 0 ? "nothing to report" : "see below")}
   </dl>

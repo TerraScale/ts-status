@@ -124,7 +124,7 @@ describe("published TerraBase probes", () => {
     const db = testD1();
     try {
       db.sqlite.exec(
-        "UPDATE endpoints SET enabled = 0; UPDATE endpoints SET enabled = 1 WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1DF', '01M4E7G1W82VKFPF5FJ9AVK1D9')",
+        "DELETE FROM endpoints WHERE id NOT IN ('01M4E7G1W82VKFPF5FJ9AVK1DF', '01M4E7G1W82VKFPF5FJ9AVK1D9')",
       );
       const env = {
         STATUS_DB: db,

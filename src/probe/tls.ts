@@ -101,7 +101,10 @@ const UPSERT = `INSERT INTO tls_certs (host, not_after, issuer, checked_at, erro
     lookup keeps the last known expiry. */
 export async function checkCertificates(env: Env, now: number, fetcher: typeof fetch = fetch): Promise<string[]> {
   const [endpoints, checked] = await env.STATUS_DB.batch([
-    env.STATUS_DB.prepare("SELECT DISTINCT url FROM endpoints WHERE enabled = 1"),
+    // Indirect sources, such as a vendor's status page, are not our hosts.
+    env.STATUS_DB.prepare(
+      "SELECT DISTINCT e.url FROM endpoints e JOIN components c ON c.id = e.component_id WHERE c.lifecycle = 'active' AND e.indirect = 0",
+    ),
     env.STATUS_DB.prepare("SELECT host FROM tls_certs WHERE checked_at >= ?1").bind(
       sqlTime(now - RECHECK_MS + RECHECK_SLACK_MS),
     ),

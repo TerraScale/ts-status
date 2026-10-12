@@ -15,8 +15,6 @@ export interface Assertion {
 export interface CheckSpec {
   /** "2xx", "200", or a list such as "200,204". */
   expectStatus: string;
-  /** A not-yet-published contract: label this response without judging uptime. */
-  pendingStatus?: number | null;
   /** A status something in front of the service (such as Cloudflare's bot
       protection) is known to refuse the probe with: a probe error, not an
       outage. Any other unexpected status still fails. */
@@ -129,9 +127,6 @@ const describe = (assertion: Assertion): string =>
 export function judge(spec: CheckSpec, observation: Observation): Judgement {
   const fail = (error: string): Judgement => ({ outcome: spec.indirect ? "unknown" : "fail", error, values: {} });
   if (observation.status === null) return fail(observation.error ?? "Unreachable");
-  if (observation.status === spec.pendingStatus) {
-    return { outcome: "unknown", error: `Not available yet (HTTP ${observation.status})`, values: {} };
-  }
   if (observation.status === spec.blockedStatus) {
     return { outcome: "unknown", error: `Probe blocked (HTTP ${observation.status})`, values: {} };
   }
@@ -168,7 +163,7 @@ export function judge(spec: CheckSpec, observation: Observation): Judgement {
     : { outcome: "ok", error: null, values };
 }
 
-function isAssertion(value: unknown): value is Assertion {
+export function isAssertion(value: unknown): value is Assertion {
   if (typeof value !== "object" || value === null) return false;
   const entry = value as Record<string, unknown>;
   if (typeof entry.path !== "string" || parsePath(entry.path) === null) return false;
@@ -190,7 +185,6 @@ function isAssertion(value: unknown): value is Assertion {
 /** Reads a stored check spec, dropping anything malformed. */
 export function parseSpec(row: {
   expectStatus: string;
-  pendingStatus?: number | null;
   blockedStatus?: number | null;
   keyword: string | null;
   assertions: string;
@@ -208,7 +202,6 @@ export function parseSpec(row: {
   const extract = parse(row.extract);
   return {
     expectStatus: row.expectStatus,
-    ...(row.pendingStatus !== null && row.pendingStatus !== undefined ? { pendingStatus: row.pendingStatus } : {}),
     ...(row.blockedStatus !== null && row.blockedStatus !== undefined ? { blockedStatus: row.blockedStatus } : {}),
     keyword: row.keyword || null,
     assertions: Array.isArray(assertions) ? assertions.filter(isAssertion) : [],

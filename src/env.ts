@@ -23,8 +23,12 @@ export interface Env {
   VANTAGE_GRU: Fetcher;
   VANTAGE_FRA: Fetcher;
   VANTAGE_NRT: Fetcher;
-  /** Bearer token of the operator API (a Worker secret). */
-  OPERATOR_TOKEN?: string;
+  /** The admin password's PBKDF2 hash (a Worker secret; see src/admin/auth.ts). */
+  ADMIN_PASSWORD_HASH?: string;
+  /** Signs admin session cookies and CSRF tokens (a Worker secret). */
+  ADMIN_SESSION_SECRET?: string;
+  /** Limits admin sign-in attempts per client. */
+  ADMIN_LOGIN_LIMITER: RateLimit;
   /** The public origin, for links in notifications. */
   PUBLIC_ORIGIN?: string;
   /** Signs subscription links and generic webhooks (a Worker secret). */
