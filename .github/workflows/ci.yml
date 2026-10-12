@@ -1,6 +1,6 @@
 name: CI
 
-# One required check: "ci". The TerraBase binary suites (canary, sdk, probe/terrabase, testing/terrabase) are skipped here: needs TerraBase release binaries on GitHub (.cos/fly-migration-plan.md).
+# One required check: "ci".
 
 on:
   pull_request:
@@ -30,7 +30,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run check
-      - run: npm test -- --exclude '**/canary.test.ts' --exclude '**/sdk.test.ts' --exclude '**/terrabase.test.ts'
+      - run: npm test
       - run: npm run build
 
   deploy:
