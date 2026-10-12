@@ -11,7 +11,7 @@ never print it. There is no API token and no direct D1 edit.
 - **Groups** order components on the page (TerraBase, Platform).
 - **Components** are what customers use. "Active" ones are probed; "Coming
   soon" ones are shown and never probed (the dashboard today). An active
-  component without endpoints shows "Pending launch" (replication today).
+  component without endpoints shows "Pending launch" until its first passing round.
 - **Regions** are Fly regions: `GRU` São Paulo, `SJC` San Francisco Bay Area,
   `FRA` Frankfurt. Map x/y place the hub on the 136×80 region map.
 - **Endpoints** are one check each. A regional endpoint names its region and

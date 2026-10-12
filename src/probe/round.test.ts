@@ -126,6 +126,8 @@ function vantage(code: string, failing: (url: string) => boolean = () => false, 
               issuer: "https://auth.terrascale.tech/terrascale",
               jwks_uri: "https://auth.terrascale.tech/terrascale/jwks",
             });
+          if (target.url.endsWith("/health/replication"))
+            return answer(200, { region, status: "ok", maxLagSeconds: 2, peers: [] });
           if (target.url.includes("cloudflarestatus")) return answer(200, { component: { status: "operational" } });
           return answer(200);
         }),
@@ -197,6 +199,9 @@ describe("runRound", () => {
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DZ", state: "operational", ok: 3, total: 3 },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1E0", state: "operational", ok: 3, total: 3 },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1E1", state: "none", ok: 0, total: 0 },
+      { endpoint_id: "01M4PVGGBHD58R8HYNDBTGFRGJ", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4PVGGBJ24A140MWGJV7MVKV", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4PVGGBJA6S4F64HDQVD2MXM", state: "operational", ok: 3, total: 3 },
     ]);
     // Every endpoint that passed launched with its first round; the failing website and the canaries wait.
     expect(

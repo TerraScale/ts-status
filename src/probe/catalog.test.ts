@@ -30,17 +30,13 @@ describe("probe catalog", () => {
     ]);
   });
 
-  it("starts every endpoint pending launch, keeps the deferred dashboard unprobed, and replication pending", () => {
-    // TerraBase's replication status is loopback-only today; endpoints are added once it is public.
+  it("starts every endpoint pending launch and keeps the deferred dashboard unprobed", () => {
     expect(sql.prepare("SELECT name, lifecycle FROM components WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1D0'").get()).toEqual(
       {
         name: "Replication",
         lifecycle: "active",
       },
     );
-    expect(
-      sql.prepare("SELECT count(*) AS n FROM endpoints WHERE component_id = '01M4E7G1W82VKFPF5FJ9AVK1D0'").get(),
-    ).toEqual({ n: 0 });
     expect(sql.prepare("SELECT count(*) AS n FROM endpoints WHERE live_since IS NOT NULL").get()).toEqual({ n: 0 });
     expect(sql.prepare("SELECT name FROM components WHERE lifecycle = 'planned'").all()).toEqual([
       { name: "Dashboard" },
@@ -70,6 +66,28 @@ describe("probe catalog", () => {
       expect(ready("ready", region === "gru" ? "fra" : "gru").outcome).toBe("fail");
       expect(ready("not_ready", region).outcome).toBe("fail");
       expect(judge(spec, { status: 503, error: null }).outcome).toBe("fail");
+    }
+  });
+
+  it("pins TerraBase replication health to each region and passes only when it is ok from that region", () => {
+    for (const [id, region] of [
+      ["01M4PVGGBHD58R8HYNDBTGFRGJ", "gru"],
+      ["01M4PVGGBJ24A140MWGJV7MVKV", "sjc"],
+      ["01M4PVGGBJA6S4F64HDQVD2MXM", "fra"],
+    ] as const) {
+      const row = endpoint(id);
+      expect(row.url).toBe("https://ts-terrabase.fly.dev/health/replication");
+      expect(JSON.parse(row.headers)).toEqual({ "fly-prefer-region": region });
+      const spec = parseSpec(row);
+      const health = (status: string, served: string) =>
+        judge(spec, {
+          status: 200,
+          error: null,
+          body: JSON.stringify({ region: served, status, maxLagSeconds: 4, peers: [] }),
+        });
+      expect(health("ok", region)).toEqual({ outcome: "ok", error: null, values: { lag: 4 } });
+      expect(health("degraded", region).outcome).toBe("fail");
+      expect(health("ok", region === "gru" ? "fra" : "gru").outcome).toBe("fail");
     }
   });
 

@@ -282,7 +282,7 @@ describe("app", () => {
   it("shows probes the secret does not name as not configured, and unlaunched endpoints as pending, not down", async () => {
     const env = seededEnv();
     env.STATUS_DB.sqlite.exec(`
-      UPDATE endpoints SET live_since = NULL WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1D6', '01M4E7G1W82VKFPF5FJ9AVK1DX', '01M4E7G1W82VKFPF5FJ9AVK1DZ', '01M4E7G1W82VKFPF5FJ9AVK1D7');
+      UPDATE endpoints SET live_since = NULL WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1D6', '01M4E7G1W82VKFPF5FJ9AVK1DX', '01M4E7G1W82VKFPF5FJ9AVK1DZ', '01M4E7G1W82VKFPF5FJ9AVK1D7', '01M4PVGGBHD58R8HYNDBTGFRGJ', '01M4PVGGBJ24A140MWGJV7MVKV', '01M4PVGGBJA6S4F64HDQVD2MXM');
       INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES
         ('01M4E7G1W82VKFPF5FJ9AVK1DF', '2026-09-26 10:14:30', 'none', 0, 0, NULL,
           '[{"v":"canary","ok":null,"ms":null,"e":"Not configured"}]'),
@@ -318,7 +318,7 @@ describe("app", () => {
       { id: "01M4E7G1W82VKFPF5FJ9AVK1CT", status: "none", note: "Pending launch" },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1D3", status: "major_outage", note: null },
     ]);
-    // Replication has nothing public to probe yet; the dashboard is deferred.
+    // Replication's endpoints wait for their first passing round; the dashboard is deferred.
     expect(all.find((entry) => entry.id === "01M4E7G1W82VKFPF5FJ9AVK1D0")).toEqual({
       id: "01M4E7G1W82VKFPF5FJ9AVK1D0",
       status: "none",
