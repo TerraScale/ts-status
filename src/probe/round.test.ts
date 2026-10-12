@@ -222,7 +222,12 @@ describe("runRound", () => {
     expect(db.sqlite.prepare("SELECT endpoint_id, version FROM deploys ORDER BY endpoint_id").all()).toEqual(
       READY.map((id) => ({ endpoint_id: id, version: "1.1.0" })),
     );
-    expect(db.sqlite.prepare("SELECT code FROM vantages").all()).toHaveLength(3);
+    // Every answer is recorded with its round, so coverage can tell who answered last.
+    expect(db.sqlite.prepare("SELECT code, colo, seen_at FROM vantages ORDER BY code").all()).toEqual([
+      { code: "fra", colo: "FRA", seen_at: "2026-09-26 10:01:00" },
+      { code: "gru", colo: "GRU", seen_at: "2026-09-26 10:01:00" },
+      { code: "sfo", colo: "SFO", seen_at: "2026-09-26 10:01:00" },
+    ]);
   });
 
   it("probes only active components", async () => {

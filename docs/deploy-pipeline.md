@@ -26,5 +26,17 @@ subscription and probe credentials are Worker secrets.
 
 The build's `WORKERS_CI_COMMIT_SHA` supplies the status Worker's `VERSION`
 binding. `GET https://status.terrascale.tech/health/version`
-returns that full revision and observed Cloudflare colo without caching or
+returns that full revision and the colo the request entered (not proof of
+where any vantage ran) without caching or
 reading D1; after a deploy, check that its revision matches the merged commit.
+
+## Monitoring coverage
+
+Each round records every answering vantage with the colo it reports from its
+own `/cdn-cgi/trace`. `/api/v1/status` reports `monitoringCoverage` and
+`/api/v1/regions` each vantage's requested hint, observed colo, last answer and
+coverage state. A vantage that did not answer the latest round, gave no
+location, or ran outside its area (`colos` in src/probe/vantages.ts) is a
+coverage failure, shown apart from service health. Durable Objects hinted to
+`sam` start in Eastern North America, so the South America vantage is expected
+to report a coverage failure until it runs in South America.

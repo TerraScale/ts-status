@@ -269,8 +269,8 @@ interface OpenAuto {
   createdAt: string;
 }
 
-/** Runs the round starting at `at` and stores its samples. Vantage
-    locations are written when they change, and a version that differs
+/** Runs the round starting at `at` and stores its samples. Each answering
+    vantage's location is written every round, and a version that differs
     from the last one seen is recorded as a deploy. */
 export async function runRound(env: Env, at: number, previous: RoundState): Promise<RoundState> {
   const time = sqlTime(at);
@@ -363,9 +363,11 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
     }
     versions[sample.endpointId] = text;
   }
+  // Every answer is recorded, so the page can tell which vantages answered
+  // the latest round and where they proved they ran.
   const seen = { ...previous.colos };
   for (const response of responses) {
-    if (!response || (response.vantage in seen && seen[response.vantage] === response.colo)) continue;
+    if (!response) continue;
     seen[response.vantage] = response.colo;
     statements.push(env.STATUS_DB.prepare(SEEN).bind(response.vantage, response.colo, time));
   }

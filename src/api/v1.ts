@@ -26,6 +26,7 @@ export function statusDocument(view: Overview) {
     uptime: view.uptime,
     lastRoundAt: iso(view.monitoring.lastRoundAt),
     monitoringDelayed: view.monitoring.delayed,
+    monitoringCoverage: (({ vantages: _vantages, ...summary }) => summary)(view.monitoring.coverage),
     groups: view.groups.map(({ components, ...group }) => ({
       ...group,
       components: components.map(({ bars, clusters: _clusters, groupId: _group, ...component }) => ({
@@ -65,11 +66,13 @@ export function regionsDocument(view: Overview) {
         certificate: publicCertificate(certificate),
       })),
     })),
-    vantages: VANTAGES.map((vantage) => ({
-      code: vantage.code,
-      name: vantage.name,
-      placement: vantage.placement,
-      colo: view.monitoring.vantages.find((seen) => seen.code === vantage.code)?.colo ?? null,
+    vantages: view.monitoring.coverage.vantages.map((entry) => ({
+      code: entry.code,
+      name: entry.name,
+      placement: entry.requested,
+      colo: entry.observed,
+      lastAnswerAt: iso(entry.lastAnswerAt),
+      coverage: entry.state,
     })),
   };
 }

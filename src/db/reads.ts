@@ -22,10 +22,11 @@ import {
   type VantageSample,
 } from "../domain/status";
 
-/** Where a vantage last ran. */
+/** When a vantage last answered a round, and where it proved it ran. */
 export interface VantageSeen {
   code: string;
   colo: string | null;
+  seenAt: string | null;
 }
 
 /** The latest logged TLS certificate of a host. */
@@ -111,7 +112,7 @@ const periods = (table: "probe_hours" | "probe_days", column: "hour" | "day") =>
     p.latency_sum AS latencySum, p.hist
   FROM endpoints e JOIN ${table} p ON p.endpoint_id = e.id AND p.${column} >= ?1 AND p.vantage = 'all'`;
 
-const VANTAGES = `SELECT code, colo FROM vantages`;
+const VANTAGES = `SELECT code, colo, ${iso("seen_at")} AS seenAt FROM vantages`;
 
 // Incidents and warnings matching the filters (null matches anything),
 // created in [?5, ?6), newest first.
