@@ -1,5 +1,4 @@
-/* The only script on the site, inlined and allowed by its CSP hash. It
-   picks the theme (the visitor's choice, else their system's). Pages
+/* The only script on the site, inlined and allowed by its CSP hash. Pages
    render every time in UTC so they stay cacheable; this script re-renders
    them in the visitor's time zone (their browser's by default, or the one
    picked in the top bar), opens a hover card for every element carrying
@@ -11,37 +10,6 @@ export const REFRESH_SECONDS = 30;
 export const CLIENT_SCRIPT = `(() => {
   const root = document.documentElement;
   root.dataset.js = "";
-
-  // Theme: a stored choice wins, else the system preference, followed live.
-  const themeKey = "ts-status-theme";
-  const light = matchMedia("(prefers-color-scheme: light)");
-  const storedTheme = () => {
-    try {
-      return localStorage.getItem(themeKey);
-    } catch {
-      return null;
-    }
-  };
-  const applyTheme = () => {
-    const theme = storedTheme();
-    root.dataset.theme = theme === "light" || theme === "dark" ? theme : light.matches ? "light" : "dark";
-  };
-  applyTheme();
-  light.addEventListener("change", applyTheme);
-  const themeButton = document.getElementById("st-theme");
-  if (themeButton) {
-    themeButton.hidden = false;
-    themeButton.addEventListener("click", () => {
-      try {
-        localStorage.setItem(themeKey, root.dataset.theme === "light" ? "dark" : "light");
-      } catch {
-        // Private mode: the choice lasts for this page only.
-        root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
-        return;
-      }
-      applyTheme();
-    });
-  }
 
   const storageKey = "ts-status-time-zone";
   const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -99,10 +67,10 @@ export const CLIENT_SCRIPT = `(() => {
   if (select && Intl.supportedValuesOf) {
     const zones = Intl.supportedValuesOf("timeZone");
     if (!zones.includes("UTC")) zones.unshift("UTC");
-    // The automatic choice names the zone briefly, so the control stays small.
+    // The automatic choice names only the local city, so the control stays small.
     const city = browserZone.split("/").pop().replaceAll("_", " ");
     select.append(
-      new Option("Local (" + city + ")", ""),
+      new Option(city, ""),
       ...zones.map((name) => new Option(name.replaceAll("_", " "), name)),
     );
     select.value = stored();

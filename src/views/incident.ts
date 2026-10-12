@@ -3,7 +3,7 @@
    of updates, newest first. */
 
 import type { IncidentDetail } from "../db/reads";
-import { aggregate, spans, STATE_LABELS, worst, type Bucket, type TimelineState } from "../domain/status";
+import { aggregate, spans, STATE_LABELS, stateAttr, worst, type Bucket, type TimelineState } from "../domain/status";
 import { formatClock, formatDay, formatDuration } from "../format";
 import { html, type Html } from "../html";
 import { chartLegend, lineChart } from "./charts/line";
@@ -124,7 +124,7 @@ export function incidentPage(detail: IncidentDetail, now: number): Page {
     detail.updates.length === 0
       ? empty("No updates", "This incident has no updates yet.")
       : html`<ol class="st-timeline">${detail.updates.map(
-          (update) => html`<li class="st-timeline-item" data-state="${statusState(incident, update.status)}">
+          (update) => html`<li class="st-timeline-item" data-state="${stateAttr(statusState(incident, update.status))}">
     <div class="ts-row">${badge(STATUS_TEXT[update.status] ?? update.status, statusState(incident, update.status))}${time(update.createdAt, "datetime")}</div>
     <p class="st-incident-body">${update.body}</p>
   </li>`,

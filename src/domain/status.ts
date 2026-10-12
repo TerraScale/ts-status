@@ -100,6 +100,11 @@ export const STATE_LABELS: Record<TimelineState, string> = {
   none: "No data",
 };
 
+/** The data-state value of a state in the shared status contract, which
+    names the outages "partial" and "outage". */
+export const stateAttr = (state: TimelineState): string =>
+  state === "partial_outage" ? "partial" : state === "major_outage" ? "outage" : state;
+
 /** The note of an endpoint the latest round found not configured, and of a
     component whose every endpoint it found so (see src/probe/terrabase.ts). */
 export const NOT_CONFIGURED = "Not configured";

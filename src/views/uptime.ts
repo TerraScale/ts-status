@@ -136,6 +136,7 @@ export function uptimePage(view: Overview, periods: readonly VantagePeriod[], no
   return {
     title: "Uptime · TerraScale Status",
     description: "A year of measured uptime for TerraScale components.",
+    status: view.status,
     path: "/uptime",
     body,
   };

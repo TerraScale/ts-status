@@ -76,6 +76,7 @@ export function regionPage(view: Overview, entry: RegionOverview, details: Detai
   return {
     title: `${entry.name} · TerraScale Status`,
     description: `Live status and latency of the ${entry.name} region.`,
+    status: view.status,
     path: null,
     body,
     live: true,

@@ -149,7 +149,7 @@ export function loginPage(error?: string): Page {
     path: null,
     body: html`<main id="main" class="ts-page st-narrow">
   <header class="st-page-head"><p class="ts-eyebrow">Admin</p><h1 class="st-title">Sign in</h1></header>
-  ${error ? html`<article class="ts-alert" data-state="major_outage" role="alert"><p class="ts-alert-body">${error}</p></article>` : ""}
+  ${error ? html`<article class="ts-alert" data-state="outage" role="alert"><p class="ts-alert-body">${error}</p></article>` : ""}
   ${card(
     { id: "login", title: "Admin password" },
     html`<form class="st-form" method="post" action="/admin/login">
@@ -166,7 +166,7 @@ export function problemPage(frame: Frame, message: string): Page {
   return shell(
     frame,
     "Not saved",
-    html`<article class="ts-alert" data-state="major_outage" role="alert"><p class="ts-alert-body">${message}</p></article>
+    html`<article class="ts-alert" data-state="outage" role="alert"><p class="ts-alert-body">${message}</p></article>
   <p class="ts-meta">Go back to fix the form, or return to <a class="ts-link" href="${frame.path}">${NAV.find((item) => item.href === frame.path)?.label ?? "Admin"}</a>.</p>`,
   );
 }

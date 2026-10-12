@@ -138,6 +138,7 @@ export function pingPage(view: Overview, details: Details, now: number): Page {
   return {
     title: "Ping · TerraScale Status",
     description: "Latency to TerraScale regions from the health checks' vantage points and from your browser.",
+    status: view.status,
     path: "/ping",
     body,
   };

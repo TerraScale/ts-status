@@ -33,7 +33,7 @@ const BOTTOM = 32;
 
 /** Series colors in the categorical palette (--ts-cat-1 to 8 in tokens.css).
     Beyond this many series colors repeat, so callers should aggregate first. */
-export const CATEGORIES = 8;
+export const CATEGORIES = 5;
 
 /** The class coloring a series by its index. */
 const category = (seriesIndex: number): string => `ts-cat-${(seriesIndex % CATEGORIES) + 1}`;

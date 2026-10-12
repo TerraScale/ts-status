@@ -48,7 +48,7 @@ import { pingPage } from "./views/ping";
 import { regionPage } from "./views/region";
 import { uptimePage, YEAR_DAYS } from "./views/uptime";
 
-const FONT_PRELOAD = '</fonts/oxanium.woff2>; rel=preload; as=font; type="font/woff2"; crossorigin';
+const FONT_PRELOAD = '</fonts/geist.woff2>; rel=preload; as=font; type="font/woff2"; crossorigin';
 const deploymentRequests = new WeakMap<Env, Promise<DeploymentObservation[]>>();
 
 interface RenderContext {

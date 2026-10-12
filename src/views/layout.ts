@@ -3,6 +3,7 @@
    font. */
 
 import logo from "../assets/logo.svg?raw";
+import { HEADLINES, stateAttr, type Status } from "../domain/status";
 import { html, raw, type Html } from "../html";
 import styles from "../styles/index.css?inline";
 import { CLIENT_SCRIPT, REFRESH_SECONDS } from "./client";
@@ -29,6 +30,8 @@ export interface Page {
   live?: boolean;
   /** Only the page itself, without the top bar and footer (the widget). */
   bare?: boolean;
+  /** The overall status, for the footer's live status link. */
+  status?: Status;
 }
 
 function links(page: Page): Html {
@@ -37,7 +40,7 @@ function links(page: Page): Html {
 
 /* The sticky, frosted top bar. Wide screens show the page links inline;
    phones fold them into a menu that works without scripts. The time zone
-   and theme controls need the client script, so they start hidden. */
+   control needs the client script, so it starts hidden. */
 function top(page: Page): Html {
   return html`<a class="ts-skip-link" href="#main">Skip to main content</a>
 <header class="st-top">
@@ -45,12 +48,11 @@ function top(page: Page): Html {
     <a class="st-brand" href="/" aria-label="TerraScale status home">${raw(logo)}</a>
     <nav class="st-nav" aria-label="Status pages">${links(page)}</nav>
     <div class="st-tools">
-      <label class="st-zone" hidden>
+      <label class="st-zone" title="Time zone" hidden>
         ${icon("globe")}
         <span class="ts-sr-only">Time zone</span>
         <select id="st-zone" class="ts-select ts-select-sm"></select>
       </label>
-      <button class="st-icon-button" id="st-theme" type="button" aria-label="Switch between light and dark theme" hidden>${icon("sun", "st-when-dark")}${icon("moon", "st-when-light")}</button>
       <details class="st-menu">
         <summary class="st-icon-button" aria-label="Menu">${icon("menu")}</summary>
         <nav class="st-menu-panel" aria-label="Status pages">${links(page)}</nav>
@@ -60,10 +62,13 @@ function top(page: Page): Html {
 </header>`;
 }
 
-function bottom(year: number): Html {
+/* The footer: logo, links, and the live status link every TerraScale app
+   carries (a pulsing state dot and the headline). */
+function bottom(page: Page, year: number): Html {
   return html`<div id="st-live" class="ts-sr-only" aria-live="polite"></div>
 <footer class="st-foot">
   <div class="st-frame">
+    <a class="st-foot-brand" href="/" aria-label="TerraScale status home">${raw(logo)}</a>
     <span>© ${year} TerraScale</span>
     <nav aria-label="More">
       <a href="https://terrascale.tech">terrascale.tech</a>
@@ -72,31 +77,33 @@ function bottom(year: number): Html {
       <a href="/feed.atom">Feed</a>
       <a href="/api/v1/status">JSON API</a>
     </nav>
+    <a class="st-status-link" href="/" data-state="${page.status ? stateAttr(page.status) : "none"}"><span class="ts-dot ts-dot-live" aria-hidden="true"></span>${page.status ? HEADLINES[page.status] : "Current status"}</a>
   </div>
 </footer>`;
 }
 
+/** The page document. ts-status is dark only: data-theme="dark" picks the
+    dark values of whichever design tokens file is in place. */
 export function document(page: Page, year: number): Html {
   return html`<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark light">
-<meta name="theme-color" content="#0a0c12" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0a0a0a">
 <title>${page.title}</title>
 <meta name="description" content="${page.description}">
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
 <link rel="alternate" type="application/atom+xml" title="TerraScale Status" href="/feed.atom">
-<link rel="preload" href="/fonts/oxanium.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/geist.woff2" as="font" type="font/woff2" crossorigin>
 <style>${raw(STYLES)}</style>
 ${page.live ? html`<noscript><meta http-equiv="refresh" content="${REFRESH_SECONDS}"></noscript>` : ""}
 </head>
 <body>
 ${page.bare ? "" : top(page)}
 ${page.body}
-${page.bare ? "" : bottom(year)}
+${page.bare ? "" : bottom(page, year)}
 <script>${raw(CLIENT_SCRIPT)}</script>
 </body>
 </html>`;

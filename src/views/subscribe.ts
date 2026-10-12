@@ -36,7 +36,7 @@ export function subscribeForm(form: SubscribeForm): Page {
   return shell(
     "Subscribe",
     html`${head("Stay informed", "Subscribe to updates", "Every incident update and maintenance window, as it is posted. Automatic incidents are only sent once they have lasted five minutes.")}
-  ${form.error ? html`<article class="ts-alert" data-state="major_outage" role="alert"><p class="ts-alert-body">${form.error}</p></article>` : ""}
+  ${form.error ? html`<article class="ts-alert" data-state="outage" role="alert"><p class="ts-alert-body">${form.error}</p></article>` : ""}
   ${card(
     { id: "subscribe", title: "Where to send them" },
     html`<form class="st-form" method="post" action="/subscribe">

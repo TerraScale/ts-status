@@ -108,6 +108,7 @@ export function componentPage(view: Overview, entry: ComponentOverview, details:
   return {
     title: `${entry.name} · TerraScale Status`,
     description: `Live status, uptime and latency of ${entry.name}.`,
+    status: view.status,
     path: null,
     body,
     live: true,

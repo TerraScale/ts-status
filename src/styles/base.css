@@ -1,12 +1,30 @@
 /* Font, reset, document defaults, and accessibility helpers. */
 
-/* The font is preloaded by the layout; "block" keeps text invisible for the
-   few milliseconds a cached font needs instead of flashing the fallback. */
+/* Self-hosted variable fonts (OFL, public/fonts). Geist, the body font, is
+   preloaded by the layout; "block" keeps text invisible for the few
+   milliseconds a cached font needs instead of flashing the fallback. Geist
+   Mono and Oxanium (display type in some directions) load when used. */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+  src: url("/fonts/geist.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-mono.woff2") format("woff2");
+}
+
 @font-face {
   font-family: "Oxanium";
   font-style: normal;
   font-weight: 200 800;
-  font-display: block;
+  font-display: swap;
   src: url("/fonts/oxanium.woff2") format("woff2");
   unicode-range:
     U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191,
@@ -25,7 +43,11 @@ html {
   color: var(--ts-ink);
   font-family: var(--ts-font-sans);
   font-size: var(--ts-fs-md);
-  line-height: 1.55;
+  line-height: var(--ts-lh);
+  font-feature-settings:
+    "liga" 1,
+    "calt" 1;
+  accent-color: var(--ts-accent);
   -webkit-text-size-adjust: 100%;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -58,9 +80,10 @@ h1,
 h2,
 h3,
 h4 {
-  font-weight: 600;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
+  font-family: var(--ts-font-display);
+  font-weight: var(--ts-heading-weight);
+  line-height: var(--ts-lh-tight);
+  letter-spacing: var(--ts-heading-tracking);
 }
 
 ul,
@@ -81,12 +104,20 @@ a:hover {
 }
 
 ::selection {
-  background: color-mix(in oklab, var(--ts-accent) 40%, transparent);
+  background: var(--ts-accent-soft);
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--ts-font-mono);
 }
 
 :focus-visible {
-  outline: 2px solid var(--ts-accent);
+  outline: 2px solid var(--ts-focus);
   outline-offset: 2px;
+  border-radius: var(--ts-radius-sm);
 }
 
 * {
@@ -113,7 +144,7 @@ a:hover {
   z-index: var(--ts-z-tooltip);
   padding: var(--ts-s2) var(--ts-s4);
   border-radius: var(--ts-radius);
-  background: var(--ts-accent);
+  background: var(--ts-accent-fill);
   color: var(--ts-on-accent);
   transform: translateY(-200%);
 }
@@ -122,8 +153,9 @@ a:hover {
   transform: none;
 }
 
-/* Status states: every state owns a colour, read by dots, badges, bars,
-   alerts, map hubs and the heatmap through --state. */
+/* The shared status contract: data-state sets --state, read by dots,
+   badges, bars, alerts, the banner, map hubs and the heatmap. Views map the
+   stored partial_outage and major_outage to "partial" and "outage". */
 [data-state] {
   --state: var(--ts-ink-3);
 }
@@ -136,18 +168,32 @@ a:hover {
 [data-state="degraded"] {
   --state: var(--ts-warning);
 }
-[data-state="partial_outage"] {
-  --state: var(--ts-orange);
+[data-state="partial"] {
+  --state: var(--ts-severe);
 }
-[data-state="major_outage"] {
+[data-state="outage"] {
   --state: var(--ts-danger);
 }
 
-/* Inline Lucide icons take the text colour and size. */
+/* Inline Lucide icons take the text colour; 16px by default. */
 .ts-icon {
   flex: none;
-  width: 16px;
-  height: 16px;
+  width: var(--ts-icon);
+  height: var(--ts-icon);
+}
+
+.ts-icon-sm {
+  width: var(--ts-icon-sm);
+  height: var(--ts-icon-sm);
+}
+
+.ts-icon-lg {
+  width: var(--ts-icon-lg);
+  height: var(--ts-icon-lg);
+}
+
+.ts-mono {
+  font-family: var(--ts-font-mono);
 }
 
 @media (prefers-reduced-motion: reduce) {
