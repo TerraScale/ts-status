@@ -99,9 +99,7 @@ nice -n 19 npm run build
 nice -n 19 npm test
 ```
 
-The existing legacy TerraBase probe suites launch the actual `terrabase-linux-amd64` release pinned by tag and SHA256 in `src/testing/terrabase-release.json`. They verify the executable before running it, provision an isolated organization/project/database through its real APIs, and use a temporary TLS certificate and data directory. Only ts-status's own D1 storage is substituted. Linux x64 and OpenSSL are required. `TERRABASE_BINARY=/path/to/terrabase-linux-amd64` supplies the binary, which must match the pinned SHA256. CI skips these suites until TerraBase release binaries are published on GitHub.
-
-The pinned release includes client-listener `/readyz` and region identity. The legacy readiness integration test runs unconditionally and checks `status: "ready"`, the configured `region`, and `X-TerraBase-Region` against that binary. `src/probe/sdk.test.ts` verifies the prepared SDK document operations against the same real release using its legacy fixture credential, and explicitly records the published SDK's JWT/grant restrictions. These baseline tests do not establish platform credential interoperability. That gate must wait for the upstream releases and a matching pinned TerraBase binary; it has not been run.
+Tests never download or run a TerraBase binary. The TerraBase probes are tested with fake configs and fetchers only; production probes call the live public API.
 
 ## API
 
