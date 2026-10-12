@@ -48,9 +48,19 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
   row-gap: var(--ts-s2);
+  position: relative;
   margin-left: calc(-1 * var(--ts-s5));
   overflow: hidden;
-  background: linear-gradient(var(--ts-line), var(--ts-line)) no-repeat right bottom / calc(100% - var(--ts-s5)) 1px;
+}
+
+/* The bottom hairline starts where the first stat's text does. */
+.ts-stats::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: var(--ts-s5);
+  border-bottom: 1px solid var(--ts-line);
 }
 
 .ts-stat {
@@ -232,7 +242,7 @@
 }
 
 .ts-select:hover {
-  border-color: rgb(148 163 184 / 0.34);
+  border-color: var(--ts-line-hover);
 }
 
 .ts-select:focus-visible {
@@ -257,7 +267,7 @@
 }
 
 .ts-input:hover {
-  border-color: rgb(148 163 184 / 0.34);
+  border-color: var(--ts-line-hover);
 }
 
 .ts-input::placeholder {
@@ -280,9 +290,8 @@
   padding: 0 var(--ts-s4);
   border: 0;
   border-radius: var(--ts-radius);
-  /* Darkened so white labels meet 4.5:1; hover lifts it to the accent. */
-  background: color-mix(in oklab, var(--ts-accent) 84%, black);
-  color: #ffffff;
+  background: var(--ts-accent-strong);
+  color: var(--ts-on-accent);
   font: inherit;
   font-size: var(--ts-fs-sm);
   font-weight: 600;

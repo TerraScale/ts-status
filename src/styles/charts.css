@@ -1,5 +1,5 @@
 /* SVG charts, ported from the ts-dashboard kit (web/assets/css/data.css):
-   dashed grid, monotone lines with a gradient area under a single series,
+   dashed grid, monotone lines with a flat tint under a single series,
    and hover columns revealing a guide, dots and an SVG tooltip. */
 
 .ts-chart {
@@ -32,14 +32,10 @@
   stroke-linejoin: round;
 }
 
-.ts-chart-fill-start {
-  stop-color: var(--ts-chart-1);
-  stop-opacity: 0.32;
-}
-
-.ts-chart-fill-end {
-  stop-color: var(--ts-chart-1);
-  stop-opacity: 0;
+.ts-chart-area {
+  fill: var(--series, var(--ts-chart-1));
+  fill-opacity: 0.08;
+  stroke: none;
 }
 
 .ts-chart-column {

@@ -6,6 +6,7 @@ import logo from "../assets/logo.svg?raw";
 import { html, raw, type Html } from "../html";
 import styles from "../styles/index.css?inline";
 import { CLIENT_SCRIPT, REFRESH_SECONDS } from "./client";
+import { icon } from "./icons";
 
 export const STYLES = styles;
 
@@ -30,19 +31,30 @@ export interface Page {
   bare?: boolean;
 }
 
+function links(page: Page): Html {
+  return html`${NAV.map((item) => html`<a href="${item.href}"${page.path === item.href ? raw(' aria-current="page"') : ""}>${item.label}</a>`)}`;
+}
+
+/* The sticky, frosted top bar. Wide screens show the page links inline;
+   phones fold them into a menu that works without scripts. The time zone
+   and theme controls need the client script, so they start hidden. */
 function top(page: Page): Html {
   return html`<a class="ts-skip-link" href="#main">Skip to main content</a>
 <header class="st-top">
   <div class="st-frame">
     <a class="st-brand" href="/" aria-label="TerraScale status home">${raw(logo)}</a>
-    <div class="st-top-end">
-      <nav class="st-nav" aria-label="Status pages">
-        ${NAV.map((item) => html`<a href="${item.href}"${page.path === item.href ? raw(' aria-current="page"') : ""}>${item.label}</a>`)}
-      </nav>
+    <nav class="st-nav" aria-label="Status pages">${links(page)}</nav>
+    <div class="st-tools">
       <label class="st-zone" hidden>
+        ${icon("globe")}
         <span class="ts-sr-only">Time zone</span>
         <select id="st-zone" class="ts-select ts-select-sm"></select>
       </label>
+      <button class="st-icon-button" id="st-theme" type="button" aria-label="Switch between light and dark theme" hidden>${icon("sun", "st-when-dark")}${icon("moon", "st-when-light")}</button>
+      <details class="st-menu">
+        <summary class="st-icon-button" aria-label="Menu">${icon("menu")}</summary>
+        <nav class="st-menu-panel" aria-label="Status pages">${links(page)}</nav>
+      </details>
     </div>
   </div>
 </header>`;
@@ -70,8 +82,9 @@ export function document(page: Page, year: number): Html {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#0a0c12">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0a0c12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <title>${page.title}</title>
 <meta name="description" content="${page.description}">
 <link rel="icon" type="image/svg+xml" href="/icon.svg">

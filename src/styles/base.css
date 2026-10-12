@@ -114,12 +114,40 @@ a:hover {
   padding: var(--ts-s2) var(--ts-s4);
   border-radius: var(--ts-radius);
   background: var(--ts-accent);
-  color: #ffffff;
+  color: var(--ts-on-accent);
   transform: translateY(-200%);
 }
 
 .ts-skip-link:focus {
   transform: none;
+}
+
+/* Status states: every state owns a colour, read by dots, badges, bars,
+   alerts, map hubs and the heatmap through --state. */
+[data-state] {
+  --state: var(--ts-ink-3);
+}
+[data-state="operational"] {
+  --state: var(--ts-success);
+}
+[data-state="maintenance"] {
+  --state: var(--ts-info);
+}
+[data-state="degraded"] {
+  --state: var(--ts-warning);
+}
+[data-state="partial_outage"] {
+  --state: var(--ts-orange);
+}
+[data-state="major_outage"] {
+  --state: var(--ts-danger);
+}
+
+/* Inline Lucide icons take the text colour and size. */
+.ts-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -7,20 +7,40 @@
   padding-inline: var(--ts-s10);
 }
 
-/* Top bar: brand on the left, page links on the right. */
+/* Anchored sections clear the sticky top bar. */
+:root {
+  scroll-padding-top: calc(64px + var(--ts-s4));
+}
+
+/* Top bar: sticky and frosted; brand, page links, then the tools. The glass
+   sits on a pseudo-element so the header is no backdrop root and the menu
+   panel inside it can blur the page too. */
 .st-top {
+  position: sticky;
+  top: 0;
+  z-index: var(--ts-z-header);
   border-bottom: 1px solid var(--ts-line);
+}
+
+.st-top::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--ts-glass);
+  -webkit-backdrop-filter: var(--ts-blur);
+  backdrop-filter: var(--ts-blur);
 }
 
 .st-top > .st-frame {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--ts-s4);
+  gap: var(--ts-s6);
   height: 64px;
 }
 
 .st-brand {
+  margin-right: auto;
   color: var(--ts-ink);
 }
 
@@ -29,25 +49,14 @@
   height: 22px;
 }
 
-.st-top-end {
-  display: flex;
-  align-self: stretch;
-  align-items: center;
-  gap: var(--ts-s6);
+.st-logo-mark {
+  fill: var(--ts-brand);
 }
 
 .st-nav {
   display: flex;
   align-self: stretch;
-  gap: var(--ts-s6);
-}
-
-.st-zone {
-  width: 13rem;
-}
-
-.st-zone[hidden] {
-  display: none;
+  gap: var(--ts-s5);
 }
 
 .st-nav a {
@@ -75,6 +84,120 @@
   height: 2px;
   border-radius: 2px;
   background: var(--ts-accent);
+}
+
+.st-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--ts-s2);
+}
+
+/* The time zone: a globe and a select as wide as the zone it shows. */
+.st-zone {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ts-ink-3);
+}
+
+.st-zone[hidden] {
+  display: none;
+}
+
+.st-zone > .ts-select {
+  width: 11rem;
+  max-width: 12rem;
+  field-sizing: content;
+}
+
+@supports (field-sizing: content) {
+  .st-zone > .ts-select {
+    width: auto;
+  }
+}
+
+.st-icon-button {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--ts-control-h-sm);
+  height: var(--ts-control-h-sm);
+  padding: 0;
+  border: 1px solid var(--ts-line-strong);
+  border-radius: var(--ts-radius);
+  background: transparent;
+  color: var(--ts-ink-2);
+  cursor: pointer;
+  transition:
+    border-color var(--ts-fast) var(--ts-ease),
+    color var(--ts-fast) var(--ts-ease);
+}
+
+.st-icon-button:hover {
+  border-color: var(--ts-line-hover);
+  color: var(--ts-ink);
+}
+
+.st-icon-button[hidden] {
+  display: none;
+}
+
+/* The theme button offers the other theme. */
+.st-when-light,
+[data-theme="light"] .st-when-dark {
+  display: none;
+}
+
+[data-theme="light"] .st-when-light {
+  display: block;
+}
+
+/* The phone menu: a frosted panel under its button. */
+.st-menu {
+  position: relative;
+  display: none;
+}
+
+.st-menu > summary {
+  list-style: none;
+}
+
+.st-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.st-menu[open] > summary {
+  border-color: var(--ts-line-hover);
+  color: var(--ts-ink);
+}
+
+.st-menu-panel {
+  position: absolute;
+  top: calc(100% + var(--ts-s2));
+  right: 0;
+  z-index: var(--ts-z-tooltip);
+  display: grid;
+  min-width: 12rem;
+  padding: var(--ts-s1);
+  border-radius: var(--ts-radius-lg);
+  background: var(--ts-glass-raised);
+  -webkit-backdrop-filter: var(--ts-blur);
+  backdrop-filter: var(--ts-blur);
+  box-shadow: var(--ts-shadow-overlay);
+}
+
+.st-menu-panel a {
+  padding: var(--ts-s2) var(--ts-s3);
+  border-radius: var(--ts-radius-sm);
+  color: var(--ts-ink-2);
+  font-weight: 600;
+}
+
+.st-menu-panel a:hover,
+.st-menu-panel a[aria-current="page"] {
+  background: var(--ts-accent-soft);
+  color: var(--ts-ink);
+  text-decoration: none;
 }
 
 /* Page headline: the overall state and when it was checked. */
@@ -258,11 +381,14 @@
   z-index: var(--ts-z-tooltip);
   display: grid;
   gap: var(--ts-s2);
+  width: max-content;
   min-width: 13rem;
-  max-width: min(20rem, calc(100vw - 16px));
+  max-width: min(22rem, calc(100vw - 16px));
   padding: var(--ts-s3);
   border-radius: var(--ts-radius);
-  background: var(--ts-surface-2);
+  background: var(--ts-glass-raised);
+  -webkit-backdrop-filter: var(--ts-blur);
+  backdrop-filter: var(--ts-blur);
   box-shadow: var(--ts-shadow-overlay);
   font-size: var(--ts-fs-xs);
   pointer-events: none;
@@ -397,6 +523,10 @@
   border: 1px solid var(--ts-line);
   border-radius: var(--ts-radius-lg);
   background: var(--ts-surface);
+}
+
+.st-map-land {
+  stroke: var(--ts-accent);
 }
 
 .st-hub,
@@ -539,23 +669,46 @@
   border-top: 1px dashed var(--ts-ink-2);
 }
 
-/* Regions side by side, each with its clusters. */
+/* Regions: one row each, opening to its clusters. */
 .st-regions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
-  gap: var(--ts-s6) var(--ts-s8);
 }
 
 .st-region {
-  display: grid;
-  align-content: start;
-  gap: var(--ts-s2);
   min-width: 0;
+  border-bottom: 1px solid var(--ts-line);
 }
 
-.st-region > header {
-  padding-bottom: var(--ts-s2);
-  border-bottom: 1px solid var(--ts-line);
+.st-region:last-child {
+  border-bottom: 0;
+}
+
+.st-region > summary {
+  padding: var(--ts-s3) 0;
+  list-style: none;
+  cursor: pointer;
+}
+
+.st-region > summary::-webkit-details-marker {
+  display: none;
+}
+
+.st-region > summary:hover .st-region-chevron {
+  color: var(--ts-ink);
+}
+
+.st-region-chevron {
+  color: var(--ts-ink-3);
+  transition: transform var(--ts-fast) var(--ts-ease);
+}
+
+.st-region[open] .st-region-chevron {
+  transform: rotate(90deg);
+}
+
+.st-region > .ts-list,
+.st-region > .ts-meta {
+  padding: 0 0 var(--ts-s3) var(--ts-s6);
 }
 
 .st-region-code {
@@ -563,10 +716,6 @@
   font-size: var(--ts-fs-xs);
   font-weight: 700;
   letter-spacing: 0.08em;
-}
-
-.st-region .st-service {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 /* Incidents in lists. */
@@ -607,45 +756,25 @@
     height: 18px;
   }
 
-  .st-top-end,
-  .st-nav {
-    gap: var(--ts-s4);
-  }
-
-  .st-top-end {
-    min-width: 0;
-  }
-
-  .st-nav {
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .st-zone {
-    width: 8.5rem;
-  }
-
-  /* Brand and time zone on the first row, every page link on the second,
-     so no link hides off-screen. */
   .st-top > .st-frame {
-    flex-wrap: wrap;
-    row-gap: 0;
-    height: auto;
-    padding-top: var(--ts-s3);
-  }
-
-  .st-top-end {
-    display: contents;
-  }
-
-  .st-zone {
-    order: 1;
+    gap: var(--ts-s3);
+    height: 56px;
   }
 
   .st-nav {
-    order: 2;
-    flex: 1 1 100%;
-    height: 44px;
+    display: none;
+  }
+
+  .st-menu {
+    display: block;
+  }
+
+  .st-zone > .ts-icon {
+    display: none;
+  }
+
+  .st-zone > .ts-select {
+    max-width: 11rem;
   }
 
   .st-title {
@@ -728,11 +857,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--ts-accent);
-}
-
-.st-timeline-item + .st-timeline-item::before {
-  background: var(--ts-surface-3);
+  background: var(--state, var(--ts-accent));
 }
 
 .st-countdown {
@@ -805,7 +930,23 @@
   border-top: 1px solid var(--ts-line-strong);
 }
 
-/* Latency matrices: the latest value large, p95 and the day's trend below. */
+/* Latency matrices: the latest value large, p95 and the day's trend below.
+   Columns share the width and headers wrap, so long vantage names never
+   push the table past the page. */
+.st-ping:not(.st-ping-browser) {
+  table-layout: fixed;
+}
+
+.st-ping thead th,
+.st-ping tbody th {
+  white-space: normal;
+}
+
+.st-ping-cell .st-spark {
+  width: 100%;
+  max-width: 96px;
+}
+
 .st-ping-cell {
   vertical-align: top;
 }
@@ -1057,11 +1198,23 @@
 }
 
 .ts-button.ad-danger {
-  background: color-mix(in oklab, var(--ts-danger) 70%, black);
+  background: var(--ts-danger-strong);
 }
 
 .ts-button.ad-quiet {
   border: 1px solid var(--ts-line-strong);
   background: transparent;
   color: var(--ts-ink);
+}
+
+/* Without backdrop-filter the glass turns solid. */
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .st-top::before {
+    background: var(--ts-canvas);
+  }
+
+  .st-menu-panel,
+  .st-card {
+    background: var(--ts-surface-2);
+  }
 }

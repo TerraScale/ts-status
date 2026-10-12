@@ -39,6 +39,7 @@ import {
   time,
   zone,
 } from "./components";
+import { icon } from "./icons";
 import type { Page } from "./layout";
 import { maintenanceItems } from "./maintenance";
 
@@ -91,26 +92,31 @@ function group(entry: GroupOverview, view: Overview) {
 export const regionLabel = (entry: RegionOverview): string =>
   entry.clusters.length === 0 ? COMING_SOON : (entry.note ?? STATE_LABELS[entry.status]);
 
+/** A region as one collapsed row (code, name, provider, ping and state)
+    that opens to its clusters, so the page lists every region without
+    repeating every component's bars for each. */
 function region(entry: RegionOverview, view: Overview) {
   const planned = entry.clusters.length === 0;
-  return html`<section class="st-region" aria-labelledby="region-${entry.code}">
-  <header class="ts-row-between">
+  const clusters = entry.clusters.length === 1 ? "1 cluster" : `${entry.clusters.length} clusters`;
+  return html`<details class="st-region" id="region-${entry.code}">
+  <summary class="ts-row-between">
     <div class="ts-row">
+      ${icon("chevron-right", "st-region-chevron")}
       <span class="st-region-code">${entry.code}</span>
-      <h3 id="region-${entry.code}" class="ts-strong"><a class="st-incident-link" href="${regionHref(entry.code)}">${entry.name}</a></h3>
-      <span class="ts-meta">${entry.country} · ${providersOf(entry)}</span>
+      <h3 class="ts-strong"><a class="st-incident-link" href="${regionHref(entry.code)}">${entry.name}</a></h3>
+      <span class="ts-meta">${entry.country} · ${providersOf(entry)}${planned ? "" : ` · ${clusters}`}</span>
     </div>
     <div class="ts-row">
       ${planned || entry.note ? "" : html`<span class="ts-meta ts-num">Ping ${ms(entry.pingMs)}</span>`}
       ${statusBadge(entry.status, regionLabel(entry))}
     </div>
-  </header>
+  </summary>
   ${
     planned
       ? html`<p class="ts-meta">No clusters serve this region yet.</p>`
       : html`<ul class="ts-list">${entry.clusters.map((item) => clusterRow(item, view.range))}</ul>`
   }
-</section>`;
+</details>`;
 }
 
 /** The dotted world map: one hub per region colored by its state, the
@@ -383,7 +389,7 @@ export function homePage(view: Overview): Page {
     {
       id: "regions",
       title: "Regions",
-      description: `Every cluster is checked every 30 seconds from ${coverage.total} vantage points on Cloudflare's network; ${coverage.answered} answered the latest round. Ping is the median of the latest round, then the mean over the range.`,
+      description: `Every cluster is checked every 30 seconds from ${coverage.total} vantage points on Cloudflare's network; ${coverage.answered} answered the latest round. Ping is the median of the latest round, then the mean over the range. Open a region for its clusters.`,
     },
     view.regions.length === 0
       ? empty("No regions published", "Regions will appear here once they are registered.")

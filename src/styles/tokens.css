@@ -1,6 +1,12 @@
-/* Design tokens shared with ts-dashboard (web/assets/css/tokens.css). */
+/* Theme tokens: the one file a design direction replaces. Names are the
+   --ts-* tokens shared with ts-dashboard (web/assets/css/tokens.css) and
+   ts-docs. Dark is the default; data-theme="light" on <html> switches the
+   colour set (the client script sets it from the visitor's choice or their
+   system preference). Components read only these tokens; base.css maps
+   every status state onto them. */
 
-:root {
+:root,
+[data-theme="dark"] {
   color-scheme: dark;
 
   /* Canvas and surfaces, darkest to lightest. */
@@ -10,25 +16,29 @@
   --ts-surface-3: #1e2330;
   --ts-line: rgb(148 163 184 / 0.12);
   --ts-line-strong: rgb(148 163 184 / 0.22);
+  --ts-line-hover: rgb(148 163 184 / 0.34);
 
   /* Text. */
   --ts-ink: #eef1f7;
   --ts-ink-2: #a7afbf;
   --ts-ink-3: #6c7589;
 
-  /* Primary accent and status colors. */
+  /* Brand, accent and status colours. */
+  --ts-brand: #2158e8;
   --ts-accent: #3b82f6;
+  /* Darkened so white labels meet 4.5:1; hover lifts it to the accent. */
+  --ts-accent-strong: color-mix(in oklab, #3b82f6 84%, black);
   --ts-accent-soft: rgb(59 130 246 / 0.14);
+  --ts-on-accent: #ffffff;
   --ts-link: #6ea8ff;
   --ts-success: #34d399;
   --ts-warning: #fbbf24;
   --ts-orange: #fb923c;
   --ts-danger: #f87171;
+  --ts-danger-strong: color-mix(in oklab, #f87171 70%, black);
   --ts-info: #60a5fa;
 
   /* Chart series: the accent first, then the categorical palette. */
-  --ts-chart-1: var(--ts-accent);
-  --ts-cat-1: var(--ts-chart-1);
   --ts-cat-2: #22d3ee;
   --ts-cat-3: #a5b4fc;
   --ts-cat-4: #f472b6;
@@ -36,6 +46,62 @@
   --ts-cat-6: #c084fc;
   --ts-cat-7: #a3e635;
   --ts-cat-8: #fdba74;
+
+  /* Overlays: frosted panels and their shadow. */
+  --ts-glass-alpha: 72%;
+  --ts-shadow-overlay: 0 12px 28px rgb(0 0 0 / 0.5), 0 0 0 1px var(--ts-line-strong);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --ts-canvas: #ffffff;
+  --ts-surface: #f5f6f8;
+  --ts-surface-2: #ffffff;
+  --ts-surface-3: #e3e6ec;
+  --ts-line: rgb(15 23 42 / 0.1);
+  --ts-line-strong: rgb(15 23 42 / 0.18);
+  --ts-line-hover: rgb(15 23 42 / 0.3);
+
+  --ts-ink: #0f172a;
+  --ts-ink-2: #475569;
+  --ts-ink-3: #64748b;
+
+  --ts-brand: #2158e8;
+  --ts-accent: #2563eb;
+  --ts-accent-strong: #1d4ed8;
+  --ts-accent-soft: rgb(37 99 235 / 0.1);
+  --ts-on-accent: #ffffff;
+  --ts-link: #1d4ed8;
+  --ts-success: #047857;
+  --ts-warning: #b45309;
+  --ts-orange: #c2410c;
+  --ts-danger: #dc2626;
+  --ts-danger-strong: #b91c1c;
+  --ts-info: #2563eb;
+
+  --ts-cat-2: #0891b2;
+  --ts-cat-3: #6366f1;
+  --ts-cat-4: #db2777;
+  --ts-cat-5: #ca8a04;
+  --ts-cat-6: #9333ea;
+  --ts-cat-7: #65a30d;
+  --ts-cat-8: #ea580c;
+
+  --ts-glass-alpha: 78%;
+  --ts-shadow-overlay: 0 12px 28px rgb(15 23 42 / 0.12), 0 0 0 1px var(--ts-line-strong);
+}
+
+/* Theme-independent tokens. */
+:root {
+  --ts-chart-1: var(--ts-accent);
+  --ts-cat-1: var(--ts-chart-1);
+
+  /* Frosted glass: translucent canvas or raised surface plus a blur.
+     Elements using it keep a solid fallback where backdrop-filter is missing. */
+  --ts-glass: color-mix(in oklab, var(--ts-canvas) var(--ts-glass-alpha), transparent);
+  --ts-glass-raised: color-mix(in oklab, var(--ts-surface-2) var(--ts-glass-alpha), transparent);
+  --ts-blur: blur(14px) saturate(1.4);
 
   /* Type. Oxanium carries the brand; body copy stays at a readable 14px. */
   --ts-font-sans: "Oxanium", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -69,29 +135,9 @@
   --ts-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   /* Layering. */
+  --ts-z-header: 50;
   --ts-z-tooltip: 60;
-  --ts-shadow-overlay: 0 12px 28px rgb(0 0 0 / 0.5), 0 0 0 1px var(--ts-line-strong);
 
   /* Page width. */
   --st-width: 60rem;
-}
-
-/* Status states: every state owns a color, read by dots, badges and bars. */
-[data-state] {
-  --state: var(--ts-ink-3);
-}
-[data-state="operational"] {
-  --state: var(--ts-success);
-}
-[data-state="maintenance"] {
-  --state: var(--ts-info);
-}
-[data-state="degraded"] {
-  --state: var(--ts-warning);
-}
-[data-state="partial_outage"] {
-  --state: var(--ts-orange);
-}
-[data-state="major_outage"] {
-  --state: var(--ts-danger);
 }

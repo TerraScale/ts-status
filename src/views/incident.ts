@@ -7,7 +7,19 @@ import { aggregate, spans, STATE_LABELS, worst, type Bucket, type TimelineState 
 import { formatClock, formatDay, formatDuration } from "../format";
 import { html, type Html } from "../html";
 import { chartLegend, lineChart } from "./charts/line";
-import { affected, bars, badge, card, empty, incidentBadge, STATUS_TEXT, time, timing, zone } from "./components";
+import {
+  affected,
+  bars,
+  badge,
+  card,
+  empty,
+  incidentBadge,
+  STATUS_TEXT,
+  statusState,
+  time,
+  timing,
+  zone,
+} from "./components";
 import type { Page } from "./layout";
 
 const KINDS = { incident: "Incident", warning: "Warning", maintenance: "Maintenance" } as const;
@@ -25,7 +37,7 @@ function grid(detail: IncidentDetail): number[] {
   );
 }
 
-function latency(detail: IncidentDetail): Html {
+function latency(detail: IncidentDetail, names: ReadonlyMap<string, string>): Html {
   const points = grid(detail);
   const series = detail.endpoints
     .map((endpoint) => {
@@ -35,7 +47,7 @@ function latency(detail: IncidentDetail): Html {
           .map((point) => [Date.parse(point.start), point.latencyMs] as const),
       );
       return {
-        name: `${endpoint.componentId} · ${endpoint.cluster}`,
+        name: `${names.get(endpoint.componentId) ?? endpoint.componentId} · ${endpoint.cluster}`,
         values: points.map((at) => values.get(at) ?? null),
       };
     })
@@ -104,7 +116,7 @@ export function incidentPage(detail: IncidentDetail, now: number): Page {
       title: "What the health checks saw",
       description: html`State and ${detail.resolution === "round" ? "per-round" : "hourly median"} latency of the affected endpoints, in ${zone}.`,
     },
-    html`${strip(detail)}${latency(detail)}`,
+    html`${strip(detail)}${latency(detail, names)}`,
   )}
 
   ${card(
@@ -112,8 +124,8 @@ export function incidentPage(detail: IncidentDetail, now: number): Page {
     detail.updates.length === 0
       ? empty("No updates", "This incident has no updates yet.")
       : html`<ol class="st-timeline">${detail.updates.map(
-          (update) => html`<li class="st-timeline-item">
-    <div class="ts-row">${badge(STATUS_TEXT[update.status] ?? update.status)}${time(update.createdAt, "datetime")}</div>
+          (update) => html`<li class="st-timeline-item" data-state="${statusState(incident, update.status)}">
+    <div class="ts-row">${badge(STATUS_TEXT[update.status] ?? update.status, statusState(incident, update.status))}${time(update.createdAt, "datetime")}</div>
     <p class="st-incident-body">${update.body}</p>
   </li>`,
         )}</ol>`,

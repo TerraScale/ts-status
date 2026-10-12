@@ -1,10 +1,10 @@
 /* A server-rendered line chart: gridlines, axis labels, one path per series
-   (with an area under a single series), and a focusable hover column per
+   (with a flat tint under a single series), and a focusable hover column per
    sample whose tooltip is drawn in SVG, so it works without scripts. Gaps
    in a series break its line. */
 
 import { html, type Html } from "../../html";
-import { coordinate, hash, niceCeiling, runs, smoothPath } from "./geometry";
+import { coordinate, niceCeiling, runs, smoothPath } from "./geometry";
 
 export interface Series {
   name: string;
@@ -92,7 +92,6 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
   const bottom = TOP + plotHeight;
   const xAt = (index: number) => LEFT + (plotWidth * index) / Math.max(1, count - 1);
   const yAt = (value: number) => TOP + plotHeight * (1 - Math.max(0, value) / scale);
-  const gradient = `st-fill-${hash(options.label)}`;
   const single = series.length === 1;
 
   const grid = Array.from({ length: 5 }, (_, step) => {
@@ -111,7 +110,7 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
       const first = run[0]?.index ?? 0;
       const last = run.at(-1)?.index ?? 0;
       const area = single
-        ? html`<path class="ts-chart-area" d="${line} L ${coordinate(xAt(last))},${bottom} L ${coordinate(xAt(first))},${bottom} Z" fill="url(#${gradient})"></path>`
+        ? html`<path class="ts-chart-area ${category(seriesIndex)}" d="${line} L ${coordinate(xAt(last))},${bottom} L ${coordinate(xAt(first))},${bottom} Z"></path>`
         : "";
       return html`${area}<path class="ts-chart-line ${category(seriesIndex)}" d="${line}"></path>`;
     }),
@@ -163,7 +162,6 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
   });
 
   return html`<svg class="ts-chart" viewBox="0 0 ${WIDTH} ${height}" role="group" aria-label="${options.label}">
-  <defs><linearGradient id="${gradient}" x1="0" y1="0" x2="0" y2="1"><stop class="ts-chart-fill-start" offset="0"></stop><stop class="ts-chart-fill-end" offset="1"></stop></linearGradient></defs>
   ${grid}${ticks}${markers}${paths}${columns}
 </svg>`;
 }

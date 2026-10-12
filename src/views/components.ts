@@ -154,16 +154,20 @@ const PHASE_STATE: Record<MaintenancePhase, TimelineState> = {
   completed: "operational",
 };
 
+/** The state an incident status is colored in: closed is operational,
+    maintenance is blue, and anything open carries the incident's impact. */
+export function statusState(incident: Incident, status: string): TimelineState {
+  if (status === "resolved" || status === "completed") return "operational";
+  return incident.kind === "maintenance" ? "maintenance" : IMPACT_STATUS[incident.impact];
+}
+
 /** An incident's status text and the state coloring its badge. */
 export function incidentBadge(incident: Incident, now: number): Html {
   if (incident.kind === "maintenance") {
     const phase = maintenancePhase(incident, now);
     return badge(STATUS_TEXT[phase], PHASE_STATE[phase]);
   }
-  return badge(
-    STATUS_TEXT[incident.status],
-    incident.status === "resolved" ? "operational" : IMPACT_STATUS[incident.impact],
-  );
+  return badge(STATUS_TEXT[incident.status], statusState(incident, incident.status));
 }
 
 /** The labels beside an incident's title. */
