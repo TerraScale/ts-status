@@ -6,6 +6,7 @@ import { bucketStarts, byHour, RANGES, rangeStart, type RangeKey } from "../doma
 import { DAY, formatClock, formatDay, HOUR } from "../format";
 import { html, type Html } from "../html";
 import type { Measurements } from "../measure";
+import { vantageLabel, type Coverage } from "../domain/coverage";
 import { VANTAGES } from "../probe/vantages";
 import { chartLegend, lineChart } from "./charts/line";
 import { empty } from "./components";
@@ -36,6 +37,7 @@ export function latencyCharts(
   deploys: readonly Deploy[],
   range: RangeKey,
   now: number,
+  coverage: Coverage,
 ): { summary: Html; vantages: Html } {
   const { starts, size, period, points, ticks } = axis(range, now);
   const first = starts[0] ?? now;
@@ -55,7 +57,7 @@ export function latencyCharts(
     ],
   );
   const perVantage = VANTAGES.map((vantage) => ({
-    name: vantage.name,
+    name: vantageLabel(coverage, vantage),
     values: measurements.series(endpointIds, vantage.code, starts, size, period, 0.5),
   })).filter((entry) => entry.values.some((value) => value !== null));
   const vantageChart = lineChart(

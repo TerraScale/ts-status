@@ -322,6 +322,20 @@ describe("app", () => {
       ]);
     });
 
+    it("never shows another data center's latency under the vantage's own name", async () => {
+      const env = seen([
+        ["sfo", "SJC"],
+        ["gru", "EWR"],
+        ["fra", "FRA"],
+        ["nrt", "NRT"],
+      ]);
+      const ping = await (await app.fetch(request("/ping"), env, ctx)).text();
+      expect(ping).toContain('<th scope="col">South America (runs in EWR)</th>');
+      expect(ping).not.toContain('<th scope="col">South America</th>');
+      expect(ping).toContain('<th scope="col">US West</th>');
+      expect(await page(env)).toContain("From South America (runs in EWR)");
+    });
+
     it("leaves coverage to the delay warning when rounds stop arriving", async () => {
       vi.setSystemTime(Date.parse("2026-09-26T10:30:00Z"));
       const env = seen(ALL);

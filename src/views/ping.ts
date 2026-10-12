@@ -10,7 +10,8 @@ import { HOUR } from "../format";
 import { html, type Html } from "../html";
 import { Measurements } from "../measure";
 import type { Overview } from "../overview";
-import { VANTAGES } from "../probe/vantages";
+import { vantageLabel } from "../domain/coverage";
+import { VANTAGES, type Vantage } from "../probe/vantages";
 import { sparkline } from "./charts/sparkline";
 import { COMING_SOON } from "../domain/status";
 import { card, componentHref, empty, ms, regionHref, statusBadge } from "./components";
@@ -23,6 +24,7 @@ function cell(
   measurements: Measurements,
   ids: readonly string[],
   vantage: string,
+  title: string,
   latest: number | null,
   now: number,
 ): Html {
@@ -37,7 +39,7 @@ function cell(
       ["p95, 24h", ms(p95)],
     ],
   });
-  return html`<td class="st-ping-cell" tabindex="0" data-title="${VANTAGES.find((entry) => entry.code === vantage)?.name ?? vantage}" data-card="${cardData}">
+  return html`<td class="st-ping-cell" tabindex="0" data-title="${title}" data-card="${cardData}">
   <span class="st-ping-value ts-num">${ms(latest)}</span>
   <span class="ts-meta ts-num">p95 ${ms(p95)}</span>
   ${sparkline(measurements.series(ids, vantage, starts, HOUR, HOUR, 0.5))}
@@ -46,9 +48,10 @@ function cell(
 
 export function pingPage(view: Overview, details: Details, now: number): Page {
   const measurements = new Measurements(details.periods);
+  const label = (vantage: Vantage) => vantageLabel(view.monitoring.coverage, vantage);
   const components = view.groups.flatMap((group) => group.components).filter((entry) => entry.clusters.length > 0);
 
-  const header = html`<tr><th scope="col">From</th>${VANTAGES.map((vantage) => html`<th scope="col">${vantage.name}</th>`)}</tr>`;
+  const header = html`<tr><th scope="col">From</th>${VANTAGES.map((vantage) => html`<th scope="col">${label(vantage)}</th>`)}</tr>`;
   const regionMatrix = html`<div class="st-table-wrap"><table class="st-ping">
   <thead>${header}</thead>
   <tbody>${view.regions.map((region) => {
@@ -59,7 +62,7 @@ export function pingPage(view: Overview, details: Details, now: number): Page {
       ids.length === 0
         ? html`<td colspan="${VANTAGES.length}" class="ts-meta">Not yet live</td>`
         : VANTAGES.map((vantage) =>
-            cell(measurements, ids, vantage.code, region.vantagePings[vantage.code] ?? null, now),
+            cell(measurements, ids, vantage.code, label(vantage), region.vantagePings[vantage.code] ?? null, now),
           )
     }</tr>`;
   })}</tbody>
@@ -70,7 +73,8 @@ export function pingPage(view: Overview, details: Details, now: number): Page {
   <tbody>${components.map((component) => {
     const ids = component.clusters.map((cluster) => cluster.id);
     return html`<tr><th scope="row"><a class="st-incident-link" href="${componentHref(component.id)}">${component.name}</a></th>${VANTAGES.map(
-      (vantage) => cell(measurements, ids, vantage.code, component.vantagePings[vantage.code] ?? null, now),
+      (vantage) =>
+        cell(measurements, ids, vantage.code, label(vantage), component.vantagePings[vantage.code] ?? null, now),
     )}</tr>`;
   })}</tbody>
 </table></div>`;

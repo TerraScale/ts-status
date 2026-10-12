@@ -4,7 +4,7 @@
 
 import regionMap from "../assets/region-map.svg?raw";
 import { byHour, RANGES } from "../domain/range";
-import type { Coverage, VantageCoverage, VantageState } from "../domain/coverage";
+import { vantageLabel, type Coverage, type VantageCoverage, type VantageState } from "../domain/coverage";
 import { COMING_SOON, HEADLINES, STATES, STATE_LABELS, type TimelineState } from "../domain/status";
 import { formatClock, formatDay, formatUptime } from "../format";
 import { html, raw, type Html } from "../html";
@@ -16,7 +16,7 @@ import {
   type Overview,
   type RegionOverview,
 } from "../overview";
-import { VANTAGES } from "../probe/vantages";
+import { VANTAGES, type Vantage } from "../probe/vantages";
 import { MAP_HEIGHT, MAP_WIDTH } from "./charts/geometry";
 import { chartLegend, lineChart } from "./charts/line";
 import { sparkline } from "./charts/sparkline";
@@ -120,6 +120,7 @@ function map(view: Overview) {
   const regions = view.regions;
   const live = regions.filter((entry) => entry.clusters.length > 0);
   const coverage = new Map(view.monitoring.coverage.vantages.map((entry) => [entry.code, entry]));
+  const named = (vantage: Vantage) => vantageLabel(view.monitoring.coverage, vantage);
   const label = `Region map: ${regions.map((entry) => `${entry.name} ${regionLabel(entry).toLowerCase()}`).join(", ")}`;
 
   const arcs = live.flatMap((entry) =>
@@ -134,7 +135,7 @@ function map(view: Overview) {
       const ping = entry.vantagePings[vantage.code] ?? null;
       const cardData = JSON.stringify({ rows: [["Latest", ms(ping)]] });
       return [
-        html`<g class="st-arc" data-state="${ping === null ? "none" : entry.status}" tabindex="0" role="img" aria-label="${vantage.name} to ${entry.name}: latest ${ms(ping)}" data-title="${vantage.name} → ${entry.name}" data-card="${cardData}">
+        html`<g class="st-arc" data-state="${ping === null ? "none" : entry.status}" tabindex="0" role="img" aria-label="${named(vantage)} to ${entry.name}: latest ${ms(ping)}" data-title="${named(vantage)} → ${entry.name}" data-card="${cardData}">
     <path class="st-arc-line" d="${d}"></path><path class="st-arc-hit" d="${d}"></path>
   </g>`,
       ];
@@ -150,7 +151,7 @@ function map(view: Overview) {
         ["Coverage", VANTAGE_STATES[entry?.state ?? "missing"]],
       ],
     });
-    return html`<g class="st-vantage" transform="translate(${vantage.mapX} ${vantage.mapY})" tabindex="0" role="img" aria-label="Vantage point ${vantage.name}" data-title="Vantage · ${vantage.name}" data-card="${cardData}">
+    return html`<g class="st-vantage" transform="translate(${vantage.mapX} ${vantage.mapY})" tabindex="0" role="img" aria-label="Vantage point ${named(vantage)}" data-title="Vantage · ${named(vantage)}" data-card="${cardData}">
     <rect x="-1.3" y="-1.3" width="2.6" height="2.6" transform="rotate(45)"></rect>
   </g>`;
   });
@@ -164,7 +165,7 @@ function map(view: Overview) {
             ["Ping", ms(entry.pingMs)],
             ["Clusters", String(entry.clusters.length)],
             ...VANTAGES.map((vantage): [string, string] => [
-              `From ${vantage.name}`,
+              `From ${named(vantage)}`,
               ms(entry.vantagePings[vantage.code] ?? null),
             ]),
           ],

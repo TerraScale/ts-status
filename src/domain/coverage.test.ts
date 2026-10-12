@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { coverage } from "./coverage";
+import { coverage, vantageLabel } from "./coverage";
 
 const VANTAGES = [
   { code: "sfo", name: "US West", placement: "aws:us-west-1", colos: ["SFO", "SJC"] },
@@ -62,5 +62,15 @@ describe("monitoring coverage", () => {
     expect(stale).toMatchObject({ level: "insufficient", answered: 0, verified: 0 });
     expect(stale.vantages.every((entry) => entry.state === "missing" && entry.observed !== null)).toBe(true);
     expect(run(verifiedAll, null)).toMatchObject({ level: "insufficient", answered: 0 });
+  });
+
+  it("labels a vantage with where it runs unless its area is proven", () => {
+    const result = run([at("sfo", "SJC"), at("gru", "EWR"), at("fra", null)]);
+    expect(VANTAGES.map((vantage) => vantageLabel(result, vantage))).toEqual([
+      "US West",
+      "South America (runs in EWR)",
+      "Europe (location unproven)",
+      "Asia Pacific",
+    ]);
   });
 });
