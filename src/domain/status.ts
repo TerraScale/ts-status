@@ -104,6 +104,13 @@ export const STATE_LABELS: Record<TimelineState, string> = {
     component whose every endpoint it found so (see src/probe/terrabase.ts). */
 export const NOT_CONFIGURED = "Not configured";
 
+/** The note of an endpoint that has never passed a round, and of a component
+    whose every endpoint has not: not live yet, so not an outage. */
+export const PENDING_LAUNCH = "Pending launch";
+
+/** The label of a planned component, which is not measured yet. */
+export const COMING_SOON = "Coming soon";
+
 /** The headline for each overall state. */
 export const HEADLINES: Record<Status, string> = {
   operational: "All systems operational",
@@ -259,6 +266,8 @@ export interface Endpoint {
   cluster: string;
   provider: Provider;
   url: string;
+  /** When it first passed a round; null while it is pending launch. */
+  liveSince: string | null;
 }
 
 /** One vantage's result in a sample; `ok` is null where it was unknown. */

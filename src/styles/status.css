@@ -625,6 +625,29 @@
     width: 8.5rem;
   }
 
+  /* Brand and time zone on the first row, every page link on the second,
+     so no link hides off-screen. */
+  .st-top > .st-frame {
+    flex-wrap: wrap;
+    row-gap: 0;
+    height: auto;
+    padding-top: var(--ts-s3);
+  }
+
+  .st-top-end {
+    display: contents;
+  }
+
+  .st-zone {
+    order: 1;
+  }
+
+  .st-nav {
+    order: 2;
+    flex: 1 1 100%;
+    height: 44px;
+  }
+
   .st-title {
     font-size: var(--ts-fs-2xl);
   }
@@ -986,4 +1009,59 @@
   width: 1px;
   height: 1px;
   overflow: hidden;
+}
+
+/* The admin pages: forms in a grid that collapses to one column on phones. */
+.ad-nav {
+  justify-self: start;
+}
+
+.ad-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+  align-items: end;
+  gap: var(--ts-s3);
+  padding: var(--ts-s3) 0;
+}
+
+.ad-form > .ts-button {
+  justify-self: start;
+}
+
+.ad-wide {
+  grid-column: 1 / -1;
+}
+
+.ad-text {
+  height: auto;
+  min-height: 6rem;
+  padding: var(--ts-s2) var(--ts-s3);
+  resize: vertical;
+}
+
+.ad-item {
+  display: grid;
+  gap: var(--ts-s2);
+}
+
+.ad-item summary {
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.ad-delete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ts-s3);
+}
+
+.ts-button.ad-danger {
+  background: color-mix(in oklab, var(--ts-danger) 70%, black);
+}
+
+.ts-button.ad-quiet {
+  border: 1px solid var(--ts-line-strong);
+  background: transparent;
+  color: var(--ts-ink);
 }

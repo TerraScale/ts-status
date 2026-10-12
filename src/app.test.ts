@@ -11,6 +11,7 @@ type RegionLatency = ReturnType<typeof regionLatencyDocument>;
 function seededEnv(): Env & { STATUS_DB: TestD1 } {
   const db = testD1();
   db.sqlite.exec(`
+    UPDATE endpoints SET live_since = '2026-01-01 00:00:00';
     INSERT INTO incidents (id, kind, title, status, impact, created_at, updated_at) VALUES
       ('00000000000000000000000002', 'warning', 'Slow <queries>', 'monitoring', 'minor', '2026-09-26 09:00:00', '2026-09-26 09:30:00');
     INSERT INTO incident_updates (id, incident_id, status, body, created_at) VALUES
@@ -27,15 +28,15 @@ function seededEnv(): Env & { STATUS_DB: TestD1 } {
        '2026-09-26 10:00:00', '2026-09-26 11:00:00', '2026-09-20 10:00:00', '2026-09-20 10:00:00'),
       ('00000000000000000000000007', 'maintenance', 'Fly migration', 'scheduled', 'none',
        '2026-09-28 10:00:00', '2026-09-28 11:00:00', '2026-09-20 10:00:00', '2026-09-20 10:00:00');
-    INSERT INTO incident_components (incident_id, component_id) VALUES ('00000000000000000000000006', '01M4E7G1W82VKFPF5FJ9AVK1CZ'), ('00000000000000000000000007', '01M4E7G1W82VKFPF5FJ9AVK1CR');
+    INSERT INTO incident_components (incident_id, component_id) VALUES ('00000000000000000000000006', '01M4E7G1W82VKFPF5FJ9AVK1CZ'), ('00000000000000000000000007', '01M4E7G1W82VKFPF5FJ9AVK1D2');
     INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES
-      ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 10:14:30', 'operational', 4, 4, 42, '[]'),
+      ('01M4E7G1W82VKFPF5FJ9AVK1DQ', '2026-09-26 10:14:30', 'operational', 4, 4, 42, '[]'),
       ('01M4E7G1W82VKFPF5FJ9AVK1DS', '2026-09-26 10:14:30', 'operational', 4, 4, 30, '[]'),
       ('01M4E7G1W82VKFPF5FJ9AVK1DH', '2026-09-26 10:14:30', 'major_outage', 0, 4, NULL, '[]');
     INSERT INTO probe_hours (endpoint_id, hour, vantage, checks, failures, degraded, latency_sum, latency_max) VALUES
-      ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 10:00:00', 'all', 30, 0, 0, 1260, 60);
+      ('01M4E7G1W82VKFPF5FJ9AVK1DQ', '2026-09-26 10:00:00', 'all', 30, 0, 0, 1260, 60);
     INSERT INTO probe_days (endpoint_id, day, vantage, checks, failures, degraded, latency_sum, latency_max, hist) VALUES
-      ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 00:00:00', 'all', 1200, 0, 0, 50400, 90, '[]');
+      ('01M4E7G1W82VKFPF5FJ9AVK1DQ', '2026-09-26 00:00:00', 'all', 1200, 0, 0, 50400, 90, '[]');
   `);
   return { STATUS_DB: db } as unknown as Env & { STATUS_DB: TestD1 };
 }
@@ -176,13 +177,14 @@ describe("app", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("public, max-age=10");
     expect(response.headers.get("content-security-policy")).toMatch(/script-src 'sha256-[^']+'/);
-    // Git is down but under maintenance, so only the warning degrades the headline.
+    // Email is down but under maintenance, so only the warning degrades the headline.
     expect(body).toContain("Some systems are degraded");
     expect(body).toContain("Scheduled maintenance");
     expect(body).toContain("Forgejo upgrade");
     expect(body).toContain("Warning: Slow &lt;queries&gt;");
-    expect(body).toContain("TerraScale platform");
-    expect(body).toContain("Developer tools");
+    expect(body).toContain("Platform");
+    expect(body).toContain("TerraBase");
+    expect(body).toContain("Coming soon");
     expect(body).toContain("Ping 42 ms");
     expect(body).toContain('data-lifecycle="planned"');
     expect(body).not.toContain("Monitoring delayed");
@@ -191,10 +193,10 @@ describe("app", () => {
   it("warns about certificates close to expiry and shows them on clusters", async () => {
     const env = seededEnv();
     env.STATUS_DB.sqlite.exec(`INSERT INTO tls_certs (host, not_after, issuer, checked_at) VALUES
-      ('dash.terrascale.tech', '2026-10-01 00:00:00', 'Let''s Encrypt', '2026-09-26 10:17:00'),
+      ('api.terrascale.tech', '2026-10-01 00:00:00', 'Let''s Encrypt', '2026-09-26 10:17:00'),
       ('terrascale.tech', '2026-12-21 00:00:00', 'Google Trust Services', '2026-09-26 10:17:00')`);
     const body = await (await app.fetch(request("/"), env, ctx)).text();
-    expect(body).toContain("Certificate renewal due for dash.terrascale.tech");
+    expect(body).toContain("Certificate renewal due for api.terrascale.tech");
     expect(body).not.toContain("Certificate renewal due for terrascale.tech");
     expect(body).toContain("TLS until Oct 1");
   });
@@ -219,7 +221,7 @@ describe("app", () => {
     expect(env.STATUS_DB.batches).toBe(1);
   });
 
-  it.each(["/", "/api/operator/incidents", "/subscribe"])(
+  it.each(["/", "/admin/login", "/subscribe"])(
     "returns a controlled 503 on bootstrap failure for %s and retries",
     async (path) => {
       const env = seededEnv();
@@ -254,55 +256,84 @@ describe("app", () => {
       status: string;
       range: string;
       groups: { id: string; components: { id: string; status: string; uptime: number; bars: string[] }[] }[];
-      regions: { code: string; status: string; clusters: { pingMs: number; uptime24h: number }[] }[];
+      regions: { code: string; status: string; clusters: { id: string; pingMs: number; uptime24h: number }[] }[];
     };
     expect(data.status).toBe("degraded");
-    expect(data.groups.map((group) => group.id)).toEqual([
-      "01M4E7G1W7XH3WHVG75QYZRE6Y",
-      "01M4E7G1W82VKFPF5FJ9AVK1CQ",
-      "01M4E7G1W6RJFB7Z87ARTHB8BW",
-    ]);
+    expect(data.groups.map((group) => group.id)).toEqual(["01M4E7G1W82VKFPF5FJ9AVK1CQ", "01M4E7G1W7XH3WHVG75QYZRE6Y"]);
     const dashboard = data.groups[0]?.components[0];
     expect(data.range).toBe("90d");
-    expect(dashboard).toMatchObject({ id: "01M4E7G1W82VKFPF5FJ9AVK1CV", status: "operational", uptime: 1 });
+    expect(dashboard).toMatchObject({ id: "01M4E7G1W82VKFPF5FJ9AVK1D2", status: "operational", uptime: 1 });
     expect(dashboard?.bars).toHaveLength(90);
     expect(dashboard?.bars.at(-1)).toBe("operational");
-    expect(data.groups[2]?.components[0]).toMatchObject({ id: "01M4E7G1W82VKFPF5FJ9AVK1CZ", status: "maintenance" });
+    expect(data.groups[1]?.components.find((entry) => entry.id === "01M4E7G1W82VKFPF5FJ9AVK1CZ")).toMatchObject({
+      status: "maintenance",
+    });
     expect(data.regions.map((region) => [region.code, region.status])).toEqual([
-      ["SJC", "none"],
       ["GRU", "operational"],
+      ["SJC", "none"],
+      ["FRA", "none"],
     ]);
-    expect(data.regions[1]?.clusters[0]).toMatchObject({ pingMs: 42, uptime: 1 });
+    expect(data.regions[0]?.clusters.find((cluster) => cluster.id === "01M4E7G1W82VKFPF5FJ9AVK1DQ")).toMatchObject({
+      pingMs: 42,
+      uptime: 1,
+    });
   });
 
-  it("shows TerraBase probes the secret does not name as not configured, not down", async () => {
+  it("shows probes the secret does not name as not configured, and unlaunched endpoints as pending, not down", async () => {
     const env = seededEnv();
     env.STATUS_DB.sqlite.exec(`
+      UPDATE endpoints SET live_since = NULL WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1D6', '01M4E7G1W82VKFPF5FJ9AVK1DX', '01M4E7G1W82VKFPF5FJ9AVK1DZ', '01M4E7G1W82VKFPF5FJ9AVK1D7');
       INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES
-        ('01M4E7G1W82VKFPF5FJ9AVK1DQ', '2026-09-26 10:14:30', 'none', 0, 0, NULL,
+        ('01M4E7G1W82VKFPF5FJ9AVK1DF', '2026-09-26 10:14:30', 'none', 0, 0, NULL,
           '[{"v":"canary","ok":null,"ms":null,"e":"Not configured"}]'),
-        ('01M4E7G1W82VKFPF5FJ9AVK1DF', '2026-09-26 10:14:30', 'operational', 1, 1, 120,
-          '[{"v":"canary","ok":1,"ms":120,"e":null}]');
+        ('01M4E7G1W82VKFPF5FJ9AVK1DG', '2026-09-26 10:14:30', 'none', 0, 0, NULL,
+          '[{"v":"canary","ok":null,"ms":null,"e":"Not configured"}]'),
+        ('01M4E7G1W82VKFPF5FJ9AVK1E1', '2026-09-26 10:14:30', 'none', 0, 0, NULL,
+          '[{"v":"canary","ok":null,"ms":null,"e":"Not configured"}]'),
+        ('01M4E7G1W82VKFPF5FJ9AVK1D9', '2026-09-26 10:14:30', 'operational', 1, 1, 120,
+          '[{"v":"canary","ok":1,"ms":120,"e":null}]'),
+        ('01M4E7G1W82VKFPF5FJ9AVK1D6', '2026-09-26 10:14:30', 'major_outage', 0, 4, NULL,
+          '[{"v":"gru","ok":0,"ms":null,"e":"Unreachable"}]');
       -- An incident outranks the note.
       INSERT INTO incidents (id, kind, title, status, impact, created_at, updated_at) VALUES
-        ('00000000000000000000000004', 'incident', 'Control plane down', 'investigating', 'critical', '2026-09-26 10:10:00', '2026-09-26 10:10:00');
-      INSERT INTO incident_components (incident_id, component_id) VALUES ('00000000000000000000000004', '01M4E7G1W82VKFPF5FJ9AVK1D0');
+        ('00000000000000000000000004', 'incident', 'Website down', 'investigating', 'critical', '2026-09-26 10:10:00', '2026-09-26 10:10:00');
+      INSERT INTO incident_components (incident_id, component_id) VALUES ('00000000000000000000000004', '01M4E7G1W82VKFPF5FJ9AVK1D3');
     `);
     const data = (await (await app.fetch(request("/api/v1/status"), env, ctx)).json()) as {
       groups: { components: { id: string; status: string; note: string | null }[] }[];
     };
-    const terrabase = data.groups[1]?.components.filter(
-      (entry) => entry.id !== "01M4E7G1W82VKFPF5FJ9AVK1CW" && entry.id !== "01M4E7G1W82VKFPF5FJ9AVK1D1",
-    );
-    expect(terrabase?.map(({ id, status, note }) => ({ id, status, note }))).toEqual([
-      { id: "01M4E7G1W82VKFPF5FJ9AVK1CR", status: "none", note: null },
-      { id: "01M4E7G1W82VKFPF5FJ9AVK1D2", status: "none", note: "Not configured" },
-      { id: "01M4E7G1W82VKFPF5FJ9AVK1CY", status: "operational", note: null },
-      { id: "01M4E7G1W82VKFPF5FJ9AVK1D0", status: "major_outage", note: null },
+    const all = data.groups.flatMap((group) => group.components).map(({ id, status, note }) => ({ id, status, note }));
+    expect(
+      all.filter((entry) =>
+        [
+          "01M4E7G1W82VKFPF5FJ9AVK1CW",
+          "01M4E7G1W82VKFPF5FJ9AVK1CY",
+          "01M4E7G1W82VKFPF5FJ9AVK1CT",
+          "01M4E7G1W82VKFPF5FJ9AVK1D3",
+        ].includes(entry.id),
+      ),
+    ).toEqual([
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1CW", status: "operational", note: null },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1CY", status: "none", note: "Not configured" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1CT", status: "none", note: "Pending launch" },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1D3", status: "major_outage", note: null },
     ]);
+    // Replication has nothing public to probe yet; the dashboard is deferred.
+    expect(all.find((entry) => entry.id === "01M4E7G1W82VKFPF5FJ9AVK1D0")).toEqual({
+      id: "01M4E7G1W82VKFPF5FJ9AVK1D0",
+      status: "none",
+      note: "Pending launch",
+    });
+    expect(all.find((entry) => entry.id === "01M4E7G1W82VKFPF5FJ9AVK1CV")).toMatchObject({ note: "Coming soon" });
     const page = await (await app.fetch(request("/?fragment=main"), env, ctx)).text();
-    expect(page).toContain("TerraBase health: No data uptime over the last 90 days, currently not configured");
-    expect(page).toMatch(/data-state="none"><span class="ts-dot" aria-hidden="true"><\/span>Not configured/);
+    expect(page).toContain("Document API: No data uptime over the last 90 days, currently not configured");
+    expect(page).toContain("Authentication: No data uptime over the last 90 days, currently pending launch");
+    expect(page).toMatch(/data-state="none"><span class="ts-dot" aria-hidden="true"><\/span>Pending launch/);
+    // Pending components stay out of the Statuspage format.
+    const summary = (await (await app.fetch(request("/api/v1/components.json"), env, ctx)).json()) as {
+      components: { id: string }[];
+    };
+    expect(summary.components.some((entry) => entry.id === "01M4E7G1W82VKFPF5FJ9AVK1CT")).toBe(false);
   });
 
   it("switches the bars' range, caching each range apart", async () => {
@@ -374,16 +405,16 @@ describe("app", () => {
   it("renders component and region pages, and 404s for unknown ones", async () => {
     const env = seededEnv();
     const component = await (
-      await app.fetch(request("/components/01M4E7G1W82VKFPF5FJ9AVK1CV?range=24h"), env, ctx)
+      await app.fetch(request("/components/01M4E7G1W82VKFPF5FJ9AVK1D2?range=24h"), env, ctx)
     ).text();
     expect(component).toContain("From each vantage point");
     expect(component).toContain(
-      '<a href="/components/01M4E7G1W82VKFPF5FJ9AVK1CV?range=24h" aria-current="true">24h</a>',
+      '<a href="/components/01M4E7G1W82VKFPF5FJ9AVK1D2?range=24h" aria-current="true">24h</a>',
     );
     expect(await (await app.fetch(request("/components/01M4E7G1W82VKFPF5FJ9AVK1D3"), env, ctx)).text()).toContain(
       "Website is down",
     );
-    expect(await (await app.fetch(request("/components/01M4E7G1W82VKFPF5FJ9AVK1CX"), env, ctx)).text()).toContain(
+    expect(await (await app.fetch(request("/components/01M4E7G1W82VKFPF5FJ9AVK1CV"), env, ctx)).text()).toContain(
       "Not launched yet",
     );
     expect(await (await app.fetch(request("/regions/gru"), env, ctx)).text()).toContain("São Paulo");
@@ -397,7 +428,8 @@ describe("app", () => {
     expect(response.headers.get("content-security-policy")).toContain("connect-src 'self' https://*.terrascale.tech");
     expect(body).toContain('data-ping-url="https://api.terrascale.tech/healthz"');
     expect(body).toContain('data-ping-url="/api/ping"');
-    expect(body).toContain("Not yet live");
+    // Both regions share one anycast URL, so the browser test times it once.
+    expect(body.match(/data-ping-url="https:\/\/api\.terrascale\.tech\/healthz"/g)).toHaveLength(1);
     expect(body.match(/class="st-ping-cell"/g)?.length).toBeGreaterThanOrEqual(4);
     const ping = await app.fetch(request("/api/ping"), seededEnv(), ctx);
     expect(ping.headers.get("cache-control")).toBe("no-store");
@@ -418,7 +450,7 @@ describe("app", () => {
       "under_maintenance",
     );
     expect(summary.components.some((entry) => entry.id === "01M4E7G1W82VKFPF5FJ9AVK1CT")).toBe(true);
-    expect(summary.components.some((entry) => entry.id === "01M4E7G1W82VKFPF5FJ9AVK1CX")).toBe(false);
+    expect(summary.components.some((entry) => entry.id === "01M4E7G1W82VKFPF5FJ9AVK1CV")).toBe(false);
     expect(summary.incidents.map((entry) => entry.name)).toEqual(["Slow <queries>"]);
     expect(summary.incidents[0]?.incident_updates).toHaveLength(2);
     // Both were last updated in the same second; the id breaks the tie.
@@ -474,7 +506,7 @@ describe("app", () => {
     expect(regions.regions.find((region) => region.code === "GRU")?.live).toBe(true);
     expect(regions.vantages).toHaveLength(4);
     const latency = (await (
-      await app.fetch(request("/api/v1/latency?component=01M4E7G1W82VKFPF5FJ9AVK1CV&range=24h"), env, ctx)
+      await app.fetch(request("/api/v1/latency?component=01M4E7G1W82VKFPF5FJ9AVK1D2&range=24h"), env, ctx)
     ).json()) as {
       buckets: { vantages: Record<string, unknown> }[];
     };
@@ -487,11 +519,11 @@ describe("app", () => {
     const env = seededEnv();
     env.STATUS_DB.sqlite.exec(`
       INSERT INTO probe_hours (endpoint_id, hour, vantage, checks, failures, degraded, latency_sum, latency_max, hist) VALUES
-        ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 09:00:00', 'all', 4, 2, 0, 150, 100, '[1,1,0,0,0,0,0,0,0,0,0,0,0]'),
+        ('01M4E7G1W82VKFPF5FJ9AVK1DQ', '2026-09-26 09:00:00', 'all', 4, 2, 0, 150, 100, '[1,1,0,0,0,0,0,0,0,0,0,0,0]'),
         ('01M4E7G1W82VKFPF5FJ9AVK1DB', '2026-09-26 09:00:00', 'all', 2, 0, 0, 200, 100, '[0,2,0,0,0,0,0,0,0,0,0,0,0]'),
-        ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 09:00:00', 'sfo', 2, 0, 0, 400, 200, '[0,0,0,2,0,0,0,0,0,0,0,0,0]'),
-        ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 09:00:00', 'gru', 2, 0, 0, 80, 50, '[2,0,0,0,0,0,0,0,0,0,0,0,0]'),
-        ('01M4E7G1W82VKFPF5FJ9AVK1D8', '2026-09-26 08:00:00', 'all', 100, 0, 0, 100000, 1000, '[0,0,0,0,0,0,0,0,100,0,0,0,0]'),
+        ('01M4E7G1W82VKFPF5FJ9AVK1DQ', '2026-09-26 09:00:00', 'sfo', 2, 0, 0, 400, 200, '[0,0,0,2,0,0,0,0,0,0,0,0,0]'),
+        ('01M4E7G1W82VKFPF5FJ9AVK1DQ', '2026-09-26 09:00:00', 'gru', 2, 0, 0, 80, 50, '[2,0,0,0,0,0,0,0,0,0,0,0,0]'),
+        ('01M4E7G1W82VKFPF5FJ9AVK1DQ', '2026-09-26 08:00:00', 'all', 100, 0, 0, 100000, 1000, '[0,0,0,0,0,0,0,0,100,0,0,0,0]'),
         ('01M4E7G1W82VKFPF5FJ9AVK1DS', '2026-09-26 09:00:00', 'all', 100, 0, 0, 100000, 1000, '[0,0,0,0,0,0,0,0,100,0,0,0,0]');
       UPDATE probe_hours SET hist = '[0,0,0,0,0,0,0,0,100,0,0,0,0]' WHERE hour = '2026-09-26 10:00:00';
     `);
@@ -503,8 +535,8 @@ describe("app", () => {
     const data = (await response.json()) as RegionLatency;
     expect(data.generated_at).toBe("2026-09-26T10:15:00.000Z");
     expect(data.window).toBe("1h");
-    expect(data.regions.map((region) => region.code)).toEqual(["sjc", "gru"]);
-    expect(data.regions[1]).toEqual({
+    expect(data.regions.map((region) => region.code)).toEqual(["gru", "sjc", "fra"]);
+    expect(data.regions[0]).toEqual({
       code: "gru",
       name: "São Paulo",
       ping_url: "https://api.terrascale.tech/healthz",
@@ -517,9 +549,9 @@ describe("app", () => {
         { code: "nrt", name: "Asia Pacific", median_ms: null, p95_ms: null, samples: 0 },
       ],
     });
-    expect(data.regions[0]).toMatchObject({
+    expect(data.regions[1]).toMatchObject({
       status: "planned",
-      ping_url: null,
+      ping_url: "https://api.terrascale.tech/healthz",
       consensus: { median_ms: null, p95_ms: null, samples: 0 },
     });
     await app.fetch(request("/api/latency?bust=1"), env, ctx);
@@ -534,7 +566,7 @@ describe("app", () => {
     expect(env.STATUS_DB.batches).toBe(1);
     expect((await read("/api/latency?region=GRU")).regions[0]?.code).toBe("gru");
     expect((await read("/api/latency?region=unknown")).regions).toEqual([]);
-    expect((await read("/api/latency")).regions).toHaveLength(2);
+    expect((await read("/api/latency")).regions).toHaveLength(3);
     expect(env.STATUS_DB.batches).toBe(4);
   });
 
@@ -545,7 +577,7 @@ describe("app", () => {
     ["none", "planned"],
   ])("maps region state %s to %s with null stats without measured latency", async (state, status) => {
     const env = seededEnv();
-    await env.STATUS_DB.prepare("UPDATE probe_samples SET state = ? WHERE endpoint_id = '01M4E7G1W82VKFPF5FJ9AVK1D8'")
+    await env.STATUS_DB.prepare("UPDATE probe_samples SET state = ? WHERE endpoint_id = '01M4E7G1W82VKFPF5FJ9AVK1DQ'")
       .bind(state)
       .run();
     const data = (await (await app.fetch(request("/api/latency?region=gru"), env, ctx)).json()) as RegionLatency;
@@ -560,8 +592,8 @@ describe("app", () => {
     expect(await type("/maintenance.ics")).toBe("text/calendar; charset=utf-8");
     const status = await (await app.fetch(request("/badge/status.svg"), env, ctx)).text();
     expect(status).toContain("Some systems are degraded");
-    expect(await (await app.fetch(request("/badge/01M4E7G1W82VKFPF5FJ9AVK1CX.svg"), env, ctx)).text()).toContain(
-      "Planned",
+    expect(await (await app.fetch(request("/badge/01M4E7G1W82VKFPF5FJ9AVK1CV.svg"), env, ctx)).text()).toContain(
+      "Coming soon",
     );
     expect((await app.fetch(request("/badge/nope.svg"), env, ctx)).status).toBe(404);
   });

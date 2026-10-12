@@ -31,17 +31,20 @@ describe("clean D1 bootstrap", () => {
       await Promise.all([bootstrap(env), bootstrap(env)]);
       expect(executions).toBe(1);
       const ids = sqlite.prepare("SELECT id FROM endpoints ORDER BY id").all();
-      expect(ids).toHaveLength(15);
+      expect(ids).toHaveLength(17);
       expect(ids.every((row) => isId(row.id))).toBe(true);
       const incidentId = newId();
       sqlite
         .prepare("INSERT INTO incidents (id, title, status, impact) VALUES (?, 'Outage', 'investigating', 'minor')")
         .run(incidentId);
-      sqlite.exec("UPDATE endpoints SET enabled = 0; UPDATE components SET lifecycle = 'planned'");
+      sqlite.exec(
+        "UPDATE endpoints SET live_since = '2026-10-11 00:00:00'; UPDATE components SET lifecycle = 'planned'",
+      );
       sqlite.exec(schema);
       expect(sqlite.prepare("SELECT id FROM endpoints ORDER BY id").all()).toEqual(ids);
       expect(sqlite.prepare("SELECT id FROM incidents").get()?.id).toBe(incidentId);
-      expect(sqlite.prepare("SELECT count(*) AS n FROM endpoints WHERE enabled = 1").get()?.n).toBe(0);
+      expect(sqlite.prepare("SELECT count(*) AS n FROM endpoints WHERE live_since IS NULL").get()?.n).toBe(0);
+      expect(sqlite.prepare("SELECT count(*) AS n FROM components WHERE lifecycle = 'active'").get()?.n).toBe(0);
       expect(sqlite.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     } finally {
       sqlite.close();

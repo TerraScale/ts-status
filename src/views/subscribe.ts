@@ -49,7 +49,7 @@ export function subscribeForm(form: SubscribeForm): Page {
     <fieldset class="st-choices st-components"><legend>Components <span class="ts-meta">(none selected: all of them)</span></legend>
       ${form.components.map(
         (component) =>
-          html`<label class="st-choice"><input type="checkbox" name="components" value="${component.id}"${chosen.has(component.id) ? raw(" checked") : ""}> ${component.name}${component.lifecycle === "planned" ? html` <span class="ts-meta">(planned)</span>` : ""}</label>`,
+          html`<label class="st-choice"><input type="checkbox" name="components" value="${component.id}"${chosen.has(component.id) ? raw(" checked") : ""}> ${component.name}${component.lifecycle === "planned" ? html` <span class="ts-meta">(coming soon)</span>` : ""}</label>`,
       )}
     </fieldset>
     <label class="st-honeypot" aria-hidden="true">Leave this empty <input name="website" tabindex="-1" autocomplete="off"></label>

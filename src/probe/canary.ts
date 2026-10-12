@@ -4,9 +4,9 @@
    that keys are accepted and that writes commit and become readable.
 
    It is configured by the DATA_API_CANARY Worker secret: a JSON object
-   mapping canary endpoint ids to their document and key. Canary endpoints
-   are seeded disabled; once enabled, one the secret does not configure
-   fails every round, so losing the secret is never silent. */
+   mapping canary endpoint ids to their document and key. A canary the
+   secret does not configure shows "Not configured" and counts toward no
+   uptime, like the TerraBase probes. */
 
 import { isId } from "../ids";
 import { logEvent } from "../log";

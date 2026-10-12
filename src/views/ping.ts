@@ -12,6 +12,7 @@ import { Measurements } from "../measure";
 import type { Overview } from "../overview";
 import { VANTAGES } from "../probe/vantages";
 import { sparkline } from "./charts/sparkline";
+import { COMING_SOON } from "../domain/status";
 import { card, componentHref, empty, ms, regionHref, statusBadge } from "./components";
 import type { Page } from "./layout";
 
@@ -53,7 +54,7 @@ export function pingPage(view: Overview, details: Details, now: number): Page {
   <tbody>${view.regions.map((region) => {
     const ids = region.clusters.map((cluster) => cluster.id);
     return html`<tr><th scope="row"><a class="st-incident-link" href="${regionHref(region.code)}">${region.code} · ${region.name}</a> ${
-      ids.length === 0 ? statusBadge("none", "Planned") : ""
+      ids.length === 0 ? statusBadge("none", COMING_SOON) : ""
     }</th>${
       ids.length === 0
         ? html`<td colspan="${VANTAGES.length}" class="ts-meta">Not yet live</td>`
@@ -76,14 +77,18 @@ export function pingPage(view: Overview, details: Details, now: number): Page {
 
   const targets = [
     { name: "Nearest Cloudflare data center", detail: "this page's edge", url: "/api/ping" },
-    ...view.regions.map((region) => ({
-      name: `${region.code} · ${region.name}`,
-      detail: region.pingLabel ?? "",
-      url: region.pingUrl,
-    })),
+    // Regions sharing an anycast URL (Fly routes the browser to its nearest
+    // region) are one target.
+    ...[...new Map(view.regions.flatMap((region) => (region.pingUrl ? [[region.pingUrl, region]] : []))).values()].map(
+      (region) => ({
+        name: region.pingLabel ?? `${region.code} · ${region.name}`,
+        detail: "",
+        url: region.pingUrl,
+      }),
+    ),
   ];
   const browser = html`<div class="st-ping-test">
-  <p class="ts-meta">Times five requests from your browser to each region after a warm-up, and shows the median and fastest. Nothing is sent except the requests themselves.</p>
+  <p class="ts-meta">Times five requests from your browser to each target after a warm-up, and shows the median and fastest. Nothing is sent except the requests themselves.</p>
   <button class="ts-button" type="button" data-ping-start disabled>Test from your browser</button>
   <div class="st-table-wrap"><table class="st-ping st-ping-browser">
     <thead><tr><th scope="col">To</th><th scope="col">Median</th><th scope="col">Fastest</th></tr></thead>

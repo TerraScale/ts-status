@@ -55,6 +55,7 @@ function bottom(year: number): Html {
     <span>© ${year} TerraScale</span>
     <nav aria-label="More">
       <a href="https://terrascale.tech">terrascale.tech</a>
+      <a href="https://docs.terrascale.tech">Docs</a>
       <a href="/integrations">Integrations</a>
       <a href="/feed.atom">Feed</a>
       <a href="/api/v1/status">JSON API</a>

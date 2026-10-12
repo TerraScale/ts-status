@@ -106,22 +106,6 @@ describe("judge", () => {
 });
 
 describe("parseSpec", () => {
-  it.each([{}, { pendingStatus: undefined }, { pendingStatus: null }])(
-    "omits an absent or null pending status: %j",
-    (pending) => {
-      const spec = parseSpec({
-        expectStatus: "200",
-        keyword: null,
-        assertions: "[]",
-        extract: "{}",
-        indirect: 0,
-        ...pending,
-      });
-      expect(spec).not.toHaveProperty("pendingStatus");
-      expect(judge(spec, { status: 404, error: null })).toMatchObject({ outcome: "fail", error: "HTTP 404" });
-    },
-  );
-
   it("drops malformed assertions and extractions", () => {
     expect(
       parseSpec({
@@ -164,48 +148,5 @@ describe("blocked probes", () => {
 
   it("still fails an unexpected 403 on endpoints not known to be blocked", () => {
     expect(judge(spec, { status: 403, error: null })).toEqual({ outcome: "fail", error: "HTTP 403", values: {} });
-  });
-});
-
-describe("pending contracts", () => {
-  it("labels unpublished OIDC discovery, but validates it as soon as it is served", () => {
-    const spec: CheckSpec = {
-      expectStatus: "200",
-      pendingStatus: 404,
-      keyword: null,
-      indirect: false,
-      assertions: [
-        { path: "issuer", op: "eq", value: "https://auth.terrascale.tech" },
-        { path: "jwks_uri", op: "exists" },
-      ],
-      extract: {},
-    };
-    expect(judge(spec, { status: 404, error: null })).toEqual({
-      outcome: "unknown",
-      error: "Not available yet (HTTP 404)",
-      values: {},
-    });
-    expect(judge(spec, { status: 503, error: null }).outcome).toBe("fail");
-    expect(judge(spec, { status: 200, error: null, body: "{}" }).outcome).toBe("fail");
-    expect(
-      judge(spec, {
-        status: 200,
-        error: null,
-        body: JSON.stringify({
-          issuer: "https://auth.terrascale.tech",
-          jwks_uri: "https://auth.terrascale.tech/.well-known/jwks.json",
-        }),
-      }).outcome,
-    ).toBe("ok");
-    expect(
-      parseSpec({
-        expectStatus: "200",
-        pendingStatus: 404,
-        keyword: null,
-        assertions: "[]",
-        extract: "{}",
-        indirect: 0,
-      }).pendingStatus,
-    ).toBe(404);
   });
 });

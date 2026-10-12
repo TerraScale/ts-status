@@ -1,6 +1,8 @@
-/* One probe round: every vantage probes every enabled endpoint, and the
-   results become one sample per endpoint. Rounds start on the half minute
-   and are keyed by that moment, so a retried round never counts twice. */
+/* One probe round: every vantage probes every endpoint of an active
+   component, and the results become one sample per endpoint. Rounds start
+   on the half minute and are keyed by that moment, so a retried round never
+   counts twice. An endpoint is pending launch until its first passing
+   round: its samples are kept but count toward no uptime or incident. */
 
 import { newId } from "../ids";
 
@@ -140,10 +142,19 @@ async function ask(vantage: Vantage, fetcher: Fetcher, list: readonly Target[]):
   }
 }
 
-const ENDPOINTS = `SELECT id, url, headers, expect_status AS expectStatus, pending_status AS pendingStatus,
-    blocked_status AS blockedStatus, keyword, assertions, extract, indirect,
-    component_id AS componentId, kind, probe
-  FROM endpoints WHERE enabled = 1`;
+/** Checks HTTP endpoints from every vantage right away and stores nothing:
+    the admin page's "check now". */
+export async function checkNow(env: Env, endpoints: readonly RoundEndpoint[]): Promise<Sample[]> {
+  if (endpoints.length === 0) return [];
+  const list = targets(endpoints);
+  const responses = await Promise.all(VANTAGES.map((vantage) => ask(vantage, env[vantage.binding], list)));
+  return evaluate(endpoints, responses, {}).samples;
+}
+
+const ENDPOINTS = `SELECT e.id, e.url, e.headers, e.expect_status AS expectStatus, e.blocked_status AS blockedStatus,
+    e.keyword, e.assertions, e.extract, e.indirect, e.component_id AS componentId, e.kind, e.probe,
+    e.live_since AS liveSince
+  FROM endpoints e JOIN components c ON c.id = e.component_id WHERE c.lifecycle = 'active'`;
 
 const COMPONENTS = "SELECT id, name FROM components WHERE lifecycle = 'active'";
 
@@ -169,6 +180,8 @@ const POST_UPDATE = `INSERT INTO incident_updates (id, incident_id, status, body
 
 const INSERT_SAMPLE = `INSERT OR IGNORE INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results, "values")
   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`;
+
+const LAUNCHED = "UPDATE endpoints SET live_since = ?2 WHERE id = ?1 AND live_since IS NULL";
 
 const DEPLOYED = "INSERT OR IGNORE INTO deploys (endpoint_id, version, detected_at) VALUES (?1, ?2, ?3)";
 
@@ -243,7 +256,10 @@ export interface RoundState {
 }
 
 type EndpointRow = Omit<RoundEndpoint, "spec"> &
-  Parameters<typeof parseSpec>[0] & { kind: "http" | "canary"; probe: TerraBaseProbe | null };
+  Parameters<typeof parseSpec>[0] & { kind: "http" | "canary"; probe: TerraBaseProbe | null; liveSince: string | null };
+
+/** Whether most of a sample's checks passed: the round that launches an endpoint. */
+export const passed = (sample: Pick<Sample, "ok" | "total">): boolean => sample.ok * 2 > sample.total;
 
 interface OpenAuto {
   id: string;
@@ -274,9 +290,8 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
     componentId: row.componentId,
   });
   const probed = rows.filter((row) => row.kind !== "canary").map(toEndpoint);
-  // An enabled data API canary whose secret entry is missing or malformed
-  // fails rather than going quiet, so it never strands an incident it
-  // opened. A TerraBase probe the secret does not name is not configured.
+  // A canary or TerraBase probe the secret does not name is not configured;
+  // a malformed TerraBase entry fails.
   const canaries = parseCanaries(env.DATA_API_CANARY);
   const terrabase = parseTerraBase(env.TERRABASE_PROBES);
   const canaryRows = rows.filter((row) => row.kind === "canary");
@@ -299,7 +314,7 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
             return await runTerraBase(row.probe, config, marker);
           }
           const config = canaries[row.id];
-          return config ? await runCanary(config, marker) : failed("Canary not configured");
+          return config ? await runCanary(config, marker) : null;
         } catch (error) {
           logEvent("error", "canary failed", { component: "round", id: row.id, error });
           return failed("Canary error");
@@ -332,6 +347,12 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
       sample.values && JSON.stringify(sample.values),
     ),
   );
+  const pending = new Set(rows.flatMap((row) => (row.liveSince === null ? [row.id] : [])));
+  for (const sample of evaluated.samples) {
+    if (!pending.has(sample.endpointId) || !passed(sample)) continue;
+    pending.delete(sample.endpointId);
+    statements.push(env.STATUS_DB.prepare(LAUNCHED).bind(sample.endpointId, time));
+  }
   const versions = { ...previous.versions };
   for (const sample of evaluated.samples) {
     const version = sample.values?.version;
@@ -358,7 +379,7 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
       open.map((incident) => ({ ...incident, createdAt: Date.parse(incident.createdAt) })),
     ),
     observe(
-      endpoints,
+      endpoints.filter((endpoint) => !pending.has(endpoint.id)),
       evaluated.samples,
       (componentsResult?.results ?? []) as { id: string; name: string }[],
       ((maintenanceResult?.results ?? []) as { componentId: string | null }[]).map((row) => row.componentId),

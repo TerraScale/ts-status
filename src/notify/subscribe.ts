@@ -34,7 +34,7 @@ const MAX_CONFIRMATIONS = 3;
 
 /** The rate limit key: the client address, or its /64 for IPv6, where one
     client often holds the whole prefix. */
-function clientKey(request: Request): string {
+export function clientKey(request: Request): string {
   const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
   if (!ip.includes(":")) return ip;
   const [head = "", tail = ""] = ip.split("::");
