@@ -2,7 +2,8 @@
    bars per component and cluster over the chosen range, response times,
    and the daily platform history, all measured by the probe rounds. */
 
-import type { Certificate, Snapshot, SnapshotWindow, VantageSeen } from "./db/reads";
+import type { Certificate, Snapshot, SnapshotWindow } from "./db/reads";
+import { coverage, type Coverage } from "./domain/coverage";
 import { EXPIRY_WARNING_MS } from "./probe/tls";
 import { DAY, HOUR, startOfDay, startOfHour } from "./format";
 import { byHour, RANGES, rangeStart, type RangeKey } from "./domain/range";
@@ -102,7 +103,8 @@ export interface Monitoring {
   lastRoundAt: number | null;
   /** True when rounds have stopped arriving and states may be out of date. */
   delayed: boolean;
-  vantages: VantageSeen[];
+  /** Which vantages answered the latest round, and where they ran. */
+  coverage: Coverage;
 }
 
 /** A day of platform history, with the incidents open during it. */
@@ -393,7 +395,7 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
     monitoring: {
       lastRoundAt,
       delayed: measured.length > 0 && (lastRoundAt === null || now - lastRoundAt > PROBE_STALE_MS),
-      vantages: snapshot.vantages,
+      coverage: coverage({ vantages: VANTAGES, seen: snapshot.vantages, lastRoundAt, now }),
     },
     groups: snapshot.groups
       .map((group) => ({ ...group, components: componentList.filter((component) => component.groupId === group.id) }))

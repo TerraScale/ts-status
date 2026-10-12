@@ -105,7 +105,7 @@ export function pingPage(view: Overview, details: Details, now: number): Page {
   <header class="st-page-head">
     <p class="ts-eyebrow">Latency</p>
     <h1 class="st-title">Ping</h1>
-    <p class="ts-muted">How fast every region and component answers: from the health checks' four vantage points, and from your own browser.</p>
+    <p class="ts-muted">How fast every region and component answers: from the health checks' vantage points, and from your own browser.</p>
   </header>
 
   ${card({ id: "browser", title: "From your browser", description: "Your own round trip to each region." }, browser)}
@@ -133,7 +133,7 @@ export function pingPage(view: Overview, details: Details, now: number): Page {
 
   return {
     title: "Ping · TerraScale Status",
-    description: "Latency to TerraScale regions from four vantage points and from your browser.",
+    description: "Latency to TerraScale regions from the health checks' vantage points and from your browser.",
     path: "/ping",
     body,
   };

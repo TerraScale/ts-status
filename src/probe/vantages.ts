@@ -10,6 +10,10 @@ export interface Vantage {
   name: string;
   /** The location hint the vantage's Durable Object is created near. */
   placement: DurableObjectLocationHint;
+  /** Data centers that count as this vantage's area. An answer from anywhere
+      else is a coverage failure, never relabeled as this vantage.
+      shortcut: hand-kept IATA lists, update when Cloudflare moves objects. */
+  colos: readonly string[];
   /** Position in region map viewBox units (MAP_WIDTH × MAP_HEIGHT in
       views/charts/geometry), just off the hub of the region it sits in. */
   mapX: number;
@@ -23,6 +27,7 @@ export const VANTAGES: readonly Vantage[] = [
     code: "sfo",
     name: "US West",
     placement: "wnam",
+    colos: ["SJC", "SFO", "LAX", "SEA", "PDX"],
     mapX: 18.8,
     mapY: 31.4,
     region: "SJC",
@@ -31,6 +36,7 @@ export const VANTAGES: readonly Vantage[] = [
     code: "gru",
     name: "South America",
     placement: "sam",
+    colos: ["GRU", "GIG", "VCP", "EZE", "SCL", "BOG", "LIM"],
     mapX: 47.4,
     mapY: 62.4,
     region: "GRU",
@@ -39,6 +45,25 @@ export const VANTAGES: readonly Vantage[] = [
     code: "fra",
     name: "Europe",
     placement: "weur",
+    colos: [
+      "FRA",
+      "AMS",
+      "CDG",
+      "LHR",
+      "MUC",
+      "DUS",
+      "HAM",
+      "ZRH",
+      "VIE",
+      "WAW",
+      "PRG",
+      "ARN",
+      "CPH",
+      "MAD",
+      "MXP",
+      "BRU",
+      "DUB",
+    ],
     mapX: 69.3,
     mapY: 23.6,
     region: "FRA",
@@ -47,6 +72,7 @@ export const VANTAGES: readonly Vantage[] = [
     code: "nrt",
     name: "Asia Pacific",
     placement: "apac",
+    colos: ["NRT", "KIX", "HND", "ICN", "HKG", "TPE", "SIN"],
     mapX: 120.5,
     mapY: 29.8,
     region: null,

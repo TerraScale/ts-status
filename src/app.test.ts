@@ -208,6 +208,130 @@ describe("app", () => {
     expect(body).toContain("Monitoring delayed");
   });
 
+  describe("monitoring coverage", () => {
+    const LAST_ROUND = "2026-09-26 10:14:30";
+    const seen = (rows: [code: string, colo: string | null, at?: string][]) => {
+      const env = seededEnv();
+      for (const [code, colo, at = LAST_ROUND] of rows) {
+        env.STATUS_DB.sqlite.prepare("INSERT INTO vantages (code, colo, seen_at) VALUES (?, ?, ?)").run(code, colo, at);
+      }
+      return env;
+    };
+    const page = async (env: Env) => (await app.fetch(request("/"), env, ctx)).text();
+    const api = async (env: Env) => {
+      const status = (await (await app.fetch(request("/api/v1/status"), env, ctx)).json()) as {
+        status: string;
+        monitoringCoverage: Record<string, unknown>;
+        groups: { components: { id: string; status: string }[] }[];
+      };
+      const regions = (await (await app.fetch(request("/api/v1/regions"), env, ctx)).json()) as {
+        vantages: Record<string, unknown>[];
+      };
+      return { status, regions };
+    };
+    const ALL = [
+      ["sfo", "SJC"],
+      ["gru", "GRU"],
+      ["fra", "FRA"],
+      ["nrt", "NRT"],
+    ] as [string, string][];
+
+    it("claims full coverage only when all four answered the latest round from proven locations", async () => {
+      const env = seen(ALL);
+      const body = await page(env);
+      expect(body).toContain("4 of 4 vantage points answered the last round");
+      expect(body).not.toContain("Monitoring coverage");
+      expect((await api(env)).status.monitoringCoverage).toEqual({
+        level: "full",
+        answered: 4,
+        verified: 4,
+        total: 4,
+        minimum: 2,
+      });
+    });
+
+    it.each([
+      [0, []],
+      [1, [["fra", "FRA"]]],
+    ] as [number, [string, string][]][])(
+      "reports insufficient coverage, not an outage, with %i answering vantage(s)",
+      async (answered, rows) => {
+        // The others last answered an hour ago: stale, not part of the latest round.
+        const env = seen([
+          ...rows,
+          ...ALL.filter(([code]) => !rows.some(([own]) => own === code)).map(
+            ([code, colo]) => [code, colo, "2026-09-26 09:14:30"] as [string, string, string],
+          ),
+        ]);
+        const body = await page(env);
+        expect(body).toContain("Monitoring coverage insufficient");
+        expect(body).toContain(`Only ${answered} of 4 vantage points answered the latest round`);
+        expect(body).toContain("need answers from at least 2 to decide");
+        expect(body).toContain("not a reported service outage");
+        expect(body).not.toContain("from 4 vantage points ·");
+        expect(body).not.toContain("all launched<");
+        expect(body).toContain("all launched · state unknown");
+        const { status, regions } = await api(env);
+        expect(status.monitoringCoverage).toMatchObject({ level: "insufficient", answered });
+        // Service health is reported separately and unchanged.
+        expect(status.status).toBe("degraded");
+        expect(status.groups[0]?.components[0]).toMatchObject({
+          id: "01M4E7G1W82VKFPF5FJ9AVK1D2",
+          status: "operational",
+        });
+        expect(regions.vantages.find((entry) => entry.code === "gru")).toEqual({
+          code: "gru",
+          name: "South America",
+          placement: "sam",
+          colo: "GRU",
+          lastAnswerAt: "2026-09-26T09:14:30.000Z",
+          coverage: "missing",
+        });
+      },
+    );
+
+    it("reports degraded coverage with two answering vantages while consensus still decides", async () => {
+      const env = seen([
+        ["fra", "FRA"],
+        ["nrt", "NRT"],
+      ]);
+      const body = await page(env);
+      expect(body).toContain("Monitoring coverage degraded");
+      expect(body).toContain("2 of 4 vantage points answered the latest round and 2 proved");
+      expect(body).toContain("South America (requested sam): did not answer the latest round, never answered");
+      expect((await api(env)).status.monitoringCoverage).toMatchObject({ level: "degraded", answered: 2, verified: 2 });
+    });
+
+    it("never presents an unproven or mismatched location as the requested one", async () => {
+      const env = seen([
+        ["sfo", "SJC"],
+        ["gru", "IAD"],
+        ["fra", null],
+        ["nrt", "NRT"],
+      ]);
+      const body = await page(env);
+      expect(body).toContain("Monitoring coverage degraded");
+      expect(body).toContain("South America (requested sam): ran in IAD, not where it was placed");
+      expect(body).toContain("Europe (requested weur): answered without proof of where it ran");
+      const { regions } = await api(env);
+      expect(regions.vantages.map((entry) => [entry.code, entry.colo, entry.coverage])).toEqual([
+        ["sfo", "SJC", "verified"],
+        ["gru", "IAD", "mismatched"],
+        ["fra", null, "unverified"],
+        ["nrt", "NRT", "verified"],
+      ]);
+    });
+
+    it("leaves coverage to the delay warning when rounds stop arriving", async () => {
+      vi.setSystemTime(Date.parse("2026-09-26T10:30:00Z"));
+      const env = seen(ALL);
+      const body = await page(env);
+      expect(body).toContain("Monitoring delayed");
+      expect(body).not.toContain("Monitoring coverage");
+      expect((await api(env)).status.monitoringCoverage).toMatchObject({ level: "insufficient", answered: 0 });
+    });
+  });
+
   it("serves only the main element for in-place refreshes", async () => {
     const body = await (await app.fetch(request("/?fragment=main"), seededEnv(), ctx)).text();
     expect(body.startsWith("<main")).toBe(true);

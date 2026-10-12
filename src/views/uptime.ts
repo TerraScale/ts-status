@@ -89,7 +89,7 @@ export function uptimePage(view: Overview, periods: readonly VantagePeriod[], no
   <header class="st-page-head">
     <p class="ts-eyebrow">Reliability</p>
     <h1 class="st-title">Uptime</h1>
-    <p class="ts-muted">Uptime is the share of 30-second health check rounds, from four vantage points, in which a component was not down.</p>
+    <p class="ts-muted">Uptime is the share of 30-second health check rounds, from every answering vantage point, in which a component was not down.</p>
   </header>
 
   <dl class="ts-stats" aria-label="Uptime summary">

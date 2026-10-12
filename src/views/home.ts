@@ -4,6 +4,7 @@
 
 import regionMap from "../assets/region-map.svg?raw";
 import { byHour, RANGES } from "../domain/range";
+import type { Coverage, VantageCoverage, VantageState } from "../domain/coverage";
 import { COMING_SOON, HEADLINES, STATES, STATE_LABELS, type TimelineState } from "../domain/status";
 import { formatClock, formatDay, formatUptime } from "../format";
 import { html, raw, type Html } from "../html";
@@ -118,7 +119,7 @@ function region(entry: RegionOverview, view: Overview) {
 function map(view: Overview) {
   const regions = view.regions;
   const live = regions.filter((entry) => entry.clusters.length > 0);
-  const colos = new Map(view.monitoring.vantages.map((vantage) => [vantage.code, vantage.colo]));
+  const coverage = new Map(view.monitoring.coverage.vantages.map((entry) => [entry.code, entry]));
   const label = `Region map: ${regions.map((entry) => `${entry.name} ${regionLabel(entry).toLowerCase()}`).join(", ")}`;
 
   const arcs = live.flatMap((entry) =>
@@ -140,11 +141,13 @@ function map(view: Overview) {
     }),
   );
   const vantages = VANTAGES.map((vantage) => {
-    const colo = colos.get(vantage.code);
+    const entry = coverage.get(vantage.code);
     const cardData = JSON.stringify({
       rows: [
-        ["Placement", vantage.placement],
-        ["Runs in", colo ?? "Not seen yet"],
+        ["Requested", vantage.placement],
+        ["Proven to run in", entry?.observed ?? "Not proven"],
+        ["Last answer", entry?.lastAnswerAt ? formatClock(entry.lastAnswerAt) : "Never"],
+        ["Coverage", VANTAGE_STATES[entry?.state ?? "missing"]],
       ],
     });
     return html`<g class="st-vantage" transform="translate(${vantage.mapX} ${vantage.mapY})" tabindex="0" role="img" aria-label="Vantage point ${vantage.name}" data-title="Vantage · ${vantage.name}" data-card="${cardData}">
@@ -235,6 +238,36 @@ function historyCard(view: Overview): Html {
   );
 }
 
+const VANTAGE_STATES: Record<VantageState, string> = {
+  verified: "Answering, location proven",
+  unverified: "Answering, location not proven",
+  mismatched: "Answering from another data center",
+  missing: "Not answering",
+};
+
+function vantageDetail(entry: VantageCoverage): string {
+  const last = entry.lastAnswerAt === null ? "never answered" : `last answered ${formatClock(entry.lastAnswerAt)}`;
+  if (entry.state === "missing") return `did not answer the latest round, ${last}`;
+  if (entry.state === "mismatched") return `ran in ${entry.observed}, not where it was placed`;
+  return "answered without proof of where it ran";
+}
+
+function coverageMessage(coverage: Coverage): string {
+  if (coverage.level === "insufficient") {
+    return `Only ${coverage.answered} of ${coverage.total} vantage points answered the latest round. Website and API checks need answers from at least ${coverage.minimum} to decide, so their states are unknown.`;
+  }
+  return `${coverage.answered} of ${coverage.total} vantage points answered the latest round and ${coverage.verified} proved they ran where they were placed. Health states still rest on at least ${coverage.minimum} answers, but not on every vantage point.`;
+}
+
+/** Live only means a region has launched; whether it is up now needs
+    enough fresh answers. */
+function regionDetail(live: number, view: Overview): string {
+  const launched = live === view.regions.length ? "all launched" : `${view.regions.length - live} pending launch`;
+  return view.monitoring.delayed || view.monitoring.coverage.level === "insufficient"
+    ? `${launched} · state unknown`
+    : launched;
+}
+
 export function homePage(view: Overview): Page {
   const active = view.groups.flatMap((entry) => entry.components).filter((entry) => entry.lifecycle === "active");
   // Components without fresh data are neither up nor down, so they count on
@@ -251,6 +284,7 @@ export function homePage(view: Overview): Page {
       ? "Health checks have not reported yet, so component states are unknown."
       : html`Health checks last reported ${time(view.monitoring.lastRoundAt, "seconds")}; states below may be out of date.`;
   const names = new Map(view.groups.flatMap((entry) => entry.components).map((entry) => [entry.id, entry.name]));
+  const coverage = view.monitoring.coverage;
 
   const body = html`<main id="main" class="ts-page" data-live data-title="${title}">
   <section class="st-hero" data-state="${view.status}" aria-labelledby="st-headline">
@@ -261,7 +295,7 @@ export function homePage(view: Overview): Page {
       <p class="ts-meta">${
         view.monitoring.lastRoundAt === null
           ? html`Updated ${time(view.generatedAt, "seconds")}`
-          : html`Checked every 30 seconds from ${VANTAGES.length} vantage points · last round <span data-ago="${view.monitoring.lastRoundAt}">${time(view.monitoring.lastRoundAt, "seconds")}</span>`
+          : html`Checked every 30 seconds · ${coverage.answered} of ${coverage.total} vantage points answered the last round · last round <span data-ago="${view.monitoring.lastRoundAt}">${time(view.monitoring.lastRoundAt, "seconds")}</span>`
       }</p>
     </div>
   </section>
@@ -272,7 +306,15 @@ export function homePage(view: Overview): Page {
     <h2 class="ts-alert-title">Monitoring delayed</h2>
     <p class="ts-alert-body">${delayMessage}</p>
   </article>`
-      : ""
+      : coverage.level === "full"
+        ? ""
+        : html`<article class="ts-alert" data-state="degraded" role="status" id="coverage">
+    <h2 class="ts-alert-title">${coverage.level === "insufficient" ? "Monitoring coverage insufficient" : "Monitoring coverage degraded"}</h2>
+    <p class="ts-alert-body">${coverageMessage(coverage)} This is a problem with monitoring, not a reported service outage.</p>
+    <ul class="ts-alert-body">${coverage.vantages
+      .filter((entry) => entry.state !== "verified")
+      .map((entry) => html`<li>${entry.name} (requested ${entry.requested}): ${vantageDetail(entry)}</li>`)}</ul>
+  </article>`
   }
 
   ${view.expiring.map(
@@ -288,7 +330,7 @@ export function homePage(view: Overview): Page {
 
   <dl class="ts-stats" aria-label="Platform summary">
     ${stat("Components", `${operational}/${measured.length}`, "operational now")}
-    ${stat("Regions", `${live}/${view.regions.length}`, live === view.regions.length ? "all live" : `${view.regions.length - live} pending launch`)}
+    ${stat("Regions", `${live}/${view.regions.length}`, regionDetail(live, view))}
     ${stat("Uptime", formatUptime(view.uptime), `last ${range}`)}
     ${stat("Active incidents", String(view.activeIncidents.length), view.activeIncidents.length === 0 ? "nothing to report" : "see below")}
   </dl>
@@ -340,8 +382,7 @@ export function homePage(view: Overview): Page {
     {
       id: "regions",
       title: "Regions",
-      description:
-        "Every cluster is checked every 30 seconds from four vantage points on Cloudflare's network. Ping is the median of the latest round, then the mean over the range.",
+      description: `Every cluster is checked every 30 seconds from ${coverage.total} vantage points on Cloudflare's network; ${coverage.answered} answered the latest round. Ping is the median of the latest round, then the mean over the range.`,
     },
     view.regions.length === 0
       ? empty("No regions published", "Regions will appear here once they are registered.")
