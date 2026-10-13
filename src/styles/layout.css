@@ -27,7 +27,7 @@
 }
 
 .ts-eyebrow {
-  color: var(--ts-ink-2);
+  color: var(--ts-eyebrow);
 }
 
 .ts-row,
