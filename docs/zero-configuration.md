@@ -6,8 +6,8 @@ Adopted 2026-10-09 (TS-795).
   machines boot. There are no feature flags, region activation steps, deploy
   toggles or kill switches.
 - Production secrets are set once: Fly secrets on each Fly app, Worker secrets
-  on ts-status, and the Cloudflare deployment token as this repo's GitHub
-  Actions secret. Operators never copy production credentials by hand.
+  on ts-status, and the deployment token in Cloudflare Workers Builds.
+  Operators never copy production credentials by hand.
 - Each value has one correct setting in code. Production exposes no tuning
   knobs. Fakes, demo stores and authentication bypasses belong only in test
   code and test binaries.
