@@ -29,9 +29,9 @@ AI IS NOT ALLOWED TO EDIT THIS FILE ONLY HUMANS CAN!
   User decision 2026-10-07: the status page must keep working while TerraBase
   is down. Never move ts-status data to TerraBase or add a TerraBase dependency
   to the data path.
-- The vendor-issued Cloudflare deployment token is stored once as a GitHub
-  Actions secret on this repo, read only by CI (GitHub Actions on Blacksmith
-  runners), scoped only to ts-status (Workers scripts and routes, D1 Edit).
+- Cloudflare Workers Builds deploys every push to main with its own build
+  token; this repo has no GitHub Actions workflow. Keep the build token scoped
+  only to ts-status (Workers scripts and routes, D1 Edit).
   Never print or copy it; check scope on D1 error 7403.
 
 ## Cloudflare: use the `cf` CLI
@@ -59,7 +59,7 @@ The Cloudflare CLI `cf` (npm package `cf`, v1.0.0-beta.10, installed through the
 
 - Every feature is always on. No feature flags, on/off variables, opt-in settings, boolean enabled configuration keys, deploy toggles or kill switches in code, config or CI. Delete switches and their guarded paths.
 - Every region always serves. Fly regions (gru and sjc today) start serving as soon as their machines boot, with no per-region enable step.
-- Production secrets are fly secrets on their Fly app, set once and never copied by hand. Vendor-issued keys (such as Stripe and Cloudflare) are set the same way; ts-status CI reads its Cloudflare token from its GitHub Actions secret.
+- Production secrets are fly secrets on their Fly app, set once and never copied by hand. ts-status uses Worker secrets and Cloudflare Workers Builds uses its own deployment token.
 - Values have one correct setting in code. Expose no tuning knobs. Fakes, demo stores and skip-auth belong only in test code and test binaries.
 - CI rejects new switch-style configuration; ts-reviewer requests changes. Only unavoidable third-party names may have a narrow allowance with a one-line reason.
 
