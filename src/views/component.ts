@@ -100,7 +100,7 @@ export function componentPage(view: Overview, entry: ComponentOverview, details:
       description: "Incidents affecting this component, or the whole platform, in the last 90 days.",
     },
     details.incidents.length === 0
-      ? empty("No incidents", `No incident affected ${entry.name} in the last 90 days.`)
+      ? empty("No incidents", `No incident affected ${entry.name} in the last 90 days.`, "circle-check")
       : html`<ul class="ts-list">${details.incidents.map((incident) => incidentItem(incident, now, names))}</ul>`,
   )}
 </main>`;

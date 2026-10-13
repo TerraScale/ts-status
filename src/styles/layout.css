@@ -6,7 +6,7 @@
   flex: 1;
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
-  gap: var(--ts-s10);
+  gap: var(--ts-s12);
   width: 100%;
   max-width: var(--st-width);
   margin-inline: auto;

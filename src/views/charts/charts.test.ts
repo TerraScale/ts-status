@@ -61,6 +61,29 @@ describe("lineChart", () => {
     expect(svg.match(/class="ts-chart-column"/g)?.length).toBeLessThanOrEqual(MAX_COLUMNS);
   });
 
+  it("labels deploy markers once, skipping labels that would collide", () => {
+    const values = Array.from({ length: 90 }, () => 100);
+    const svg = lineChart(
+      {
+        ...options,
+        points: [],
+        markers: [
+          { index: 10, label: "v1" },
+          { index: 87, label: "2026.1010.0931" },
+          { index: 89, label: "2026.1012.1840" },
+          { index: 89, label: "2026.1012.1840" },
+        ],
+      },
+      [{ name: "p50", values }],
+    ).value;
+    expect(svg.match(/class="st-chart-marker"/g)).toHaveLength(3);
+    expect(svg.match(/<text x="[^"]*" y="11">/g)).toHaveLength(2);
+    expect(svg).toContain(">2026.1012.1840</text>");
+    expect(svg).not.toContain(">2026.1010.0931</text>");
+    expect(svg).toContain("<title>2026.1010.0931</title>");
+    expect(svg).not.toContain("2026.1012.1840, 2026.1012.1840");
+  });
+
   it("renders nothing without values", () => {
     expect(lineChart(options, [{ name: "x", values: [null, null, null] }]).value).toBe("");
   });

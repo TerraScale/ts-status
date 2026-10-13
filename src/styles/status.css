@@ -902,6 +902,44 @@
   color: inherit;
 }
 
+/* Rows and alerts that open a page: the title link covers the whole box,
+   which washes on hover and carries the focus ring. Rows reach 12px past
+   their text, so the text keeps the page's left edge. */
+.st-linked {
+  position: relative;
+  transition: background-color var(--ts-fast) var(--ts-ease);
+}
+
+.ts-list-item > .st-linked {
+  margin: calc(-1 * var(--ts-s3));
+  padding: var(--ts-s3);
+  border-radius: var(--ts-radius);
+}
+
+.st-linked .st-incident-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.st-linked .st-incident-link:focus-visible {
+  outline: none;
+}
+
+.st-linked .st-incident-link:focus-visible::after {
+  outline: 2px solid var(--ts-focus);
+  outline-offset: 2px;
+}
+
+.st-linked:is(:hover, :focus-within) {
+  background: var(--ts-surface);
+}
+
+.ts-alert.st-linked:is(:hover, :focus-within) {
+  background: color-mix(in oklab, var(--state) var(--ts-tint-badge), transparent);
+}
+
 /* History filters: a wrapping row of labeled fields. */
 .st-history-controls {
   display: grid;
@@ -932,14 +970,22 @@
   flex: 2 1 14rem;
 }
 
+/* Thirteen short month names fit a desktop row; phones scroll the strip. */
 .st-months {
-  flex-wrap: wrap;
   justify-self: start;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-/* Stats that hold words rather than numbers. */
+.st-months > :is(a, span) {
+  flex: none;
+}
+
+/* Stats that hold words rather than numbers read in the body face. */
 .st-stat-text {
-  font-size: var(--ts-fs-2xl);
+  font-family: var(--ts-font-sans);
+  letter-spacing: var(--ts-heading-tracking);
 }
 
 /* An incident's updates, newest first, on a rail. */
@@ -1240,8 +1286,9 @@
   font-weight: 500;
 }
 
-/* Forms of the subscription pages. */
-.st-narrow {
+/* Forms of the subscription and sign-in pages: a narrow column that keeps
+   the page's left edge. */
+.st-narrow > * {
   max-width: 40rem;
 }
 
@@ -1264,8 +1311,16 @@
   border: 0;
 }
 
+/* Component checkboxes line up in columns. */
+.st-components {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  justify-self: stretch;
+}
+
 .st-choices > legend {
   margin-bottom: var(--ts-s2);
+  padding: 0;
   color: var(--ts-ink);
   font-size: var(--ts-fs-sm);
   font-weight: 500;
@@ -1279,6 +1334,7 @@
 }
 
 .st-choice input {
+  margin: 0;
   accent-color: var(--ts-accent);
 }
 
@@ -1290,7 +1346,13 @@
   overflow: hidden;
 }
 
-/* The admin pages: forms in a grid that collapses to one column on phones. */
+/* The admin pages: title left, sign out right; forms in a grid that
+   collapses to one column on phones. */
+.st-page-head.ts-row-between {
+  display: flex;
+  align-items: flex-end;
+}
+
 .ad-nav {
   justify-self: start;
 }

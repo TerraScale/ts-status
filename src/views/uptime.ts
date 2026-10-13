@@ -96,7 +96,7 @@ export function uptimePage(view: Overview, periods: readonly VantagePeriod[], no
     ${stat("Last 12 months", formatUptime(probeUptime(year)), "platform")}
     ${stat("Last 90 days", formatUptime(view.uptimeHistory), "platform")}
     ${stat("Target", formatUptime(SLA_TARGET), "per component, monthly")}
-    ${stat("Measured", `${measuredDays} ${measuredDays === 1 ? "day" : "days"}`, `of the last ${YEAR_DAYS}`)}
+    ${stat("Measured", String(measuredDays), `of the last ${YEAR_DAYS}`, measuredDays === 1 ? "day" : "days")}
   </dl>
 
   ${card(

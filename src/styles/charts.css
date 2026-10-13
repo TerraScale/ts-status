@@ -123,12 +123,15 @@
   background: var(--series, var(--ts-chart-1));
 }
 
-/* Series colours: the direction's three chart colours, then two status-
-   local ones from the syntax palette for the per-vantage charts (four
-   series). Declared here, layered, so a direction defining more wins. */
+/* Series colours: the direction's three hued chart colours (blue, teal,
+   violet), then two status-local ones for the per-vantage charts (four
+   series). The fourth is neutral ink, never a hue a reader could take for
+   a state (orange and green mean partial outage and operational here); the
+   fifth, beyond the four vantages, borrows the syntax amber. Declared here,
+   layered, so a direction defining more wins. */
 :root {
-  --ts-cat-4: var(--ts-syn-number);
-  --ts-cat-5: var(--ts-syn-string);
+  --ts-cat-4: var(--ts-ink-2);
+  --ts-cat-5: var(--ts-syn-number);
 }
 
 .ts-cat-1 {

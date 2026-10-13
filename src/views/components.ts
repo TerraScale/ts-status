@@ -50,10 +50,10 @@ export function card(props: CardProps, body: Html): Html {
 </section>`;
 }
 
-export function stat(label: string, value: string, detail?: string): Html {
+export function stat(label: string, value: string, detail?: string, unit?: string): Html {
   return html`<div class="ts-stat">
   <dt class="ts-stat-label">${label}</dt>
-  <dd class="ts-stat-value">${value}</dd>
+  <dd class="ts-stat-value">${value}${unit ? html`<span class="ts-stat-unit">${unit}</span>` : ""}</dd>
   ${detail ? html`<dd class="ts-stat-detail">${detail}</dd>` : ""}
 </div>`;
 }
@@ -68,10 +68,11 @@ export function badge(text: string, state?: TimelineState): Html {
     : html`<span class="ts-badge">${text}</span>`;
 }
 
-/** An empty state: an icon tile, a title, one line and an optional action. */
+/** An empty state: an icon tile, a title, one line and an optional action.
+    The check icon means all clear, so its tile takes the success tint. */
 export function empty(title: string, detail: string, glyph: IconName = "info", action?: Html): Html {
   return html`<div class="ts-empty" role="status">
-  <span class="ts-empty-icon" aria-hidden="true">${icon(glyph, "ts-icon-lg")}</span>
+  <span class="ts-empty-icon"${glyph === "circle-check" ? raw(' data-state="operational"') : ""} aria-hidden="true">${icon(glyph)}</span>
   <p class="ts-empty-title">${title}</p>
   <p class="ts-empty-detail">${detail}</p>
   ${action ?? ""}
@@ -208,10 +209,10 @@ export function affected(incident: Incident, names: ReadonlyMap<string, string>)
 /** An active incident as an alert, colored by its impact. */
 export function incidentAlert(incident: Incident, now: number, names: ReadonlyMap<string, string>): Html {
   const state = incident.kind === "maintenance" ? "maintenance" : IMPACT_STATUS[incident.impact];
-  return html`<article class="ts-alert" data-state="${stateAttr(state)}">
-  <div class="ts-row-between">
+  return html`<article class="ts-alert st-linked" data-state="${stateAttr(state)}">
+  <div class="ts-row">
     <h3 class="ts-alert-title"><a class="st-incident-link" href="${incidentHref(incident.id)}">${incident.kind === "warning" ? "Warning: " : ""}${incident.title}</a></h3>
-    <div class="ts-row">${labels(incident, now)}</div>
+    ${labels(incident, now)}
   </div>
   <p class="ts-alert-body">${incident.message}</p>
   <p class="ts-meta">${affected(incident, names)} · ${timing(incident)}</p>
@@ -221,7 +222,7 @@ export function incidentAlert(incident: Incident, now: number, names: ReadonlyMa
 /** An incident as a divided list row; `extra` follows its timing. */
 export function incidentItem(incident: Incident, now: number, names: ReadonlyMap<string, string>, extra?: Html): Html {
   return html`<li class="ts-list-item">
-  <article class="ts-list-main">
+  <article class="ts-list-main st-linked">
     <div class="ts-row">
       <h3 class="st-incident-title"><a class="st-incident-link" href="${incidentHref(incident.id)}">${incident.title}</a></h3>
       ${labels(incident, now)}

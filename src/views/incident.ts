@@ -3,7 +3,16 @@
    of updates, newest first. */
 
 import type { IncidentDetail } from "../db/reads";
-import { aggregate, spans, STATE_LABELS, stateAttr, worst, type Bucket, type TimelineState } from "../domain/status";
+import {
+  aggregate,
+  IMPACT_STATUS,
+  spans,
+  STATE_LABELS,
+  stateAttr,
+  worst,
+  type Bucket,
+  type TimelineState,
+} from "../domain/status";
 import { formatClock, formatDay, formatDuration } from "../format";
 import { html, type Html } from "../html";
 import { chartLegend, lineChart } from "./charts/line";
@@ -105,8 +114,8 @@ export function incidentPage(detail: IncidentDetail, now: number): Page {
   </header>
 
   <dl class="ts-stats" aria-label="Incident summary">
-    <div class="ts-stat"><dt class="ts-stat-label">Impact</dt><dd class="ts-stat-value st-stat-text">${incident.impact === "none" ? "None" : incident.impact[0]?.toUpperCase() + incident.impact.slice(1)}</dd></div>
-    <div class="ts-stat"><dt class="ts-stat-label">${incident.resolvedAt ? "Lasted" : "Ongoing for"}</dt><dd class="ts-stat-value st-stat-text">${formatDuration(Math.max(0, end - start))}</dd></div>
+    <div class="ts-stat"><dt class="ts-stat-label" data-state="${stateAttr(IMPACT_STATUS[incident.impact])}"><span class="ts-dot" aria-hidden="true"></span>Impact</dt><dd class="ts-stat-value st-stat-text">${incident.impact === "none" ? "None" : incident.impact[0]?.toUpperCase() + incident.impact.slice(1)}</dd></div>
+    <div class="ts-stat"><dt class="ts-stat-label">${incident.resolvedAt ? "Lasted" : "Ongoing for"}</dt><dd class="ts-stat-value">${formatDuration(Math.max(0, end - start))}</dd></div>
     <div class="ts-stat"><dt class="ts-stat-label">Updates</dt><dd class="ts-stat-value">${detail.updates.length}</dd></div>
   </dl>
 

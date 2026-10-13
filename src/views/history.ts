@@ -5,7 +5,7 @@
 import type { History } from "../db/reads";
 import { incidentStats } from "../domain/history";
 import type { Incident } from "../domain/status";
-import { DAY, formatDuration, formatMonth } from "../format";
+import { DAY, formatDuration, formatMonth, formatMonthShort } from "../format";
 import { html, raw, type Html } from "../html";
 import { card, empty, incidentItem, stat } from "./components";
 import type { Page } from "./layout";
@@ -63,18 +63,18 @@ function option(value: string, label: string, current: string | undefined): Html
 function filters(history: History, query: HistoryQuery): Html {
   return html`<form class="st-filters" method="get" action="/history" role="search" aria-label="Filter incidents">
   <label class="st-field"><span>Component</span>
-    <select class="ts-select ts-select-sm" name="component">
+    <select class="ts-select" name="component">
       ${option("", "All components", query.component)}
       ${history.components.map((component) => option(component.id, component.name, query.component))}
     </select>
   </label>
   <label class="st-field"><span>Kind</span>
-    <select class="ts-select ts-select-sm" name="kind">
+    <select class="ts-select" name="kind">
       ${option("", "All kinds", query.kind)}${option("incident", "Incidents", query.kind)}${option("warning", "Warnings", query.kind)}
     </select>
   </label>
   <label class="st-field"><span>Impact</span>
-    <select class="ts-select ts-select-sm" name="impact">
+    <select class="ts-select" name="impact">
       ${option("", "Any impact", query.impact)}${option("minor", "Minor", query.impact)}${option("major", "Major", query.impact)}${option("critical", "Critical", query.impact)}
     </select>
   </label>
@@ -98,8 +98,9 @@ function months(query: HistoryQuery, now: number): Html {
     query.month === month
       ? html`<span aria-current="true">${label}</span>`
       : html`<a href="${href({ ...query, month })}">${label}</a>`;
+  // Short names ("Oct") keep the strip on one row; twelve straight months need no year.
   return html`<nav class="st-range st-months" aria-label="Months">${link(undefined, "12 months")}${list.map((month) =>
-    link(month, formatMonth(`${month}-01T00:00:00Z`).replace(/ \d{4}$/, "")),
+    link(month, formatMonthShort(`${month}-01T00:00:00Z`).replace(/ ’\d{2}$/, "")),
   )}</nav>`;
 }
 
@@ -137,6 +138,7 @@ export function historyPage(history: History, query: HistoryQuery, now: number):
           filtered
             ? "No incident or warning matches these filters."
             : `TerraScale reported no incidents or warnings in ${period}.`,
+          filtered ? "search-x" : "circle-check",
         )
       : groups.map(([month, list]) =>
           card(

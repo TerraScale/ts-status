@@ -129,7 +129,7 @@ function select(name: string, options: readonly (string | [string, string])[], c
 }
 
 function componentChoices(components: readonly Component[], chosen: readonly string[]) {
-  return html`<fieldset class="st-choices ad-wide"><legend>Components <span class="ts-meta">(none checked: the whole platform)</span></legend>${components.map(
+  return html`<fieldset class="st-choices st-components ad-wide"><legend>Components <span class="ts-meta">(none checked: the whole platform)</span></legend>${components.map(
     (component) =>
       html`<label class="st-choice"><input type="checkbox" name="components" value="${component.id}"${chosen.includes(component.id) ? raw(" checked") : ""}> ${component.name}</label>`,
   )}</fieldset>`;
@@ -172,7 +172,7 @@ export function problemPage(frame: Frame, message: string): Page {
 }
 
 const incidentRow = (incident: Incident) => html`<li class="ts-list-item">
-  <div class="ts-list-main">
+  <div class="ts-list-main st-linked">
     <h4 class="ts-strong"><a class="st-incident-link" href="/admin/incidents/${incident.id}">${incident.title}</a></h4>
     <p class="ts-meta">${incident.kind} · ${incident.status.replace("_", " ")} · ${incident.impact} impact${incident.source === "auto" ? " · automatic" : ""} · ${time(incident.createdAt, "datetime")}</p>
   </div>
@@ -185,7 +185,7 @@ export function incidentsPage(frame: Frame, open: Incident[], closed: Incident[]
     html`${card(
       { id: "open", title: "Open", description: "Open incidents and warnings, and maintenance not yet completed." },
       open.length === 0
-        ? empty("Nothing open", "No incident, warning or maintenance is open.")
+        ? empty("Nothing open", "No incident, warning or maintenance is open.", "circle-check")
         : html`<ul class="ts-list">${open.map(incidentRow)}</ul>`,
     )}
   ${card(

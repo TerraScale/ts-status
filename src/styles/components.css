@@ -17,12 +17,15 @@
   border-top: 1px solid var(--ts-line);
 }
 
+/* The heading sits a section-title gap (24px) above the content; the
+   content's own pieces keep the tighter card gap. */
 .ts-card-head {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--ts-s3) var(--ts-s4);
+  padding-bottom: var(--ts-s2);
 }
 
 .ts-card-heading {
@@ -40,18 +43,27 @@
   color: var(--ts-ink-2);
 }
 
+/* Stacked boxes inside a section, such as active incident alerts. */
+.ts-card-body {
+  display: grid;
+  gap: var(--ts-s2);
+}
+
 /* Stat tiles: a borderless row with hairlines above and below and between
-   tiles; 2 by 2 on phones. */
+   tiles; 2 by 2 on phones. Each tile spans three shared rows (label, value,
+   detail), so values line up even when a label wraps. */
 .ts-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
   border-block: 1px solid var(--ts-line);
 }
 
 .ts-stat {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ts-s2);
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  align-content: start;
+  row-gap: var(--ts-s2);
   padding: var(--ts-s5) var(--ts-s6);
   border-left: 1px solid var(--ts-line);
 }
@@ -71,11 +83,26 @@
   color: var(--ts-ink-3);
 }
 
+/* A tile showing a state carries its dot in the label. */
+.ts-stat-label:has(> .ts-dot) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .ts-stat-value {
   color: var(--ts-ink);
-  font: var(--ts-display-weight) var(--ts-fs-3xl) / 1 var(--ts-font-num);
+  font: 500 var(--ts-fs-3xl) / 1 var(--ts-font-num);
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+}
+
+/* A unit beside the value ("365 days"), small so the number leads. */
+.ts-stat-unit {
+  margin-left: var(--ts-s1);
+  color: var(--ts-ink-2);
+  font: 400 var(--ts-fs-md) / 1 var(--ts-font-sans);
+  letter-spacing: 0;
 }
 
 .ts-stat-detail {
@@ -223,37 +250,51 @@
   justify-self: start;
 }
 
-/* Empty states: a dashed outline with an icon tile, never a filled box. */
+/* Empty states: a hairline box, centred: icon tile, title, one line and an
+   optional action. Never dashed, never a filled box. */
 .ts-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--ts-s3);
-  padding: var(--ts-s12) var(--ts-s6);
-  border: 1px dashed var(--ts-line-strong);
+  gap: var(--ts-s2);
+  padding: var(--ts-s8) var(--ts-s6);
+  border: 1px solid var(--ts-line);
   border-radius: var(--ts-radius-lg);
   text-align: center;
 }
 
+/* The icon tile: a 32px accent-tinted square; an all-clear tile takes the
+   success tint instead. */
 .ts-empty-icon {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--ts-line-strong);
-  border-radius: var(--ts-radius-lg);
-  color: var(--ts-ink-2);
+  width: 32px;
+  height: 32px;
+  margin-bottom: var(--ts-s1);
+  border-radius: var(--ts-radius);
+  background: var(--ts-accent-soft);
+  color: var(--ts-accent);
+}
+
+.ts-empty-icon[data-state] {
+  background: color-mix(in oklab, var(--state) var(--ts-tint-badge), transparent);
+  color: var(--state);
 }
 
 .ts-empty-title {
   color: var(--ts-ink);
-  font-size: var(--ts-fs-lg);
+  font-size: var(--ts-fs-md);
   font-weight: 500;
 }
 
 .ts-empty-detail {
-  max-width: 44ch;
+  max-width: 52ch;
   color: var(--ts-ink-2);
+  font-size: var(--ts-fs-sm);
+}
+
+.ts-empty > .ts-button {
+  margin-top: var(--ts-s2);
 }
 
 /* Inputs and selects: 36px, control-line border, 2px focus ring. */
