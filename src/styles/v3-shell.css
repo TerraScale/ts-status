@@ -108,3 +108,15 @@
   .st-brand-tag { display: none; }
   .st-foot > .st-frame { flex-direction: column; }
 }
+
+.st-brand-mark { width: 22px; height: 24px; flex: none; }
+.st-brand-word { font-size: 16px; font-weight: 650; letter-spacing: -0.02em; }
+.st-brand { gap: 6px; }
+.st-brand-tag { margin-left: 6px; }
+.st-foot > .st-frame { justify-content: flex-start; align-items: center; }
+.st-foot-brand { display: inline-flex; align-items: center; gap: 6px; }
+.st-copyright { margin-left: auto; }
+@media (max-width: 600px) {
+  .st-foot > .st-frame { align-items: flex-start; }
+  .st-copyright { margin-left: 0; }
+}
