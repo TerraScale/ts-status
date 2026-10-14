@@ -57,8 +57,8 @@ export function regionPage(view: Overview, entry: RegionOverview, details: Detai
     html`<ul class="ts-list">${entry.clusters.map((cluster) => clusterRow(cluster, view.range))}</ul>`,
   )}
 
-  ${card({ id: "latency", title: "Response time", description: "Median and p95 of the consensus across the region's clusters." }, charts.summary)}
-  ${card({ id: "vantages", title: "From each vantage point", description: "Median response seen from each vantage." }, charts.vantages)}`
+  ${card({ id: "latency", title: "Response time", description: "Median and p95 of the consensus across the region's clusters.", actions: rangeSwitch(view.range, regionHref(entry.code)) }, charts.summary)}
+  ${card({ id: "vantages", title: "From each vantage point", description: "Median response seen from each vantage.", actions: rangeSwitch(view.range, regionHref(entry.code)) }, charts.vantages)}`
   }
 
   ${card(
