@@ -77,9 +77,9 @@ export function empty(title: string, detail: string): Html {
 
 /** A time rendered in UTC; the client script re-renders it in the visitor's
     time zone. */
-export function time(at: string | number, format: "datetime" | "seconds"): Html {
+export function time(at: string | number, format: "datetime" | "seconds" | "clock"): Html {
   const iso = new Date(at).toISOString().replace(".000Z", "Z");
-  const text = format === "datetime" ? formatDateTime(at) : formatClockSeconds(Number(new Date(at)));
+  const text = format === "datetime" ? formatDateTime(at) : format === "clock" ? formatClock(Number(new Date(at))) : formatClockSeconds(Number(new Date(at)));
   return html`<time datetime="${iso}" data-format="${format}">${text}</time>`;
 }
 

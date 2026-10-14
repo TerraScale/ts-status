@@ -2,7 +2,7 @@
    script are inlined, so a page paints after one request plus the preloaded
    font. */
 
-import logo from "../assets/logo.svg?raw";
+import mark from "../assets/mark.svg?raw";
 import { html, raw, type Html } from "../html";
 import styles from "../styles/index.css?inline";
 import { CHART_SCRIPT } from "./chart-client";
@@ -45,7 +45,7 @@ function top(page: Page): Html {
   return html`<a class="ts-skip-link" href="#main">Skip to main content</a>
 <header class="st-top">
   <div class="st-frame">
-    <a class="st-brand" href="/" aria-label="TerraScale status home">${raw(logo)}<span class="st-brand-tag">Status</span></a>
+    <a class="st-brand" href="/" aria-label="TerraScale status home">${raw(mark)}<span class="st-brand-word">TerraScale</span><span class="st-brand-tag">Status</span></a>
     <nav class="st-nav st-desktop-nav" aria-label="Status pages">${navigation(page)}</nav>
     <div class="st-top-end">
       <label class="st-zone" hidden>
@@ -66,7 +66,7 @@ function bottom(year: number): Html {
   return html`<div id="st-live" class="ts-sr-only" aria-live="polite"></div>
 <footer class="st-foot">
   <div class="st-frame">
-    <span>© ${year} TerraScale</span>
+    <span class="st-foot-brand">${raw(mark)}<strong>TerraScale</strong></span>
     <nav aria-label="More">
       <a href="https://terrascale.tech">terrascale.tech</a>
       <a href="https://docs.terrascale.tech">Docs</a>
@@ -74,6 +74,7 @@ function bottom(year: number): Html {
       <a href="/feed.atom">Feed</a>
       <a href="/api/v1/status">JSON API</a>
     </nav>
+    <span class="st-copyright">© ${year} TerraScale</span>
   </div>
 </footer>`;
 }

@@ -49,7 +49,7 @@ export const CLIENT_SCRIPT = `(() => {
     const format = {};
     for (const name in styles) format[name] = new Intl.DateTimeFormat("en", { ...styles[name], timeZone: zone });
     for (const element of root.querySelectorAll("time[data-format]")) {
-      element.textContent = format[element.dataset.format].format(new Date(element.dateTime)) + " " + label;
+      element.textContent = format[element.dataset.format].format(new Date(element.dateTime)) + (element.dataset.format === "clock" ? "" : " " + label);
     }
     // Spans shorter than a day follow the zone; UTC days keep their dates.
     for (const element of root.querySelectorAll("[data-from][data-span=hour]")) {

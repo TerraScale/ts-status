@@ -140,18 +140,21 @@ export function incidentPage(detail: IncidentDetail, now: number): Page {
   const components = incident.components.length === 0 ? ["All components"] : incident.components.map((id) => names.get(id) ?? id);
 
   const body = html`<main id="main" class="ts-page st-incident"${incident.resolvedAt ? "" : html` data-live data-title="${incident.title} · TerraScale Status"`}>
+  <nav aria-label="Breadcrumb"><ol class="st-breadcrumb"><li><a href="/">Status</a></li><li><a href="/history">History</a></li><li aria-current="page">${incident.title}</li></ol></nav>
   <header class="st-page-head">
-    <p class="ts-eyebrow"><a class="ts-link" href="/history">Incident history</a> · ${KINDS[incident.kind]}${incident.source === "auto" ? " · Auto-detected" : ""}</p>
+    <p class="ts-eyebrow">${KINDS[incident.kind]}${incident.source === "auto" ? " · Auto-detected" : ""}</p>
     <div class="ts-row">
       <h1 class="st-title">${incident.title}</h1>
       ${incidentBadge(incident, now)}
+      ${badge(STATE_LABELS[impact], impact)}
     </div>
     <p class="ts-meta">${affected(incident, names)} · ${timing(incident)}</p>
   </header>
 
   <dl class="ts-stats" aria-label="Incident summary">
-    <div class="ts-stat"><dt class="ts-stat-label">Impact</dt><dd class="ts-stat-value st-stat-text">${incident.impact === "none" ? "None" : incident.impact[0]?.toUpperCase() + incident.impact.slice(1)}</dd></div>
     <div class="ts-stat"><dt class="ts-stat-label">${incident.resolvedAt ? "Lasted" : "Ongoing for"}</dt><dd class="ts-stat-value st-stat-text">${formatDuration(Math.max(0, end - start))}</dd></div>
+    <div class="ts-stat"><dt class="ts-stat-label">Started</dt><dd class="ts-stat-value">${time(start, "clock")}</dd><dd class="ts-stat-detail">${time(start, "datetime")}</dd></div>
+    <div class="ts-stat"><dt class="ts-stat-label">Resolved</dt><dd class="ts-stat-value">${incident.resolvedAt ? time(incident.resolvedAt, "clock") : "—"}</dd><dd class="ts-stat-detail">${incident.resolvedAt ? time(incident.resolvedAt, "datetime") : "Ongoing"}</dd></div>
     <div class="ts-stat"><dt class="ts-stat-label">Updates</dt><dd class="ts-stat-value">${detail.updates.length}</dd></div>
   </dl>
 
