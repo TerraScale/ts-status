@@ -240,6 +240,51 @@
   --series: var(--ts-cat-8);
 }
 
+/* A card's range radios pick one server-rendered chart view; without :has()
+   the full window stays shown. */
+.st-chart-range {
+  min-width: 0;
+  margin: 0;
+}
+
+.st-chart-range > label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px var(--ts-s3);
+  border-radius: var(--ts-radius-sm);
+  color: var(--ts-ink-3);
+  font-size: var(--ts-fs-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.st-chart-range > label:hover {
+  color: var(--ts-ink);
+}
+
+.st-chart-range > label:has(:checked) {
+  background: var(--ts-nav-active-bg);
+  color: var(--ts-ink);
+}
+
+.st-chart-range > label:has(:focus-visible) {
+  outline: 2px solid var(--ts-focus);
+  outline-offset: 1px;
+}
+
+.st-chart-view:not([data-chart-view="full"]),
+.ts-card:has([data-chart-pick="1h"]:checked) [data-chart-view="full"],
+.ts-card:has([data-chart-pick="30m"]:checked) [data-chart-view="full"] {
+  display: none;
+}
+
+.ts-card:has([data-chart-pick="1h"]:checked) [data-chart-view="1h"],
+.ts-card:has([data-chart-pick="30m"]:checked) [data-chart-view="30m"] {
+  display: block;
+}
+
 /* Sparklines: a quiet trend beside a row's numbers. */
 .st-spark {
   width: 96px;

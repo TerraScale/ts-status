@@ -14,7 +14,7 @@ import {
   type TimelineState,
 } from "../domain/status";
 import { formatClock, formatDay, formatDuration } from "../format";
-import { html, type Html } from "../html";
+import { html, raw, type Html } from "../html";
 import { chartLegend, lineChart } from "./charts/line";
 import { affected, bars, badge, card, empty, incidentBadge, STATUS_TEXT, time, timing, zone } from "./components";
 import type { Page } from "./layout";
@@ -32,9 +32,18 @@ const UPDATE_STATE: Partial<Record<Incident["status"], TimelineState>> = {
 /** Buckets across the window for the state strip. */
 const STRIP_BUCKETS = 48;
 
-/** Chart points: every round, or every hour, across the window. */
+/** Milliseconds between chart points: every round, or every hour. */
+const STEP = { round: 30_000, hour: 3_600_000 } as const;
+
+/** Latency ranges offered beside the full window when it holds more samples. */
+const RANGES = [
+  { key: "1h", short: "1h", name: "Last hour", ms: 3_600_000 },
+  { key: "30m", short: "30m", name: "Last 30 minutes", ms: 1_800_000 },
+] as const;
+
+/** Chart points across the window. */
 function grid(detail: IncidentDetail): number[] {
-  const step = detail.resolution === "round" ? 30_000 : 3_600_000;
+  const step = STEP[detail.resolution];
   const first = detail.window.from - (detail.window.from % step);
   return Array.from(
     { length: Math.max(1, Math.ceil((detail.window.to - first) / step)) },
@@ -42,7 +51,9 @@ function grid(detail: IncidentDetail): number[] {
   );
 }
 
-function latency(detail: IncidentDetail): Html {
+/** The latency chart, one server-rendered view per range, and the radios
+    picking a view; CSS shows the picked one, so it works without scripts. */
+export function latency(detail: IncidentDetail): { chart: Html; picker: Html } {
   const points = grid(detail);
   const series = detail.endpoints
     .map((endpoint) => {
@@ -58,18 +69,43 @@ function latency(detail: IncidentDetail): Html {
     })
     .filter((entry) => entry.values.some((value) => value !== null))
     .slice(0, 5);
-  if (series.length === 0) return empty("No measurements", "No health check results cover this incident's window.");
+  if (series.length === 0) {
+    return { chart: empty("No measurements", "No health check results cover this incident's window."), picker: html`` };
+  }
   const name = (at: number) => `${formatDay(at)} ${formatClock(at)} UTC`;
-  const ticks = [0, 1, 2, 3, 4].map((step) => formatClock(points[Math.round((step * (points.length - 1)) / 4)] ?? 0));
-  return html`${lineChart(
-    {
-      label: "Latency of the affected endpoints",
-      ticks,
-      points: points.map(name),
-      format: (value) => `${Math.round(value)} ms`,
-    },
-    series,
+  const view = (from: number, range: string) => {
+    const shown = points.slice(from);
+    const ticks = [0, 1, 2, 3, 4].map((step) => formatClock(shown[Math.round((step * (shown.length - 1)) / 4)] ?? 0));
+    return lineChart(
+      {
+        label: `Latency of the affected endpoints, ${range.toLowerCase()}`,
+        ticks,
+        points: shown.map(name),
+        format: (value) => `${Math.round(value)} ms`,
+      },
+      series.map((entry) => ({ name: entry.name, values: entry.values.slice(from) })),
+    );
+  };
+  const views = [
+    { key: "full", short: "Full", name: "Full window", chart: view(0, "Full window") },
+    ...RANGES.flatMap((range) => {
+      const count = range.ms / STEP[detail.resolution];
+      if (count < 4 || count >= points.length) return [];
+      const chart = view(points.length - count, range.name);
+      return chart.value ? [{ ...range, chart }] : [];
+    }),
+  ];
+  const chart = html`${views.map(
+    (entry) => html`<div class="st-chart-view" data-chart-view="${entry.key}">${entry.chart}</div>`,
   )}${series.length > 1 ? chartLegend(series.map((entry) => entry.name)) : ""}`;
+  const picker =
+    views.length > 1
+      ? html`<fieldset class="st-range st-chart-range" aria-label="Latency time range">${views.map(
+          (entry, index) =>
+            html`<label><input class="ts-sr-only" type="radio" name="measured-range" value="${entry.key}" aria-label="${entry.name}" data-chart-pick${index === 0 ? raw(" checked") : ""}>${entry.short}</label>`,
+        )}</fieldset>`
+      : html``;
+  return { chart, picker };
 }
 
 /** The affected endpoints' combined state across the window. */
@@ -99,6 +135,7 @@ export function incidentPage(detail: IncidentDetail, now: number): Page {
   const start = Date.parse(incident.scheduledStart ?? incident.createdAt);
   const end = incident.resolvedAt ? Date.parse(incident.resolvedAt) : now;
 
+  const measured = latency(detail);
   const impact = incident.kind === "maintenance" ? "maintenance" : IMPACT_STATUS[incident.impact];
   const components = incident.components.length === 0 ? ["All components"] : incident.components.map((id) => names.get(id) ?? id);
 
@@ -152,11 +189,12 @@ export function incidentPage(detail: IncidentDetail, now: number): Page {
   ${card(
     {
       id: "measured",
+      actions: measured.picker,
       eyebrow: "Health checks",
       title: "What the health checks saw",
       description: html`State and ${detail.resolution === "round" ? "per-round" : "hourly median"} latency of the affected endpoints, in ${zone}.`,
     },
-    html`${strip(detail)}${latency(detail)}`,
+    html`${strip(detail)}${measured.chart}`,
   )}
 </main>`;
 

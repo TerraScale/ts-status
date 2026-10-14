@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { IncidentDetail } from "../../db/reads";
 import { CHART_SCRIPT } from "../chart-client";
+import { latency } from "../incident";
 import { niceCeiling, runs, smoothPath } from "./geometry";
 import { lineChart, MAX_COLUMNS } from "./line";
 import { sparkline } from "./sparkline";
@@ -91,5 +93,44 @@ describe("chart script", () => {
     expect(() => new Function(CHART_SCRIPT)).not.toThrow();
     expect(CHART_SCRIPT).toContain('document.addEventListener("pointermove"');
     expect(CHART_SCRIPT).not.toContain("innerHTML");
+  });
+
+
+});
+
+describe("incident latency ranges", () => {
+  const from = Date.UTC(2026, 9, 9, 13, 30);
+  const detail = (minutes: number, resolution: "round" | "hour" = "round") =>
+    ({
+      resolution,
+      window: { from, to: from + minutes * 60_000 },
+      endpoints: [{ id: "e1", componentId: "api", cluster: "gru" }],
+      series: Array.from({ length: minutes * 2 }, (_, index) => ({
+        endpointId: "e1",
+        start: new Date(from + index * 30_000).toISOString(),
+        // A gap in the last half hour must stay a gap.
+        latencyMs: index === minutes * 2 - 10 ? null : 100 + index,
+        state: "operational",
+      })),
+    }) as unknown as IncidentDetail;
+
+  it("offers the last hour and 30 minutes as real subsets of the window", () => {
+    const { chart, picker } = latency(detail(120));
+    expect(picker.value.match(/data-chart-pick/g)).toHaveLength(3);
+    expect(picker.value).toContain('value="full" aria-label="Full window" data-chart-pick checked');
+    const views = chart.value.split('data-chart-view="').slice(1);
+    expect(views.map((view) => view.slice(0, view.indexOf('"')))).toEqual(["full", "1h", "30m"]);
+    const last30 = views[2] ?? "";
+    // 60 rounds of 30 s, starting at 15:00 with the real values from there.
+    expect(last30.match(/class="ts-chart-column"/g)).toHaveLength(60);
+    expect(last30).toContain("Oct 9 15:00 UTC: api · gru 280 ms");
+    expect(last30).toContain("api · gru —");
+    expect(last30.match(/class="ts-chart-line/g)).toHaveLength(2);
+  });
+
+  it("offers no picker when the window has no shorter range", () => {
+    expect(latency(detail(40)).picker.value).toContain('value="30m"');
+    expect(latency(detail(40)).picker.value).not.toContain('value="1h"');
+    expect(latency(detail(600, "hour")).picker.value).toBe("");
   });
 });
