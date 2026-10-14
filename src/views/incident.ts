@@ -3,7 +3,16 @@
    of updates, newest first. */
 
 import type { IncidentDetail } from "../db/reads";
-import { aggregate, spans, STATE_LABELS, worst, type Bucket, type TimelineState } from "../domain/status";
+import {
+  aggregate,
+  IMPACT_STATUS,
+  type Incident,
+  spans,
+  STATE_LABELS,
+  worst,
+  type Bucket,
+  type TimelineState,
+} from "../domain/status";
 import { formatClock, formatDay, formatDuration } from "../format";
 import { html, type Html } from "../html";
 import { chartLegend, lineChart } from "./charts/line";
@@ -11,6 +20,14 @@ import { affected, bars, badge, card, empty, incidentBadge, STATUS_TEXT, time, t
 import type { Page } from "./layout";
 
 const KINDS = { incident: "Incident", warning: "Warning", maintenance: "Maintenance" } as const;
+
+/** The colour of each update's dot and badge; monitoring is neutral. */
+const UPDATE_STATE: Partial<Record<Incident["status"], TimelineState>> = {
+  investigating: "partial_outage",
+  identified: "degraded",
+  resolved: "operational",
+  completed: "operational",
+};
 
 /** Buckets across the window for the state strip. */
 const STRIP_BUCKETS = 48;
@@ -82,7 +99,10 @@ export function incidentPage(detail: IncidentDetail, now: number): Page {
   const start = Date.parse(incident.scheduledStart ?? incident.createdAt);
   const end = incident.resolvedAt ? Date.parse(incident.resolvedAt) : now;
 
-  const body = html`<main id="main" class="ts-page"${incident.resolvedAt ? "" : html` data-live data-title="${incident.title} · TerraScale Status"`}>
+  const impact = incident.kind === "maintenance" ? "maintenance" : IMPACT_STATUS[incident.impact];
+  const components = incident.components.length === 0 ? ["All components"] : incident.components.map((id) => names.get(id) ?? id);
+
+  const body = html`<main id="main" class="ts-page st-incident"${incident.resolvedAt ? "" : html` data-live data-title="${incident.title} · TerraScale Status"`}>
   <header class="st-page-head">
     <p class="ts-eyebrow"><a class="ts-link" href="/history">Incident history</a> · ${KINDS[incident.kind]}${incident.source === "auto" ? " · Auto-detected" : ""}</p>
     <div class="ts-row">
@@ -98,25 +118,45 @@ export function incidentPage(detail: IncidentDetail, now: number): Page {
     <div class="ts-stat"><dt class="ts-stat-label">Updates</dt><dd class="ts-stat-value">${detail.updates.length}</dd></div>
   </dl>
 
+  <div class="st-split">
+    ${card(
+      { id: "updates", eyebrow: "Timeline", title: "Updates", description: "Newest first." },
+      detail.updates.length === 0
+        ? empty("No updates", "This incident has no updates yet.")
+        : html`<ol class="st-timeline">${detail.updates.map((update) => {
+            const state = UPDATE_STATE[update.status] ?? "none";
+            return html`<li class="st-timeline-item" data-state="${state}">
+    <div class="ts-row">${badge(STATUS_TEXT[update.status] ?? update.status, state)}${time(update.createdAt, "datetime")}</div>
+    <p class="st-incident-body">${update.body}</p>
+  </li>`;
+          })}</ol>`,
+    )}
+
+    <aside class="st-aside" aria-label="About this incident">
+      <section class="ts-panel" aria-labelledby="affected-title">
+        <h2 class="ts-label" id="affected-title">Affected components</h2>
+        <ul class="st-affected">${components.map(
+          (name) => html`<li data-state="${impact}"><span class="ts-dot" aria-hidden="true"></span><strong>${name}</strong>${badge(STATE_LABELS[impact], impact)}</li>`,
+        )}</ul>
+      </section>
+      <section class="ts-panel st-follow">
+        <div>
+          <strong>Follow updates</strong>
+          <p class="ts-muted">Email, RSS or a signed webhook.</p>
+        </div>
+        <a class="ts-button" href="/subscribe">Subscribe</a>
+      </section>
+    </aside>
+  </div>
+
   ${card(
     {
       id: "measured",
+      eyebrow: "Health checks",
       title: "What the health checks saw",
       description: html`State and ${detail.resolution === "round" ? "per-round" : "hourly median"} latency of the affected endpoints, in ${zone}.`,
     },
     html`${strip(detail)}${latency(detail)}`,
-  )}
-
-  ${card(
-    { id: "updates", title: "Updates", description: "Newest first." },
-    detail.updates.length === 0
-      ? empty("No updates", "This incident has no updates yet.")
-      : html`<ol class="st-timeline">${detail.updates.map(
-          (update) => html`<li class="st-timeline-item">
-    <div class="ts-row">${badge(STATUS_TEXT[update.status] ?? update.status)}${time(update.createdAt, "datetime")}</div>
-    <p class="st-incident-body">${update.body}</p>
-  </li>`,
-        )}</ol>`,
   )}
 </main>`;
 
