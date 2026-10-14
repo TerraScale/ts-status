@@ -71,12 +71,12 @@ export function document(page: Page, year: number): Html {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#0a0c12">
+<meta name="theme-color" content="#151515">
 <title>${page.title}</title>
 <meta name="description" content="${page.description}">
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
 <link rel="alternate" type="application/atom+xml" title="TerraScale Status" href="/feed.atom">
-<link rel="preload" href="/fonts/oxanium.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
 <style>${raw(STYLES)}</style>
 ${page.live ? html`<noscript><meta http-equiv="refresh" content="${REFRESH_SECONDS}"></noscript>` : ""}
 </head>
