@@ -5,7 +5,14 @@
    which shows its guide and dots (the crosshair) while one frosted HTML
    tooltip, filled from the column's data-tip JSON as text, replaces the SVG
    one. Arrow keys move between columns (Shift by ten), Home and End jump to
-   the ends, Escape hides; the chart is one tab stop once entered. */
+   the ends, Escape hides; the chart is one tab stop once entered.
+   The server draws every chart 720 units wide; each chart is refitted to its
+   real pixel width (x coordinates only, from the originals kept in a
+   WeakMap) so text keeps its CSS size and the plot its height. A live
+   refresh swapping main closes the tooltip, refits the new charts and keeps
+   each card's picked range. */
+
+import { LEFT, RIGHT, WIDTH } from "./charts/line";
 
 export const CHART_SCRIPT = `(() => {
   document.documentElement.dataset.charts = "";
@@ -114,4 +121,63 @@ export const CHART_SCRIPT = `(() => {
   });
   addEventListener("scroll", () => active && hide(), { passive: true });
   addEventListener("resize", () => active && hide());
+
+  const originals = new WeakMap();
+  const fit = (svg) => {
+    const width = Math.round(svg.getBoundingClientRect().width);
+    // Hidden range views measure 0 and fit once shown.
+    if (!width || svg.dataset.fit === String(width)) return;
+    svg.dataset.fit = width;
+    const scale = (width - ${LEFT} - ${RIGHT}) / (${WIDTH - LEFT - RIGHT});
+    const at = (x) => (x <= ${LEFT} ? x : ${LEFT} + (x - ${LEFT}) * scale).toFixed(1);
+    for (const element of svg.querySelectorAll("line, text, rect, circle, path")) {
+      if (element.closest(".ts-chart-tip")) continue;
+      let saved = originals.get(element);
+      if (!saved) {
+        saved = ["x", "x1", "x2", "cx", "width", "d"].filter((name) => element.hasAttribute(name)).map((name) => [name, element.getAttribute(name)]);
+        originals.set(element, saved);
+      }
+      for (const [name, value] of saved) {
+        let next = at(Number(value));
+        if (name === "width") next = (Number(value) * scale).toFixed(1);
+        // Paths are "x,y" pairs: only the x before each comma moves.
+        else if (name === "d") next = value.replace(/(-?[0-9.]+),/g, (_, x) => at(Number(x)) + ",");
+        element.setAttribute(name, next);
+      }
+    }
+    const ticks = [...svg.querySelectorAll(".ts-chart-tick")];
+    ticks.forEach((tick, index) => {
+      tick.dataset.label ??= tick.textContent;
+      tick.textContent = width < 500 ? tick.dataset.label.replace(/ UTC$/, "") : tick.dataset.label;
+      tick.style.display = width < 500 && (index === 1 || index === 3) ? "none" : "";
+    });
+    svg.setAttribute("viewBox", "0 0 " + width + " " + svg.viewBox.baseVal.height);
+  };
+  const sizes = new ResizeObserver((entries) => entries.forEach((entry) => fit(entry.target)));
+  const watch = () =>
+    document.querySelectorAll("svg[data-chart]").forEach((svg) => {
+      fit(svg);
+      sizes.observe(svg);
+    });
+  watch();
+
+  // Range pickers are CSS radios; remember each card's pick across refreshes.
+  const picks = new Map();
+  document.addEventListener("change", (event) => {
+    if (!(event.target instanceof HTMLInputElement && event.target.matches("[data-chart-pick]"))) return;
+    picks.set(event.target.name, event.target.value);
+    hide();
+  });
+  new MutationObserver((records) => {
+    for (const record of records) {
+      for (const removed of record.removedNodes) {
+        if (removed instanceof Element) removed.querySelectorAll("svg[data-chart]").forEach((svg) => sizes.unobserve(svg));
+      }
+    }
+    if (active && !active.isConnected) hide();
+    document.querySelectorAll("input[data-chart-pick]").forEach((input) => {
+      if (picks.get(input.name) === input.value) input.checked = true;
+    });
+    watch();
+  }).observe(document.body, { childList: true });
 })();`;

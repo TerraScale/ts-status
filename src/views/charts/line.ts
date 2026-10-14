@@ -2,7 +2,9 @@
    translucent area per series, and a focusable hover column per sample whose
    tooltip is drawn in SVG, so it works without scripts. Each column also
    carries its tooltip as data-tip JSON for the chart client script, which
-   swaps the SVG tooltip for a frosted HTML one. Gaps break lines and areas. */
+   swaps the SVG tooltip for a frosted HTML one, and refits the x coordinates
+   to the chart's real width so text stays 11px and the plot 220px tall.
+   Gaps break lines and areas. */
 
 import { html, type Html } from "../../html";
 import { coordinate, niceCeiling, runs, smoothPath } from "./geometry";
@@ -26,9 +28,10 @@ export interface LineOptions {
   markers?: readonly { index: number; label: string }[];
 }
 
-const WIDTH = 720;
-const LEFT = 56;
-const RIGHT = 12;
+/** The viewBox width the server draws at, and the plot's side margins. */
+export const WIDTH = 720;
+export const LEFT = 56;
+export const RIGHT = 12;
 const TOP = 14;
 const BOTTOM = 32;
 
@@ -115,7 +118,7 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
   const ticks = Array.from({ length: 5 }, (_, step) => {
     const index = count > 1 ? Math.round((step * (count - 1)) / 4) : 0;
     const anchor = TICK_ANCHORS[step] ?? "middle";
-    return html`<text class="ts-chart-axis" x="${coordinate(xAt(index))}" y="${height - 8}" text-anchor="${anchor}">${options.ticks[step] ?? ""}</text>`;
+    return html`<text class="ts-chart-axis ts-chart-tick" x="${coordinate(xAt(index))}" y="${height - 8}" text-anchor="${anchor}">${options.ticks[step] ?? ""}</text>`;
   });
   const lineOf = (run: ReturnType<typeof runs>[number]) =>
     smoothPath(run.map(({ index, value }) => [xAt(index), yAt(value)]));
