@@ -559,7 +559,7 @@
 }
 
 .st-region-code {
-  color: var(--ts-accent);
+  color: var(--ts-link);
   font-size: var(--ts-fs-xs);
   font-weight: 700;
   letter-spacing: 0.08em;
