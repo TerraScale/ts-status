@@ -110,7 +110,7 @@ export function historyPage(history: History, query: HistoryQuery, now: number):
   const groups = [...byMonth(history.incidents)];
   const period = query.month ? formatMonth(`${query.month}-01T00:00:00Z`) : "the last 12 months";
 
-  const body = html`<main id="main" class="ts-page">
+  const body = html`<main id="main" class="ts-page st-history">
   <header class="st-page-head">
     <p class="ts-eyebrow">Transparency</p>
     <h1 class="st-title">Incident history</h1>

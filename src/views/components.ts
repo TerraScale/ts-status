@@ -213,7 +213,8 @@ export function incidentAlert(incident: Incident, now: number, names: ReadonlyMa
 
 /** An incident as a divided list row; `extra` follows its timing. */
 export function incidentItem(incident: Incident, now: number, names: ReadonlyMap<string, string>, extra?: Html): Html {
-  return html`<li class="ts-list-item">
+  return html`<li class="ts-list-item st-incident-row" data-state="${incident.kind === "maintenance" ? "maintenance" : IMPACT_STATUS[incident.impact]}">
+  <span class="ts-dot st-incident-dot" aria-hidden="true"></span>
   <article class="ts-list-main">
     <div class="ts-row">
       <h3 class="st-incident-title"><a class="st-incident-link" href="${incidentHref(incident.id)}">${incident.title}</a></h3>
