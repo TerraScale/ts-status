@@ -31,6 +31,7 @@ import {
 export interface CardProps {
   id: string;
   title: string;
+  eyebrow?: string;
   description?: string | Html;
   actions?: Html;
 }
@@ -39,6 +40,7 @@ export function card(props: CardProps, body: Html): Html {
   return html`<section class="ts-card" id="${props.id}" aria-labelledby="${props.id}-title">
   <header class="ts-card-head">
     <div class="ts-card-heading">
+      ${props.eyebrow ? html`<p class="ts-eyebrow">${props.eyebrow}</p>` : ""}
       <h2 class="ts-card-title" id="${props.id}-title">${props.title}</h2>
       ${props.description ? html`<p class="ts-card-description">${props.description}</p>` : ""}
     </div>

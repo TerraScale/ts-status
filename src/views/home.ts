@@ -42,6 +42,8 @@ import {
 import type { Page } from "./layout";
 import { maintenanceItems } from "./maintenance";
 
+const REGION_ORDER: Record<string, number> = { gru: 0, fra: 1, sjc: 2 };
+
 const LEGEND: TimelineState[] = [...STATES, "none"];
 
 const lower = (state: TimelineState): string => STATE_LABELS[state].toLowerCase();
@@ -96,7 +98,7 @@ function region(entry: RegionOverview, view: Overview) {
   return html`<section class="st-region" aria-labelledby="region-${entry.code}">
   <header class="ts-row-between">
     <div class="ts-row">
-      <span class="st-region-code">${entry.code}</span>
+      <span class="st-region-code">${({ Brazil: "🇧🇷", Germany: "🇩🇪", "United States": "🇺🇸" } as Record<string, string>)[entry.country] ?? ""} ${entry.code}</span>
       <h3 id="region-${entry.code}" class="ts-strong"><a class="st-incident-link" href="${regionHref(entry.code)}">${entry.name}</a></h3>
       <span class="ts-meta">${entry.country} · ${providersOf(entry)}</span>
     </div>
@@ -204,8 +206,10 @@ function responseTimes(view: Overview): Html {
   return card(
     {
       id: "latency",
+      eyebrow: "Latency",
       title: "Response time",
       description: `Median response of every component across the vantage points, over the last ${RANGES[view.range].label}.`,
+      actions: rangeSwitch(view.range, "/"),
     },
     html`${lineChart(
       {
@@ -225,6 +229,7 @@ function historyCard(view: Overview): Html {
   return card(
     {
       id: "history",
+      eyebrow: "History",
       title: `Last ${PLATFORM_DAYS} days`,
       description: html`Daily platform status in UTC days, from health checks and incidents · ${formatUptime(view.uptimeHistory)} uptime.`,
       actions: html`<a class="ts-link" href="/history">Incident history</a>`,
@@ -287,7 +292,7 @@ export function homePage(view: Overview): Page {
   const names = new Map(view.groups.flatMap((entry) => entry.components).map((entry) => [entry.id, entry.name]));
   const coverage = view.monitoring.coverage;
 
-  const body = html`<main id="main" class="ts-page" data-live data-title="${title}">
+  const body = html`<main id="main" class="ts-page st-overview" data-live data-title="${title}">
   <section class="st-hero" data-state="${view.status}" aria-labelledby="st-headline">
     <span class="st-hero-mark" aria-hidden="true"><span class="ts-dot"></span></span>
     <div class="st-hero-copy">
@@ -341,6 +346,7 @@ export function homePage(view: Overview): Page {
       ? card(
           {
             id: "incidents",
+      eyebrow: "Active incidents",
             title: "Active incidents",
             description: "Updates are posted here as soon as we have them.",
           },
@@ -354,9 +360,10 @@ export function homePage(view: Overview): Page {
       ? card(
           {
             id: "maintenance",
+      eyebrow: "Maintenance",
             title: "Scheduled maintenance",
             description:
-              "Components under maintenance show in blue; health checks open no incidents for them meanwhile.",
+              "Components under maintenance show in violet; health checks open no incidents for them meanwhile.",
             actions: html`<a class="ts-link" href="/maintenance">All maintenance</a>`,
           },
           maintenanceItems(view.maintenance, view.generatedAt, names),
@@ -367,7 +374,8 @@ export function homePage(view: Overview): Page {
   ${card(
     {
       id: "components",
-      title: "Components",
+      eyebrow: "Components",
+      title: "Uptime by component",
       description: html`Status over the last ${range}, in ${zone}. Hover or focus a bar for details.`,
       actions: rangeSwitch(view.range, "/"),
     },
@@ -382,13 +390,14 @@ export function homePage(view: Overview): Page {
   ${card(
     {
       id: "regions",
+      eyebrow: "Regions",
       title: "Regions",
       description: `Every cluster is checked every 30 seconds from ${coverage.total} vantage points on Cloudflare's network; ${coverage.answered} answered the latest round. Ping is the median of the latest round, then the mean over the range.`,
     },
     view.regions.length === 0
       ? empty("No regions published", "Regions will appear here once they are registered.")
-      : html`${map(view)}
-  <div class="st-regions">${view.regions.map((entry) => region(entry, view))}</div>`,
+      : html`<div class="st-region-layout">${map(view)}
+  <div class="st-regions">${[...view.regions].sort((a, b) => (REGION_ORDER[a.code] ?? 3) - (REGION_ORDER[b.code] ?? 3)).map((entry) => region(entry, view))}</div></div>`,
   )}
 
   ${historyCard(view)}
@@ -398,7 +407,8 @@ export function homePage(view: Overview): Page {
       ? card(
           {
             id: "resolved",
-            title: "Recently resolved",
+      eyebrow: "History",
+            title: "Past incidents",
             description: `Incidents and warnings resolved in the last ${RESOLVED_DAYS} days.`,
             actions: html`<a class="ts-link" href="/history">Full history</a>`,
           },
