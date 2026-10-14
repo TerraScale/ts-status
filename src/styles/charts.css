@@ -275,13 +275,13 @@
 }
 
 .st-chart-view:not([data-chart-view="full"]),
-.ts-card:has([data-chart-pick="1h"]:checked) [data-chart-view="full"],
-.ts-card:has([data-chart-pick="30m"]:checked) [data-chart-view="full"] {
+.ts-card:has([data-chart-pick][value="1h"]:checked) [data-chart-view="full"],
+.ts-card:has([data-chart-pick][value="30m"]:checked) [data-chart-view="full"] {
   display: none;
 }
 
-.ts-card:has([data-chart-pick="1h"]:checked) [data-chart-view="1h"],
-.ts-card:has([data-chart-pick="30m"]:checked) [data-chart-view="30m"] {
+.ts-card:has([data-chart-pick][value="1h"]:checked) [data-chart-view="1h"],
+.ts-card:has([data-chart-pick][value="30m"]:checked) [data-chart-view="30m"] {
   display: block;
 }
 
