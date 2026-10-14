@@ -98,7 +98,7 @@ function region(entry: RegionOverview, view: Overview) {
   return html`<section class="st-region" aria-labelledby="region-${entry.code}">
   <header class="ts-row-between">
     <div class="ts-row">
-      <span class="st-region-code">${({ Brazil: "🇧🇷", Germany: "🇩🇪", "United States": "🇺🇸" } as Record<string, string>)[entry.country] ?? ""} ${entry.code}</span>
+      <span class="st-region-code">${({ Brazil: "🇧🇷", Germany: "🇩🇪", "United States": "🇺🇸" } as Record<string, string>)[entry.country] ?? ""} ${entry.code.toLowerCase()}</span>
       <h3 id="region-${entry.code}" class="ts-strong"><a class="st-incident-link" href="${regionHref(entry.code)}">${entry.name}</a></h3>
       <span class="ts-meta">${entry.country} · ${providersOf(entry)}</span>
     </div>
@@ -397,7 +397,7 @@ export function homePage(view: Overview): Page {
     view.regions.length === 0
       ? empty("No regions published", "Regions will appear here once they are registered.")
       : html`<div class="st-region-layout">${map(view)}
-  <div class="st-regions">${[...view.regions].sort((a, b) => (REGION_ORDER[a.code] ?? 3) - (REGION_ORDER[b.code] ?? 3)).map((entry) => region(entry, view))}</div></div>`,
+  <div class="st-regions">${[...view.regions].sort((a, b) => (REGION_ORDER[a.code.toLowerCase()] ?? 3) - (REGION_ORDER[b.code.toLowerCase()] ?? 3)).map((entry) => region(entry, view))}</div></div>`,
   )}
 
   ${historyCard(view)}

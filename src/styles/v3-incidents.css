@@ -75,7 +75,7 @@
     text-transform: uppercase;
     letter-spacing: var(--ts-label-tracking);
   }
-  .st-incident-row { display: flex; gap: var(--ts-s3); }
+  .st-incident-row { display: flex; align-items: flex-start; gap: var(--ts-s3); }
   .st-incident-dot { margin-top: 7px; flex: none; color: var(--state); }
 
   /* Incident: follow panel */

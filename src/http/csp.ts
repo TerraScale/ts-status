@@ -33,8 +33,9 @@ export function contentSecurityPolicy(options: PolicyOptions = {}): Promise<stri
       [
         "default-src 'none'",
         `style-src ${style}`,
-        `script-src ${script} ${charts}`,
-        ["connect-src 'self'", ...(options.connect ?? [])].join(" "),
+        // Cloudflare injects its Web Analytics beacon into the HTML response.
+        `script-src ${script} ${charts} https://static.cloudflareinsights.com`,
+        ["connect-src 'self'", ...(options.connect ?? []), "https://cloudflareinsights.com"].join(" "),
         "font-src 'self'",
         ...(options.frame ? [`frame-src ${options.frame.join(" ")}`] : []),
         "img-src 'self' data:",

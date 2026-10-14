@@ -178,6 +178,8 @@ describe("app", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("public, max-age=10");
     expect(response.headers.get("content-security-policy")).toMatch(/script-src 'sha256-[^']+'/);
+    expect(response.headers.get("content-security-policy")).toContain("https://static.cloudflareinsights.com");
+    expect(response.headers.get("content-security-policy")).toContain("https://cloudflareinsights.com");
     // Email is down but under maintenance, so only the warning degrades the headline.
     expect(body).toContain("Some systems are degraded");
     expect(body).toContain("Scheduled maintenance");
