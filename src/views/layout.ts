@@ -5,6 +5,7 @@
 import logo from "../assets/logo.svg?raw";
 import { html, raw, type Html } from "../html";
 import styles from "../styles/index.css?inline";
+import { CHART_SCRIPT } from "./chart-client";
 import { CLIENT_SCRIPT, REFRESH_SECONDS } from "./client";
 
 export const STYLES = styles;
@@ -98,6 +99,7 @@ ${page.bare ? "" : top(page)}
 ${page.body}
 ${page.bare ? "" : bottom(year)}
 <script>${raw(CLIENT_SCRIPT)}</script>
+<script>${raw(CHART_SCRIPT)}</script>
 </body>
 </html>`;
 }

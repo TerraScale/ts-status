@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CHART_SCRIPT } from "../chart-client";
 import { niceCeiling, runs, smoothPath } from "./geometry";
 import { lineChart, MAX_COLUMNS } from "./line";
 import { sparkline } from "./sparkline";
@@ -51,7 +52,19 @@ describe("lineChart", () => {
     expect(svg.match(/class="ts-chart-line/g)).toHaveLength(3);
     expect(svg.match(/class="ts-chart-column"/g)).toHaveLength(3);
     expect(svg).toContain('aria-label="p1: US West —, Europe 90 ms"');
-    expect(svg).not.toContain("ts-chart-area");
+    // Flat areas per run, the larger series behind; no gradient.
+    expect(svg.match(/class="ts-chart-area/g)).toHaveLength(3);
+    expect(svg).toContain('class="ts-chart-area ts-cat-2 ts-chart-back"');
+    expect(svg).not.toContain("Gradient");
+  });
+
+  it("carries each column's tooltip as escaped data-tip JSON", () => {
+    const svg = lineChart(options, [{ name: '<b>"x"</b>', values: [1, null, 3] }]).value;
+    const entities: Record<string, string> = { quot: '"', lt: "<", gt: ">", amp: "&" };
+    const unescape = (text: string) => text.replace(/&(quot|lt|gt|amp);/g, (_, name: string) => entities[name] ?? "");
+    const tips = [...svg.matchAll(/data-tip="([^"]*)"/g)].map((match) => JSON.parse(unescape(match[1] ?? "")));
+    expect(svg).not.toContain("<b>");
+    expect(tips[1]).toEqual({ head: "p1", rows: [['<b>"x"</b>', "—", "ts-cat-1"]] });
   });
 
   it("fills the area of a single series and caps hover columns", () => {
@@ -70,5 +83,13 @@ describe("sparkline", () => {
   it("needs two values", () => {
     expect(sparkline([null, 3]).value).toBe("");
     expect(sparkline([1, 3]).value).toContain('class="st-spark"');
+  });
+});
+
+describe("chart script", () => {
+  it("parses and only touches charts through delegated listeners", () => {
+    expect(() => new Function(CHART_SCRIPT)).not.toThrow();
+    expect(CHART_SCRIPT).toContain('document.addEventListener("pointermove"');
+    expect(CHART_SCRIPT).not.toContain("innerHTML");
   });
 });

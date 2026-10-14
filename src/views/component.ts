@@ -68,8 +68,8 @@ export function componentPage(view: Overview, entry: ComponentOverview, details:
   <div class="st-axis" aria-hidden="true"><span>${range} ago</span><span>Now</span></div>`,
   )}
 
-  ${card({ id: "latency", title: "Response time", description: "Median and p95 of the consensus, with deploys marked." }, charts.summary)}
-  ${card({ id: "vantages", title: "From each vantage point", description: "Median response seen from each vantage." }, charts.vantages)}
+  ${card({ id: "latency", title: "Response time", description: "Median and p95 of the consensus, with deploys marked.", actions: rangeSwitch(view.range, base) }, charts.summary)}
+  ${card({ id: "vantages", title: "From each vantage point", description: "Median response seen from each vantage.", actions: rangeSwitch(view.range, base) }, charts.vantages)}
 
   ${card(
     { id: "clusters", title: "Clusters", description: "Every endpoint that serves this component." },

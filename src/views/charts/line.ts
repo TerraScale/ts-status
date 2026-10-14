@@ -1,10 +1,11 @@
-/* A server-rendered line chart: gridlines, axis labels, one path per series
-   (with an area under a single series), and a focusable hover column per
-   sample whose tooltip is drawn in SVG, so it works without scripts. Gaps
-   in a series break its line. */
+/* A server-rendered line chart: gridlines, axis labels, one line and one flat
+   translucent area per series, and a focusable hover column per sample whose
+   tooltip is drawn in SVG, so it works without scripts. Each column also
+   carries its tooltip as data-tip JSON for the chart client script, which
+   swaps the SVG tooltip for a frosted HTML one. Gaps break lines and areas. */
 
 import { html, type Html } from "../../html";
-import { coordinate, hash, niceCeiling, runs, smoothPath } from "./geometry";
+import { coordinate, niceCeiling, runs, smoothPath } from "./geometry";
 
 export interface Series {
   name: string;
@@ -92,8 +93,19 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
   const bottom = TOP + plotHeight;
   const xAt = (index: number) => LEFT + (plotWidth * index) / Math.max(1, count - 1);
   const yAt = (value: number) => TOP + plotHeight * (1 - Math.max(0, value) / scale);
-  const gradient = `st-fill-${hash(options.label)}`;
-  const single = series.length === 1;
+  // Overlapping areas: the largest is drawn first and lighter so smaller ones
+  // keep their color on top; beyond two series every area stays faint.
+  const mean = (values: readonly (number | null)[]) => {
+    const known = values.filter((value): value is number => value !== null);
+    return known.reduce((sum, value) => sum + value, 0) / Math.max(1, known.length);
+  };
+  const order = series
+    .map((entry, seriesIndex) => ({ seriesIndex, mean: mean(entry.values) }))
+    .sort((a, b) => b.mean - a.mean)
+    .map((entry) => entry.seriesIndex);
+  let overlap = "";
+  if (series.length === 2) overlap = " is-overlap";
+  else if (series.length > 2) overlap = " is-many";
 
   const grid = Array.from({ length: 5 }, (_, step) => {
     const y = coordinate(TOP + (plotHeight * step) / 4);
@@ -105,16 +117,19 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
     const anchor = TICK_ANCHORS[step] ?? "middle";
     return html`<text class="ts-chart-axis" x="${coordinate(xAt(index))}" y="${height - 8}" text-anchor="${anchor}">${options.ticks[step] ?? ""}</text>`;
   });
-  const paths = series.map((entry, seriesIndex) =>
-    runs(entry.values).map((run) => {
-      const line = smoothPath(run.map(({ index, value }) => [xAt(index), yAt(value)]));
+  const lineOf = (run: ReturnType<typeof runs>[number]) =>
+    smoothPath(run.map(({ index, value }) => [xAt(index), yAt(value)]));
+  const areas = order.map((seriesIndex, rank) =>
+    runs(series[seriesIndex]?.values ?? []).map((run) => {
       const first = run[0]?.index ?? 0;
       const last = run.at(-1)?.index ?? 0;
-      const area = single
-        ? html`<path class="ts-chart-area" d="${line} L ${coordinate(xAt(last))},${bottom} L ${coordinate(xAt(first))},${bottom} Z" fill="url(#${gradient})"></path>`
-        : "";
-      return html`${area}<path class="ts-chart-line ${category(seriesIndex)}" d="${line}"></path>`;
+      return html`<path class="ts-chart-area ${category(seriesIndex)}${rank === 0 && overlap ? " ts-chart-back" : ""}" d="${lineOf(run)} L ${coordinate(xAt(last))},${bottom} L ${coordinate(xAt(first))},${bottom} Z"></path>`;
     }),
+  );
+  const paths = series.map((entry, seriesIndex) =>
+    runs(entry.values).map(
+      (run) => html`<path class="ts-chart-line ${category(seriesIndex)}" d="${lineOf(run)}"></path>`,
+    ),
   );
 
   const step = Math.max(1, Math.ceil(count / MAX_COLUMNS));
@@ -138,7 +153,8 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
             html`<circle class="ts-chart-dot ${category(seriesIndex)}" cx="${coordinate(x)}" cy="${coordinate(yAt(value))}" r="4"></circle>`,
           ];
     });
-    columns.push(html`<g class="ts-chart-column" tabindex="0" role="img" aria-label="${label}">
+    const data = JSON.stringify({ head: header, rows: rows.map((row) => [row.name, row.value, row.series]) });
+    columns.push(html`<g class="ts-chart-column" tabindex="0" role="img" aria-label="${label}" data-tip="${data}">
   <rect class="ts-chart-hit" x="${coordinate(left)}" y="${TOP}" width="${coordinate(right - left)}" height="${plotHeight}"></rect>
   <line class="ts-chart-guide" x1="${coordinate(x)}" y1="${TOP}" x2="${coordinate(x)}" y2="${bottom}"></line>
   ${dots}
@@ -162,9 +178,8 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
     return html`<g class="st-chart-marker"><line x1="${x}" y1="${TOP}" x2="${x}" y2="${bottom}"></line><text x="${x}" y="${TOP - 3}" text-anchor="${anchor}">${label}</text><title>${label}</title></g>`;
   });
 
-  return html`<svg class="ts-chart" viewBox="0 0 ${WIDTH} ${height}" role="group" aria-label="${options.label}">
-  <defs><linearGradient id="${gradient}" x1="0" y1="0" x2="0" y2="1"><stop class="ts-chart-fill-start" offset="0"></stop><stop class="ts-chart-fill-end" offset="1"></stop></linearGradient></defs>
-  ${grid}${ticks}${markers}${paths}${columns}
+  return html`<svg class="ts-chart" viewBox="0 0 ${WIDTH} ${height}" role="group" aria-label="${options.label}" data-chart>
+  ${grid}${ticks}${markers}<g class="ts-chart-areas${overlap}">${areas}</g>${paths}${columns}
 </svg>`;
 }
 
