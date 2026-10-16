@@ -11,7 +11,7 @@ const clock = new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit"
 const clockSeconds = new Intl.DateTimeFormat("en", { timeStyle: "medium", hourCycle: "h23", timeZone: "UTC" });
 const day = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" });
 const month = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" });
-const monthName = new Intl.DateTimeFormat("en", { month: "long", timeZone: "UTC" });
+const monthName = new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" });
 
 export const HOUR = 3_600_000;
 export const DAY = 24 * HOUR;

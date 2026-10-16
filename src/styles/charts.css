@@ -198,7 +198,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--ts-s2) var(--ts-s4);
-  color: var(--ts-ink-3);
+  color: var(--ts-ink-2);
   font-size: var(--ts-fs-xs);
 }
 
@@ -215,6 +215,17 @@
   background: var(--series, var(--ts-chart-1));
 }
 
+/* Series colours: the direction's three hued chart colours (blue, teal,
+   violet), then two status-local ones for the per-vantage charts (four
+   series). The fourth is neutral ink, never a hue a reader could take for
+   a state (orange and green mean partial outage and operational here); the
+   fifth, beyond the four vantages, borrows the syntax amber. Declared here,
+   layered, so a direction defining more wins. */
+:root {
+  --ts-cat-4: var(--ts-ink-2);
+  --ts-cat-5: var(--ts-syn-number);
+}
+
 .ts-cat-1 {
   --series: var(--ts-cat-1);
 }
@@ -229,15 +240,6 @@
 }
 .ts-cat-5 {
   --series: var(--ts-cat-5);
-}
-.ts-cat-6 {
-  --series: var(--ts-cat-6);
-}
-.ts-cat-7 {
-  --series: var(--ts-cat-7);
-}
-.ts-cat-8 {
-  --series: var(--ts-cat-8);
 }
 
 /* A card's range radios pick one server-rendered chart view; without :has()
@@ -293,6 +295,7 @@
   stroke: var(--ts-chart-1);
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
+  flex: none;
 }
 
 .st-spark path {

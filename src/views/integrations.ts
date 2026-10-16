@@ -82,6 +82,7 @@ export function integrationsPage(view: Overview, origin: string): Page {
   return {
     title: "Integrations · TerraScale Status",
     description: "Feeds, badges, a widget and APIs for TerraScale status.",
+    status: view.status,
     path: null,
     body,
   };

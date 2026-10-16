@@ -37,13 +37,16 @@ const BOTTOM = 32;
 
 /** Series colors in the categorical palette (--ts-cat-1 to 8 in tokens.css).
     Beyond this many series colors repeat, so callers should aggregate first. */
-export const CATEGORIES = 8;
+export const CATEGORIES = 5;
 
 /** The class coloring a series by its index. */
 const category = (seriesIndex: number): string => `ts-cat-${(seriesIndex % CATEGORIES) + 1}`;
 
 /** X-axis label anchors: the ends align inward so labels stay in the chart. */
 const TICK_ANCHORS = ["start", "middle", "middle", "middle", "end"] as const;
+
+/** The width of a marker label's character at its 10px size, in chart units. */
+const MARKER_CHAR = 6;
 
 /** Hover targets rendered per chart; dense series share columns. */
 export const MAX_COLUMNS = 60;
@@ -165,21 +168,29 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
 </g>`);
   }
 
-  // Markers sharing a sample merge into one; labels at the ends align inward.
-  const labels = new Map<number, string[]>();
+  // Markers sharing a sample merge into one label without repeats. Labels
+  // stay inside the plot, and one that would collide with a newer label is
+  // left to its tooltip.
+  const labels = new Map<number, Set<string>>();
   for (const marker of options.markers ?? []) {
     if (marker.index >= 0 && marker.index < count) {
-      labels.set(marker.index, [...(labels.get(marker.index) ?? []), marker.label]);
+      labels.set(marker.index, (labels.get(marker.index) ?? new Set()).add(marker.label));
     }
   }
-  const markers = [...labels].map(([index, list]) => {
-    const x = coordinate(xAt(index));
-    const label = list.join(", ");
-    let anchor = "middle";
-    if (index === 0) anchor = "start";
-    else if (index === count - 1) anchor = "end";
-    return html`<g class="st-chart-marker"><line x1="${x}" y1="${TOP}" x2="${x}" y2="${bottom}"></line><text x="${x}" y="${TOP - 3}" text-anchor="${anchor}">${label}</text><title>${label}</title></g>`;
-  });
+  let free = Infinity; // where the newest label placed so far starts
+  const markers = [...labels]
+    .sort(([a], [b]) => b - a)
+    .map(([index, list]) => {
+      const x = xAt(index);
+      const label = [...list].join(", ");
+      const width = label.length * MARKER_CHAR;
+      const start = Math.max(LEFT, Math.min(x - width / 2, WIDTH - RIGHT - width));
+      const fits = start + width + MARKER_CHAR <= free;
+      if (fits) free = start;
+      return html`<g class="st-chart-marker"><line x1="${coordinate(x)}" y1="${TOP}" x2="${coordinate(x)}" y2="${bottom}"></line>${
+        fits ? html`<text x="${coordinate(start)}" y="${TOP - 3}">${label}</text>` : ""
+      }<title>${label}</title></g>`;
+    });
 
   return html`<svg class="ts-chart" viewBox="0 0 ${WIDTH} ${height}" role="group" aria-label="${options.label}" data-chart>
   ${grid}${ticks}${markers}<g class="ts-chart-areas${overlap}">${areas}</g>${paths}${columns}

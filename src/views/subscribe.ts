@@ -36,7 +36,7 @@ export function subscribeForm(form: SubscribeForm): Page {
   return shell(
     "Subscribe",
     html`${head("Stay informed", "Subscribe to updates", "Every incident update and maintenance window, as it is posted. Automatic incidents are only sent once they have lasted five minutes.")}
-  ${form.error ? html`<article class="ts-alert" data-state="major_outage" role="alert"><p class="ts-alert-body">${form.error}</p></article>` : ""}
+  ${form.error ? html`<article class="ts-alert" data-state="outage" role="alert"><p class="ts-alert-body">${form.error}</p></article>` : ""}
   ${card(
     { id: "subscribe", title: "Where to send them" },
     html`<form class="st-form" method="post" action="/subscribe">
@@ -49,7 +49,7 @@ export function subscribeForm(form: SubscribeForm): Page {
     <fieldset class="st-choices st-components"><legend>Components <span class="ts-meta">(none selected: all of them)</span></legend>
       ${form.components.map(
         (component) =>
-          html`<label class="st-choice"><input type="checkbox" name="components" value="${component.id}"${chosen.has(component.id) ? raw(" checked") : ""}> ${component.name}${component.lifecycle === "planned" ? html` <span class="ts-meta">(coming soon)</span>` : ""}</label>`,
+          html`<label class="st-choice"><input type="checkbox" name="components" value="${component.id}"${chosen.has(component.id) ? raw(" checked") : ""}> <span>${component.name}${component.lifecycle === "planned" ? html` <span class="ts-meta">(coming soon)</span>` : ""}</span></label>`,
       )}
     </fieldset>
     <label class="st-honeypot" aria-hidden="true">Leave this empty <input name="website" tabindex="-1" autocomplete="off"></label>

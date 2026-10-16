@@ -68,7 +68,7 @@ export function regionPage(view: Overview, entry: RegionOverview, details: Detai
       description: "Incidents affecting the region's components in the last 90 days.",
     },
     details.incidents.length === 0
-      ? empty("No incidents", `No incident affected ${entry.name} in the last 90 days.`)
+      ? empty("No incidents", `No incident affected ${entry.name} in the last 90 days.`, "circle-check")
       : html`<ul class="ts-list">${details.incidents.map((incident) => incidentItem(incident, now, names))}</ul>`,
   )}
 </main>`;
@@ -76,6 +76,7 @@ export function regionPage(view: Overview, entry: RegionOverview, details: Detai
   return {
     title: `${entry.name} · TerraScale Status`,
     description: `Live status and latency of the ${entry.name} region.`,
+    status: view.status,
     path: null,
     body,
     live: true,

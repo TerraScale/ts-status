@@ -3,9 +3,22 @@
    the 90-day platform history, and recently resolved incidents. */
 
 import regionMap from "../assets/region-map.svg?raw";
+import { median } from "../domain/consensus";
 import { byHour, RANGES } from "../domain/range";
 import { vantageLabel, type Coverage, type VantageCoverage, type VantageState } from "../domain/coverage";
-import { COMING_SOON, HEADLINES, STATES, STATE_LABELS, type TimelineState } from "../domain/status";
+import {
+  aggregate,
+  COMING_SOON,
+  HEADLINES,
+  probeUptime,
+  stateAttr,
+  STATES,
+  STATE_LABELS,
+  sumCounts,
+  type Bucket,
+  type Status,
+  type TimelineState,
+} from "../domain/status";
 import { formatClock, formatDay, formatUptime } from "../format";
 import { html, raw, type Html } from "../html";
 import {
@@ -39,12 +52,22 @@ import {
   time,
   zone,
 } from "./components";
+import { icon, type IconName } from "./icons";
 import type { Page } from "./layout";
 import { maintenanceItems } from "./maintenance";
 
 const REGION_ORDER: Record<string, number> = { gru: 0, fra: 1, sjc: 2 };
 
 const LEGEND: TimelineState[] = [...STATES, "none"];
+
+/** The icon in the status banner's ring. */
+const HERO_ICONS: Record<Status, IconName> = {
+  operational: "circle-check",
+  maintenance: "clock",
+  degraded: "triangle-alert",
+  partial_outage: "triangle-alert",
+  major_outage: "triangle-alert",
+};
 
 const lower = (state: TimelineState): string => STATE_LABELS[state].toLowerCase();
 
@@ -93,6 +116,22 @@ function group(entry: GroupOverview, view: Overview) {
 export const regionLabel = (entry: RegionOverview): string =>
   entry.clusters.length === 0 ? COMING_SOON : (entry.note ?? STATE_LABELS[entry.status]);
 
+/** A region's bars: each bucket in its clusters' combined state, carrying
+    their summed counts. */
+function regionBars(entry: RegionOverview): Bucket[] {
+  return (entry.clusters[0]?.bars ?? []).map((bucket, index) => {
+    const parts = entry.clusters.flatMap((cluster) => cluster.bars[index] ?? []);
+    return {
+      ...bucket,
+      state: aggregate(parts.map((part) => part.state)),
+      counts: sumCounts(parts.flatMap((part) => part.counts ?? [])),
+    };
+  });
+}
+
+/** A region as one row (code, name, provider, uptime, state) over its bars,
+    with its clusters folded below, so the page lists every region without
+    repeating every component's bars for each. */
 function region(entry: RegionOverview, view: Overview) {
   const planned = entry.clusters.length === 0;
   return html`<section class="st-region" aria-labelledby="region-${entry.code}">
@@ -110,7 +149,11 @@ function region(entry: RegionOverview, view: Overview) {
   ${
     planned
       ? html`<p class="ts-meta">No clusters serve this region yet.</p>`
-      : html`<ul class="ts-list">${entry.clusters.map((item) => clusterRow(item, view.range))}</ul>`
+      : html`${bars(list, { label: summary })}
+  <details class="st-region-clusters" id="region-${entry.code}">
+    <summary>${icon("chevron-right", "ts-icon-sm st-region-chevron")}${clusters}</summary>
+    <ul class="ts-list">${entry.clusters.map((item) => clusterRow(item, view.range))}</ul>
+  </details>`
   }
 </section>`;
 }
@@ -137,7 +180,7 @@ function map(view: Overview) {
       const ping = entry.vantagePings[vantage.code] ?? null;
       const cardData = JSON.stringify({ rows: [["Latest", ms(ping)]] });
       return [
-        html`<g class="st-arc" data-state="${ping === null ? "none" : entry.status}" tabindex="0" role="img" aria-label="${named(vantage)} to ${entry.name}: latest ${ms(ping)}" data-title="${named(vantage)} → ${entry.name}" data-card="${cardData}">
+        html`<g class="st-arc" data-state="${stateAttr(ping === null ? "none" : entry.status)}" tabindex="0" role="img" aria-label="${named(vantage)} to ${entry.name}: latest ${ms(ping)}" data-title="${named(vantage)} → ${entry.name}" data-card="${cardData}">
     <path class="st-arc-line" d="${d}"></path><path class="st-arc-hit" d="${d}"></path>
   </g>`,
       ];
@@ -172,7 +215,7 @@ function map(view: Overview) {
             ]),
           ],
     });
-    return html`<g class="st-hub" data-state="${entry.status}"${planned ? raw(' data-lifecycle="planned"') : ""} transform="translate(${entry.mapX} ${entry.mapY})" tabindex="0" role="img" aria-label="${entry.name}: ${regionLabel(entry).toLowerCase()}" data-title="${entry.code} · ${entry.name}" data-card="${cardData}">
+    return html`<g class="st-hub" data-state="${stateAttr(entry.status)}"${planned ? raw(' data-lifecycle="planned"') : ""} transform="translate(${entry.mapX} ${entry.mapY})" tabindex="0" role="img" aria-label="${entry.name}: ${regionLabel(entry).toLowerCase()}" data-title="${entry.code} · ${entry.name}" data-card="${cardData}">
     <circle class="st-hub-pulse" r="2.4"></circle><circle class="st-hub-ring" r="2.4"></circle><circle r="1.1"></circle>
     <text x="3" y="1.1">${entry.code}</text>
   </g>`;
@@ -188,12 +231,19 @@ function map(view: Overview) {
 </figure>`;
 }
 
-/** Median response time per component over the range. */
+/** Median response time per component group over the range: one line per
+    group keeps the chart readable in a few series colours, while every
+    component's own trend stays in its row's sparkline. */
 function responseTimes(view: Overview): Html {
-  const components = view.groups
-    .flatMap((entry) => entry.components)
-    .filter((entry) => entry.lifecycle === "active" && entry.latency.some((value) => value !== null));
-  const first = components[0];
+  const groups = view.groups
+    .map((entry) => ({
+      name: entry.name,
+      components: entry.components.filter(
+        (item) => item.lifecycle === "active" && item.latency.some((value) => value !== null),
+      ),
+    }))
+    .filter((entry) => entry.components.length > 0);
+  const first = groups[0]?.components[0];
   if (!first) return html``;
   const hourly = byHour(view.range);
   const name = (start: number) => (hourly ? `${formatDay(start)} ${formatClock(start)} UTC` : formatDay(start));
@@ -203,6 +253,12 @@ function responseTimes(view: Overview): Html {
     const bucket = tickAt(step);
     return bucket ? name(bucket.start) : "";
   });
+  const series = groups.map((entry) => ({
+    name: entry.name,
+    values: first.bars.map((_, index) =>
+      median(entry.components.flatMap((item) => (item.latency[index] == null ? [] : [item.latency[index]]))),
+    ),
+  }));
   return card(
     {
       id: "latency",
@@ -218,9 +274,9 @@ function responseTimes(view: Overview): Html {
         points,
         format: (value) => `${Math.round(value)} ms`,
       },
-      components.map((entry) => ({ name: entry.name, values: entry.latency })),
+      series,
     )}
-  ${chartLegend(components.map((entry) => entry.name))}`,
+  ${chartLegend(series.map((entry) => entry.name))}`,
   );
 }
 
@@ -296,7 +352,7 @@ export function homePage(view: Overview): Page {
   <section class="st-hero" data-state="${view.status}" aria-labelledby="st-headline">
     <span class="st-hero-mark" aria-hidden="true"><span class="ts-dot"></span></span>
     <div class="st-hero-copy">
-      <p class="ts-eyebrow">Current status</p>
+      <p class="ts-label st-hero-label">Current status</p>
       <h1 class="st-title" id="st-headline">${headline}</h1>
       <p class="ts-meta">${
         view.monitoring.lastRoundAt === null
@@ -421,6 +477,7 @@ export function homePage(view: Overview): Page {
   return {
     title,
     description: "Live operational status for TerraScale services and regions.",
+    status: view.status,
     path: "/",
     body,
     live: true,

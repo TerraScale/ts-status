@@ -6,11 +6,24 @@
   flex: 1;
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
-  gap: var(--ts-s8);
+  gap: var(--ts-s12);
   width: 100%;
   max-width: var(--st-width);
   margin-inline: auto;
   padding: var(--ts-s8) var(--ts-s10) var(--ts-s12);
+}
+
+/* The label voice of the direction: eyebrows, stat labels, table headers
+   and group titles. */
+.ts-eyebrow,
+.ts-label {
+  font-family: var(--ts-label-font);
+  font-size: var(--ts-label-size);
+  font-weight: var(--ts-label-weight);
+  line-height: 16px;
+  letter-spacing: var(--ts-label-tracking);
+  text-transform: var(--ts-label-case);
+  color: var(--ts-ink-3);
 }
 
 .ts-eyebrow {
@@ -45,7 +58,7 @@
 
 .ts-strong {
   color: var(--ts-ink);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .ts-num {
@@ -59,7 +72,7 @@
 
 @media (max-width: 47.99rem) {
   .ts-page {
-    gap: var(--ts-s6);
-    padding: var(--ts-s5) var(--ts-s4) var(--ts-s10);
+    gap: var(--ts-s8);
+    padding: var(--ts-s6) var(--ts-s4) var(--ts-s10);
   }
 }

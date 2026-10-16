@@ -7,6 +7,7 @@ import { html, raw, type Html } from "../html";
 import styles from "../styles/index.css?inline";
 import { CHART_SCRIPT } from "./chart-client";
 import { CLIENT_SCRIPT, REFRESH_SECONDS } from "./client";
+import { icon } from "./icons";
 
 export const STYLES = styles;
 
@@ -39,8 +40,17 @@ export interface Page {
   live?: boolean;
   /** Only the page itself, without the top bar and footer (the widget). */
   bare?: boolean;
+  /** The overall status, for the footer's live status link. */
+  status?: Status;
 }
 
+function links(page: Page): Html {
+  return html`${NAV.map((item) => html`<a href="${item.href}"${page.path === item.href ? raw(' aria-current="page"') : ""}>${item.label}</a>`)}`;
+}
+
+/* The sticky, frosted top bar. Wide screens show the page links inline;
+   phones fold them into a menu that works without scripts. The time zone
+   control needs the client script, so it starts hidden. */
 function top(page: Page): Html {
   return html`<a class="ts-skip-link" href="#main">Skip to main content</a>
 <header class="st-top">
@@ -62,7 +72,9 @@ function top(page: Page): Html {
 </header>`;
 }
 
-function bottom(year: number): Html {
+/* The footer: logo, links, and the live status link every TerraScale app
+   carries (a pulsing state dot and the headline). */
+function bottom(page: Page, year: number): Html {
   return html`<div id="st-live" class="ts-sr-only" aria-live="polite"></div>
 <footer class="st-foot">
   <div class="st-frame">
@@ -79,9 +91,11 @@ function bottom(year: number): Html {
 </footer>`;
 }
 
+/** The page document. ts-status is dark only: data-theme="dark" picks the
+    dark values of whichever design tokens file is in place. */
 export function document(page: Page, year: number): Html {
   return html`<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -98,7 +112,7 @@ ${page.live ? html`<noscript><meta http-equiv="refresh" content="${REFRESH_SECON
 <body>
 ${page.bare ? "" : top(page)}
 ${page.body}
-${page.bare ? "" : bottom(year)}
+${page.bare ? "" : bottom(page, year)}
 <script>${raw(CLIENT_SCRIPT)}</script>
 <script>${raw(CHART_SCRIPT)}</script>
 </body>

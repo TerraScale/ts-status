@@ -29,7 +29,11 @@ html {
   color: var(--ts-ink);
   font-family: var(--ts-font-sans);
   font-size: var(--ts-fs-md);
-  line-height: 1.55;
+  line-height: var(--ts-lh);
+  font-feature-settings:
+    "liga" 1,
+    "calt" 1;
+  accent-color: var(--ts-accent);
   -webkit-text-size-adjust: 100%;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -85,12 +89,20 @@ a:hover {
 }
 
 ::selection {
-  background: color-mix(in oklab, var(--ts-accent) 40%, transparent);
+  background: var(--ts-accent-soft);
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--ts-font-mono);
 }
 
 :focus-visible {
   outline: 2px solid var(--ts-focus);
   outline-offset: 2px;
+  border-radius: var(--ts-radius-sm);
 }
 
 * {
@@ -117,13 +129,56 @@ a:hover {
   z-index: var(--ts-z-tooltip);
   padding: var(--ts-s2) var(--ts-s4);
   border-radius: var(--ts-radius);
-  background: var(--ts-accent);
-  color: #ffffff;
+  background: var(--ts-accent-fill);
+  color: var(--ts-on-accent);
   transform: translateY(-200%);
 }
 
 .ts-skip-link:focus {
   transform: none;
+}
+
+/* The shared status contract: data-state sets --state, read by dots,
+   badges, bars, alerts, the banner, map hubs and the heatmap. Views map the
+   stored partial_outage and major_outage to "partial" and "outage". */
+[data-state] {
+  --state: var(--ts-ink-3);
+}
+[data-state="operational"] {
+  --state: var(--ts-success);
+}
+[data-state="maintenance"] {
+  --state: var(--ts-info);
+}
+[data-state="degraded"] {
+  --state: var(--ts-warning);
+}
+[data-state="partial"] {
+  --state: var(--ts-severe);
+}
+[data-state="outage"] {
+  --state: var(--ts-danger);
+}
+
+/* Inline Lucide icons take the text colour; 16px by default. */
+.ts-icon {
+  flex: none;
+  width: var(--ts-icon);
+  height: var(--ts-icon);
+}
+
+.ts-icon-sm {
+  width: var(--ts-icon-sm);
+  height: var(--ts-icon-sm);
+}
+
+.ts-icon-lg {
+  width: var(--ts-icon-lg);
+  height: var(--ts-icon-lg);
+}
+
+.ts-mono {
+  font-family: var(--ts-font-mono);
 }
 
 @media (prefers-reduced-motion: reduce) {

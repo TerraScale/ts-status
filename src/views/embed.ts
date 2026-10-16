@@ -2,7 +2,7 @@
    component, sized for an iframe on another site. It refreshes in place
    like the status page, and links open the full page in a new tab. */
 
-import { HEADLINES } from "../domain/status";
+import { HEADLINES, stateAttr } from "../domain/status";
 import { html } from "../html";
 import type { Overview } from "../overview";
 import { statusBadge } from "./components";
@@ -11,7 +11,7 @@ import type { Page } from "./layout";
 export function embedPage(view: Overview, origin: string): Page {
   const components = view.groups.flatMap((group) => group.components).filter((entry) => entry.lifecycle === "active");
   const body = html`<main id="main" class="st-embed" data-live data-title="${HEADLINES[view.status]} · TerraScale Status">
-  <a class="st-embed-head" href="${origin}/" target="_blank" rel="noopener" data-state="${view.status}">
+  <a class="st-embed-head" href="${origin}/" target="_blank" rel="noopener" data-state="${stateAttr(view.status)}">
     <span class="ts-dot" aria-hidden="true"></span>
     <span class="ts-strong">${HEADLINES[view.status]}</span>
     <span class="ts-meta">TerraScale Status ↗</span>

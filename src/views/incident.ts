@@ -16,7 +16,19 @@ import {
 import { formatClock, formatDay, formatDuration } from "../format";
 import { html, raw, type Html } from "../html";
 import { chartLegend, lineChart } from "./charts/line";
-import { affected, bars, badge, card, empty, incidentBadge, STATUS_TEXT, time, timing, zone } from "./components";
+import {
+  affected,
+  bars,
+  badge,
+  card,
+  empty,
+  incidentBadge,
+  STATUS_TEXT,
+  statusState,
+  time,
+  timing,
+  zone,
+} from "./components";
 import type { Page } from "./layout";
 
 const KINDS = { incident: "Incident", warning: "Warning", maintenance: "Maintenance" } as const;
@@ -63,7 +75,7 @@ export function latency(detail: IncidentDetail): { chart: Html; picker: Html } {
           .map((point) => [Date.parse(point.start), point.latencyMs] as const),
       );
       return {
-        name: `${endpoint.componentId} · ${endpoint.cluster}`,
+        name: `${names.get(endpoint.componentId) ?? endpoint.componentId} · ${endpoint.cluster}`,
         values: points.map((at) => values.get(at) ?? null),
       };
     })

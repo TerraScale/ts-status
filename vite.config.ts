@@ -29,7 +29,7 @@ export default defineConfig({
     printWidth: 120,
     // Template whitespace is rendered output, so html`` stays as written.
     embeddedLanguageFormatting: "off",
-    // Human-owned rule files.
-    ignorePatterns: ["AGENTS.md", "CLAUDE.md"],
+    // Human-owned rule files, and the design system's generated tokens file (kept verbatim).
+    ignorePatterns: ["AGENTS.md", "CLAUDE.md", "src/styles/tokens.css"],
   },
 });

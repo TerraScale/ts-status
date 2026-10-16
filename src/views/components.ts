@@ -6,12 +6,14 @@ import { html, raw, type Html } from "../html";
 import type { ClusterOverview } from "../overview";
 import { EXPIRY_WARNING_MS } from "../probe/tls";
 import { sparkline } from "./charts/sparkline";
+import { icon, type IconName } from "./icons";
 import { percentile } from "../domain/histogram";
 import {
   IMPACT_STATUS,
   maintenancePhase,
   probeUptime,
   STATE_LABELS,
+  stateAttr,
   type Bucket,
   type Incident,
   type MaintenancePhase,
@@ -50,28 +52,32 @@ export function card(props: CardProps, body: Html): Html {
 </section>`;
 }
 
-export function stat(label: string, value: string, detail?: string): Html {
+export function stat(label: string, value: string, detail?: string, unit?: string): Html {
   return html`<div class="ts-stat">
   <dt class="ts-stat-label">${label}</dt>
-  <dd class="ts-stat-value">${value}</dd>
+  <dd class="ts-stat-value">${value}${unit ? html`<span class="ts-stat-unit">${unit}</span>` : ""}</dd>
   ${detail ? html`<dd class="ts-stat-detail">${detail}</dd>` : ""}
 </div>`;
 }
 
 export function statusBadge(state: TimelineState, text: string = STATE_LABELS[state]): Html {
-  return html`<span class="ts-badge" data-state="${state}"><span class="ts-dot" aria-hidden="true"></span>${text}</span>`;
+  return html`<span class="ts-badge" data-state="${stateAttr(state)}"><span class="ts-dot" aria-hidden="true"></span>${text}</span>`;
 }
 
 export function badge(text: string, state?: TimelineState): Html {
   return state
-    ? html`<span class="ts-badge" data-state="${state}">${text}</span>`
+    ? html`<span class="ts-badge" data-state="${stateAttr(state)}">${text}</span>`
     : html`<span class="ts-badge">${text}</span>`;
 }
 
-export function empty(title: string, detail: string): Html {
+/** An empty state: an icon tile, a title, one line and an optional action.
+    The check icon means all clear, so its tile takes the success tint. */
+export function empty(title: string, detail: string, glyph: IconName = "info", action?: Html): Html {
   return html`<div class="ts-empty" role="status">
+  <span class="ts-empty-icon"${glyph === "circle-check" ? raw(' data-state="operational"') : ""} aria-hidden="true">${icon(glyph)}</span>
   <p class="ts-empty-title">${title}</p>
   <p class="ts-empty-detail">${detail}</p>
+  ${action ?? ""}
 </div>`;
 }
 
@@ -128,7 +134,7 @@ export function bars<T extends Bucket>(list: readonly T[], options: BarsOptions<
     const state = STATE_LABELS[bucket.state];
     const span = bucket.end - bucket.start >= DAY ? "day" : "hour";
     const card = JSON.stringify(options.card?.(bucket) ?? { rows: probeRows(bucket.counts) });
-    return html`<li data-state="${bucket.state}" data-from="${bucket.start}" data-to="${bucket.end}" data-span="${span}" data-label="${state}" data-when="${when(bucket)}" data-tip="${when(bucket)} · ${state}" data-card="${card}"></li>`;
+    return html`<li data-state="${stateAttr(bucket.state)}" data-from="${bucket.start}" data-to="${bucket.end}" data-span="${span}" data-label="${state}" data-when="${when(bucket)}" data-tip="${when(bucket)} · ${state}" data-card="${card}"></li>`;
   });
   return html`<ol class="st-bars${options.large ? " st-bars-lg" : ""}" role="img" tabindex="0" data-strip aria-label="${options.label}">${cells}</ol>`;
 }
@@ -136,7 +142,7 @@ export function bars<T extends Bucket>(list: readonly T[], options: BarsOptions<
 export function legend(states: readonly TimelineState[]): Html {
   return html`<ul class="st-legend" aria-label="Legend">${states.map(
     (state) =>
-      html`<li data-state="${state}"><span class="ts-dot" aria-hidden="true"></span>${STATE_LABELS[state]}</li>`,
+      html`<li data-state="${stateAttr(state)}"><span class="ts-dot" aria-hidden="true"></span>${STATE_LABELS[state]}</li>`,
   )}</ul>`;
 }
 
@@ -156,16 +162,20 @@ const PHASE_STATE: Record<MaintenancePhase, TimelineState> = {
   completed: "operational",
 };
 
+/** The state an incident status is colored in: closed is operational,
+    maintenance is blue, and anything open carries the incident's impact. */
+export function statusState(incident: Incident, status: string): TimelineState {
+  if (status === "resolved" || status === "completed") return "operational";
+  return incident.kind === "maintenance" ? "maintenance" : IMPACT_STATUS[incident.impact];
+}
+
 /** An incident's status text and the state coloring its badge. */
 export function incidentBadge(incident: Incident, now: number): Html {
   if (incident.kind === "maintenance") {
     const phase = maintenancePhase(incident, now);
     return badge(STATUS_TEXT[phase], PHASE_STATE[phase]);
   }
-  return badge(
-    STATUS_TEXT[incident.status],
-    incident.status === "resolved" ? "operational" : IMPACT_STATUS[incident.impact],
-  );
+  return badge(STATUS_TEXT[incident.status], statusState(incident, incident.status));
 }
 
 /** The labels beside an incident's title. */
@@ -201,10 +211,10 @@ export function affected(incident: Incident, names: ReadonlyMap<string, string>)
 /** An active incident as an alert, colored by its impact. */
 export function incidentAlert(incident: Incident, now: number, names: ReadonlyMap<string, string>): Html {
   const state = incident.kind === "maintenance" ? "maintenance" : IMPACT_STATUS[incident.impact];
-  return html`<article class="ts-alert" data-state="${state}">
-  <div class="ts-row-between">
+  return html`<article class="ts-alert st-linked" data-state="${stateAttr(state)}">
+  <div class="ts-row">
     <h3 class="ts-alert-title"><a class="st-incident-link" href="${incidentHref(incident.id)}">${incident.kind === "warning" ? "Warning: " : ""}${incident.title}</a></h3>
-    <div class="ts-row">${labels(incident, now)}</div>
+    ${labels(incident, now)}
   </div>
   <p class="ts-alert-body">${incident.message}</p>
   <p class="ts-meta">${affected(incident, names)} · ${timing(incident)}</p>

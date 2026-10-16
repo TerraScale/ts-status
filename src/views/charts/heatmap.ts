@@ -2,7 +2,7 @@
    day's state. Like a bar strip it is one focusable image whose cells the
    arrow keys walk, each opening a hover card. */
 
-import { STATE_LABELS, type Bucket } from "../../domain/status";
+import { STATE_LABELS, stateAttr, type Bucket } from "../../domain/status";
 import { bucketStarts } from "../../domain/range";
 import { DAY, formatDay, startOfDay } from "../../format";
 import { html, type Html } from "../../html";
@@ -31,7 +31,7 @@ export function heatmap(days: readonly Bucket[], label: string, card: (day: Buck
     const x = LEFT + Math.floor(slot / 7) * (CELL + GAP);
     const y = TOP + (slot % 7) * (CELL + GAP);
     const state = STATE_LABELS[day.state];
-    return html`<rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="2" data-state="${day.state}" data-when="${formatDay(day.start)}" data-label="${state}" data-card="${JSON.stringify(card(day))}"><title>${formatDay(day.start)}: ${state}</title></rect>`;
+    return html`<rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="2" data-state="${stateAttr(day.state)}" data-when="${formatDay(day.start)}" data-label="${state}" data-card="${JSON.stringify(card(day))}"><title>${formatDay(day.start)}: ${state}</title></rect>`;
   });
   const months = days.flatMap((day, index) => {
     // Label each month's first day, and a partial first month only when it

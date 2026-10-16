@@ -8,7 +8,9 @@
 export const REFRESH_SECONDS = 30;
 
 export const CLIENT_SCRIPT = `(() => {
-  document.documentElement.dataset.js = "";
+  const root = document.documentElement;
+  root.dataset.js = "";
+
   const storageKey = "ts-status-time-zone";
   const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const isZone = (zone) => {
@@ -65,8 +67,10 @@ export const CLIENT_SCRIPT = `(() => {
   if (select && Intl.supportedValuesOf) {
     const zones = Intl.supportedValuesOf("timeZone");
     if (!zones.includes("UTC")) zones.unshift("UTC");
+    // The automatic choice names only the local city, so the control stays small.
+    const city = browserZone.split("/").pop().replaceAll("_", " ");
     select.append(
-      new Option("Auto (" + browserZone.replaceAll("_", " ") + ")", ""),
+      new Option(city, ""),
       ...zones.map((name) => new Option(name.replaceAll("_", " "), name)),
     );
     select.value = stored();
@@ -198,7 +202,10 @@ export const CLIENT_SCRIPT = `(() => {
   document.addEventListener("focusin", (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
+    // A tap focuses the strip too; only keyboard focus opens its newest cell,
+    // or the tap's own click would close the card it just opened.
     if (target.matches("[data-strip]")) {
+      if (!target.matches(":focus-visible")) return;
       const cells = target.children;
       const active = target.querySelector(".is-active");
       show(active || cells[cells.length - 1], true);
@@ -302,6 +309,10 @@ export const CLIENT_SCRIPT = `(() => {
       const focusable = "a[href], button, input, select, [tabindex]";
       const page = document.querySelector("main");
       const position = [...page.querySelectorAll(focusable)].indexOf(document.activeElement);
+      // Sections the visitor opened stay open.
+      for (const open of page.querySelectorAll("details[open][id]")) {
+        next.querySelector("#" + CSS.escape(open.id))?.setAttribute("open", "");
+      }
       hide();
       page.replaceWith(next);
       ago();

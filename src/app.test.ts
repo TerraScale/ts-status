@@ -525,6 +525,8 @@ describe("app", () => {
     expect(body).toContain("Slow &lt;queries&gt;");
     expect(body).toContain("Looking into it.");
     expect(body.indexOf("We are watching it.")).toBeLessThan(body.indexOf("Looking into it."));
+    // Updates of an open minor incident carry its impact's colour.
+    expect(body.match(/<li class="st-timeline-item" data-state="degraded">/g)).toHaveLength(2);
     expect(body).toContain("All components");
     expect((await app.fetch(request("/incidents/nope"), seededEnv(), ctx)).status).toBe(404);
   });
