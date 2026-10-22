@@ -1,28 +1,31 @@
 name: CI
 
+# Docs-only changes run nothing; Cloudflare Workers Builds deploys main.
 "on":
   pull_request:
+    paths-ignore: &docs ['**.md', 'docs/**', 'skills/**', 'LICENSE', '.github/workflows/codeql.yml', '.github/dependabot.yml']
   push:
     branches: [main]
+    paths-ignore: *docs
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: npm
       - run: npm ci
       - run: npm run check
