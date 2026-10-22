@@ -2,9 +2,9 @@
 
 Use this repo skill when the human asks to publish, update or resolve a
 TerraScale incident or warning, or to schedule maintenance. Use the admin page,
-https://status.terrascale.tech/admin; its password is in
-`~/.config/terrascale/ts-status-admin.txt` on delta, mariogk-dev and beta.
-Never print it. Component status itself is measured and needs no edits.
+https://status.terrascale.tech/admin; sign in through ts-auth with owner or
+admin membership in the TerraScale organization. Component status itself
+is measured and needs no edits.
 
 ## Model
 
