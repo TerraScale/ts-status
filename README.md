@@ -19,15 +19,15 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 - **30-second rounds.** A single coordinator Durable Object, next to the D1 primary, runs a round on every half minute through the vantage Durable Objects and stores one sample per endpoint.
 - **Consensus.** A round needs two answering vantages; an endpoint is down only when most of them fail, degraded when some do or it is slower than 1.5 s, and shown down only after two down rounds in a row. A vantage that does not answer is left out, never counted as a failure. An endpoint's `blocked_status` names a status something in front of the service is known to refuse the probe with: that result is a probe error ("Probe blocked"), also left out.
 - **Coverage.** Separately from service health, the page and API report which vantages answered the latest round and where they ran. Fewer than two answers means HTTP checks cannot decide (insufficient coverage); a missing, unproven or out-of-area vantage means degraded coverage. Neither is shown as a service outage.
-- **Fly regions.** TerraBase (`https://api.terrascale.tech`, Fly app `ts-terrabase`) and ts-auth (`https://auth.terrascale.tech`) run one machine in every Fly region: gru (São Paulo), sjc (San Francisco Bay Area) and fra (Frankfurt) today. Each regional endpoint pins its region with the `fly-prefer-region` header, and the readiness checks require the answer's `region` to match, so a region whose machine is gone fails instead of being answered by another region.
+- **OCI placement.** TerraBase (`https://api.terrascale.tech`), ts-auth (`https://auth.terrascale.tech`) and the dashboard (`https://dash.terrascale.tech`) run in OCI gru under ts-orch, with GHCR images and OCI Vault secrets read via instance principal. Status stays on Cloudflare Workers + D1. Public origins select the service; there is no regional routing header. Existing regional readiness and replication assertions are retained: a response without the matching `region` fails, and the SJC/FRA entries do not prove those regions serve. Never invent regional hostnames.
 - **Deep checks.** Besides answering, an endpoint can be required to return an expected status, contain a keyword, or satisfy JSON assertions:
   - TerraBase and ts-auth readiness: `GET /readyz` must return `200 {"status":"ready","version":…,"region":"gru"}`; the version is recorded, so deploys show on the latency charts.
-  - Data API: an unauthenticated `GET /v1/projects/{project}/databases/{database}/collections/{collection}/documents/{id}` must answer `401 invalid_key`, which proves the request reached the document handler in that region.
+  - Data API: an unauthenticated `GET /v1/projects/{project}/databases/{database}/collections/{collection}/documents/{id}` must answer `401 invalid_key`, which proves the request reached the public document handler; this check does not prove regional placement.
   - Authentication: the platform tenant's OIDC discovery at `https://auth.terrascale.tech/terrascale/.well-known/openid-configuration` must name the issuer `https://auth.terrascale.tech/terrascale` and a JWKS. Every tenant has its own issuer at `/<tenant>`.
   - Documentation (`https://docs.terrascale.tech`) and the website (`https://terrascale.tech`) must answer 2xx; the website must mention TerraScale.
   - Email: Cloudflare Email Sending has no health endpoint, so its component on Cloudflare's status page is read instead. That check is `indirect`: when the status page cannot be reached the result is unknown, not down.
 - **Pending launch.** An endpoint counts only from its first passing round (`live_since`). Until then it shows "Pending launch" in grey, opens no incident and adds nothing to uptime, so a service that is not live yet never looks like an outage. Rounds before the launch are left out of the rollups.
-- **Canaries.** The Data API canary (`DATA_API_CANARY`) writes each round's marker into a dedicated canary document and reads it back; the Document API probes (`TERRABASE_PROBES`) write, read, query and delete a canary document in each region. Both secrets are JSON keyed by endpoint ULID with the origin (`https://api.terrascale.tech`), the Fly `region`, and a project-scoped key restricted to the canary database. An endpoint the secret does not name shows "Not configured" and counts toward nothing; a malformed entry, a timeout (5 seconds per request) or a failed write fails the round.
+- **Canaries.** The Data API canary (`DATA_API_CANARY`) writes each round's marker into a dedicated canary document and reads it back; the Document API probes (`TERRABASE_PROBES`) write, read, query and delete a canary document at each configured origin. Both secrets are JSON keyed by endpoint ULID with the origin (`https://api.terrascale.tech`), the deployment `region`, and a project-scoped key restricted to the canary database. An endpoint the secret does not name shows "Not configured" and counts toward nothing; a malformed entry, a timeout (5 seconds per request) or a failed write fails the round.
 - **TLS expiry.** A Worker cannot see a served certificate, so once an hour the cron refreshes, from certificate transparency logs (Cert Spotter), the latest valid certificate of every monitored host not checked in a day (indirect sources such as Cloudflare's status page are skipped). A latest certificate expiring within two weeks means renewal has stalled: the page warns, and cluster rows show every host's expiry.
 - **Automatic incidents.** After every round the coordinator steps a state machine per component: down for a minute (or degraded for ten) opens an incident with its timeline, a worse state raises its impact, passing checks move it to monitoring, and five healthy minutes resolve it. Maintenance windows suppress it, and incidents operators take over in the admin page are left alone.
 - **Rollups.** The minute cron rebuilds hourly rollups (per vantage and for the consensus, with latency histograms) from the samples and daily rollups from the hours. Samples are kept 48 hours, hours 90 days and days 400 days.
@@ -59,6 +59,8 @@ Every entity ID is a plain, canonical uppercase 26-character Crockford ULID. `sr
 
 `schema.sql` is the idempotent clean bootstrap (one SQL statement per line for D1 `exec`); historical data migrations are removed. Fresh stores recreate the schema and catalog before serving requests or running scheduled probes. Repeated startup preserves incidents, subscriptions and catalog edits made in the admin page. Seeded catalog IDs are fixed ULIDs; the admin page shows every component and endpoint ID. Probe secrets are keyed by endpoint ULID.
 
+Existing stores normalize retired providers to `other` (the existing self-hosted value), remove obsolete affinity headers and update the replication URL during bootstrap. Endpoint IDs, history, other headers, assertions and custom URLs, labels and descriptions are preserved; no table is rebuilt.
+
 Production uses the D1 store `ts-status` (`c2eca5bc-6045-4983-941a-4e01e4e0c749`).
 
 ## Catalog
@@ -67,17 +69,17 @@ Status is measured, never hand-edited. Components sit in display groups and are 
 
 | Group     | Component      | Endpoints                                                                             |
 | --------- | -------------- | ------------------------------------------------------------------------------------- |
-| TerraBase | TerraBase API  | `api.terrascale.tech/readyz` in gru, sjc and fra                                      |
-| TerraBase | Data API       | Unauthenticated document read in gru, sjc and fra; the gru canary                     |
-| TerraBase | Document API   | The document canary probe in gru, sjc and fra                                         |
-| TerraBase | Replication    | `ts-terrabase.fly.dev/health/replication` in gru, sjc and fra, ok from its own region |
-| Platform  | Authentication | `auth.terrascale.tech/readyz` in gru, sjc and fra; the tenant OIDC issuer             |
+| TerraBase | TerraBase API  | `api.terrascale.tech/readyz`, with retained gru, sjc and fra assertions                                      |
+| TerraBase | Data API       | Public unauthenticated document read; the gru canary                     |
+| TerraBase | Document API   | Document canaries at their configured public origins                                         |
+| TerraBase | Replication    | `api.terrascale.tech/health/replication`, with retained region assertions |
+| Platform  | Authentication | `auth.terrascale.tech/readyz`, with retained region assertions; the tenant OIDC issuer             |
 | Platform  | Documentation  | `docs.terrascale.tech`                                                                |
 | Platform  | Website        | `terrascale.tech`                                                                     |
 | Platform  | Email          | Cloudflare Email Sending, from Cloudflare's status page                               |
 | Platform  | Dashboard      | None yet: "Coming soon"                                                               |
 
-A component is either active (measured) or "Coming soon" (shown, never probed). Replication is probed per region and passes only when TerraBase reports `status: ok` from the pinned region. Until a region's first passing round it shows "Pending launch", so an unhealthy report opens no incident before then. Edit the catalog, regions and groups in the admin page; see the [`status-endpoint`](skills/status-endpoint/SKILL.md) skill.
+A component is either active (measured) or "Coming soon" (shown, never probed). Replication is probed per region and passes only when TerraBase reports `status: ok` from the expected region. Until a region's first passing round it shows "Pending launch", so an unhealthy report opens no incident before then. Edit the catalog, regions and groups in the admin page; see the [`status-endpoint`](skills/status-endpoint/SKILL.md) skill.
 
 ## Local development
 
@@ -187,7 +189,7 @@ The minute cron enqueues up to 1,000 eligible subscriber/update pairs into the D
 
 ## Deploy
 
-Cloudflare Workers Builds deploys every push to main with `npm run deploy`: it builds, bootstraps D1 from `schema.sql`, then deploys the one status Worker. There is no GitHub Actions workflow, so run `npm run lint`, `npm run check` and `npm test` before merging. Pull requests get no preview build and the Worker has no preview URLs.
+Cloudflare Workers Builds deploys every push to main with `npm run deploy`: it builds, bootstraps D1 from `schema.sql`, then deploys the one status Worker. GitHub Actions runs `npm run check`, `npm test` and `npm run build` on pull requests and main; the `test` job must pass on the latest commit before merging. These checks use HTTP fakes and local SQLite, without deployment credentials or a TerraBase binary.
 
 Worker secrets: `SUBSCRIPTION_SECRET`, `ADMIN_PASSWORD_HASH`, `ADMIN_SESSION_SECRET`, and the probe secrets `TERRABASE_PROBES` and `DATA_API_CANARY`. Set them with `wrangler secret put` or `cf workers secrets update`; never print them.
 

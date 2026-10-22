@@ -45,7 +45,7 @@ describe("probe entity IDs", () => {
     expect(collection.delete).not.toHaveBeenCalled();
   });
 
-  it("requires a Fly region on every canary and TerraBase config", () => {
+  it("requires a deployment region on every canary and TerraBase config", () => {
     expect(isCanaryConfig({ ...canary, region: "sjc" })).toBe(true);
     expect(isCanaryConfig({ ...canary, region: "SJC" })).toBe(false);
     expect(isCanaryConfig({ ...canary, region: undefined })).toBe(false);

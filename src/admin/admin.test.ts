@@ -376,10 +376,10 @@ describe("admin actions", () => {
       componentId: DOCS,
       regionCode: "gru",
       cluster: "gru",
-      provider: "fly",
+      provider: "other",
       kind: "http",
       url: "https://docs.terrascale.tech/healthz",
-      headers: '{"fly-prefer-region":"gru"}',
+      headers: '{"Cache-Control":"no-cache"}',
       expectStatus: "200,204",
       assertions: '[{"path":"status","op":"eq","value":"ok"}]',
       extract: '{"version":"version"}',
@@ -391,7 +391,7 @@ describe("admin actions", () => {
       one("SELECT region_code, headers, expect_status, indirect, live_since FROM endpoints WHERE id = ?", id),
     ).toEqual({
       region_code: "GRU",
-      headers: '{"fly-prefer-region":"gru"}',
+      headers: '{"Cache-Control":"no-cache"}',
       expect_status: "200,204",
       indirect: 1,
       live_since: null,
@@ -404,7 +404,7 @@ describe("admin actions", () => {
       ["extract", '{"v":"a..b"}', "extract: must be a JSON object"],
       ["expectStatus", "ok", "expectStatus: must be"],
       ["regionCode", "ams", "A referenced record does not exist"],
-      ["provider", "oci", "provider: must be one of fly, cloudflare, other"],
+      ["provider", "oci", "provider: must be one of cloudflare, other"],
       ["blockedStatus", "999", "blockedStatus: must be 100 to 599"],
     ]) {
       const response = await post("/admin/endpoints", { ...fields, [field!]: value! });

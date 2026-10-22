@@ -27,7 +27,7 @@ function seededEnv(): Env & { STATUS_DB: TestD1 } {
     INSERT INTO incidents (id, kind, title, status, impact, scheduled_start, scheduled_end, created_at, updated_at) VALUES
       ('00000000000000000000000006', 'maintenance', 'Forgejo upgrade', 'scheduled', 'none',
        '2026-09-26 10:00:00', '2026-09-26 11:00:00', '2026-09-20 10:00:00', '2026-09-20 10:00:00'),
-      ('00000000000000000000000007', 'maintenance', 'Fly migration', 'scheduled', 'none',
+      ('00000000000000000000000007', 'maintenance', 'OCI migration', 'scheduled', 'none',
        '2026-09-28 10:00:00', '2026-09-28 11:00:00', '2026-09-20 10:00:00', '2026-09-20 10:00:00');
     INSERT INTO incident_components (incident_id, component_id) VALUES ('00000000000000000000000006', '01M4E7G1W82VKFPF5FJ9AVK1CZ'), ('00000000000000000000000007', '01M4E7G1W82VKFPF5FJ9AVK1D2');
     INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES
@@ -539,7 +539,7 @@ describe("app", () => {
   it("lists maintenance in progress and upcoming", async () => {
     const body = await (await app.fetch(request("/maintenance"), seededEnv(), ctx)).text();
     expect(body).toContain("In progress");
-    expect(body.indexOf("Forgejo upgrade")).toBeLessThan(body.indexOf("Fly migration"));
+    expect(body.indexOf("Forgejo upgrade")).toBeLessThan(body.indexOf("OCI migration"));
     expect(body).toContain('data-prefix="Starts"');
   });
 
@@ -603,7 +603,7 @@ describe("app", () => {
     expect(summary.incidents[0]?.incident_updates).toHaveLength(2);
     // Both were last updated in the same second; the id breaks the tie.
     expect(summary.scheduled_maintenances.map((entry) => [entry.name, entry.status])).toEqual([
-      ["Fly migration", "scheduled"],
+      ["OCI migration", "scheduled"],
       ["Forgejo upgrade", "in_progress"],
     ]);
     const upcoming = (await (

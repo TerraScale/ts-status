@@ -254,7 +254,6 @@ export function rangeSwitch(current: RangeKey, base: string): Html {
 }
 
 export const PROVIDERS: Record<ClusterOverview["provider"], string> = {
-  fly: "Fly.io",
   cloudflare: "Cloudflare",
   other: "Self-hosted",
 };
@@ -266,7 +265,7 @@ export function clusterRow(
   title: "component" | "cluster" = "component",
 ): Html {
   const summary = `${entry.componentName} on ${entry.cluster}: ${formatUptime(entry.uptime)} of checks up over the last ${RANGES[range].label}, currently ${(entry.note ?? STATE_LABELS[entry.status]).toLowerCase()}`;
-  // A Fly cluster is named after its region ("gru"), so the region is said once.
+  // A regional cluster is named after its region ("gru"), so the region is said once.
   const region = entry.regionCode?.toLowerCase();
   const where = `${PROVIDERS[entry.provider]} · ${entry.cluster}${region === undefined ? " · global" : region === entry.cluster ? "" : ` · ${region}`}`;
   const certificate = entry.certificate?.notAfter

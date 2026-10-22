@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { judge, parseSpec } from "../domain/assertions";
 import { testD1 } from "../testing/d1";
 
-/* The seeded catalog: the Fly regions, and what is probed in each. */
+/* The seeded catalog: the deployment regions, and what is probed in each. */
 describe("probe catalog", () => {
   const sql = testD1().sqlite;
 
@@ -22,7 +22,7 @@ describe("probe catalog", () => {
       indirect: number;
     };
 
-  it("names the Fly regions", () => {
+  it("names the deployment regions", () => {
     expect(sql.prepare("SELECT code, name FROM regions ORDER BY position").all()).toEqual([
       { code: "GRU", name: "São Paulo" },
       { code: "SJC", name: "San Francisco Bay Area" },
@@ -46,7 +46,7 @@ describe("probe catalog", () => {
     ).toEqual({ n: 0 });
   });
 
-  it("pins TerraBase and ts-auth readiness to each region and fails a check another region answered", () => {
+  it("requires TerraBase and ts-auth readiness from each catalog region and fails a check another region answered", () => {
     for (const [id, host, region] of [
       ["01M4E7G1W82VKFPF5FJ9AVK1DQ", "api", "gru"],
       ["01M4E7G1W82VKFPF5FJ9AVK1DR", "api", "sjc"],
@@ -57,27 +57,27 @@ describe("probe catalog", () => {
     ] as const) {
       const row = endpoint(id);
       expect(row.url).toBe(`https://${host}.terrascale.tech/readyz`);
-      expect(JSON.parse(row.headers)).toEqual({ "fly-prefer-region": region });
+      expect(JSON.parse(row.headers)).toEqual({});
       const spec = parseSpec(row);
       const ready = (status: string, served: string) =>
         judge(spec, { status: 200, error: null, body: JSON.stringify({ status, version: "v1", region: served }) });
       expect(ready("ready", region)).toEqual({ outcome: "ok", error: null, values: { version: "v1" } });
-      // Fly falls back to another region when this one has no machine.
+      // A response from a different deployment must not count as this region.
       expect(ready("ready", region === "gru" ? "fra" : "gru").outcome).toBe("fail");
       expect(ready("not_ready", region).outcome).toBe("fail");
       expect(judge(spec, { status: 503, error: null }).outcome).toBe("fail");
     }
   });
 
-  it("pins TerraBase replication health to each region and passes only when it is ok from that region", () => {
+  it("requires TerraBase replication health from each catalog region and passes only when it is ok from that region", () => {
     for (const [id, region] of [
       ["01M4PVGGBHD58R8HYNDBTGFRGJ", "gru"],
       ["01M4PVGGBJ24A140MWGJV7MVKV", "sjc"],
       ["01M4PVGGBJA6S4F64HDQVD2MXM", "fra"],
     ] as const) {
       const row = endpoint(id);
-      expect(row.url).toBe("https://ts-terrabase.fly.dev/health/replication");
-      expect(JSON.parse(row.headers)).toEqual({ "fly-prefer-region": region });
+      expect(row.url).toBe("https://api.terrascale.tech/health/replication");
+      expect(JSON.parse(row.headers)).toEqual({});
       const spec = parseSpec(row);
       const health = (status: string, served: string) =>
         judge(spec, {
@@ -92,14 +92,14 @@ describe("probe catalog", () => {
   });
 
   it("checks every regional data API for invalid_key on an unauthenticated read", () => {
-    for (const [id, region] of [
+    for (const [id] of [
       ["01M4E7G1W82VKFPF5FJ9AVK1DB", "gru"],
       ["01M4E7G1W82VKFPF5FJ9AVK1DC", "sjc"],
       ["01M4E7G1W82VKFPF5FJ9AVK1E0", "fra"],
     ] as const) {
       const row = endpoint(id);
       expect(new URL(row.url).host).toBe("api.terrascale.tech");
-      expect(JSON.parse(row.headers)).toEqual({ "fly-prefer-region": region });
+      expect(JSON.parse(row.headers)).toEqual({});
       expect(row.expectStatus).toBe("401");
       expect(JSON.parse(row.assertions)).toEqual([{ path: "error.code", op: "eq", value: "invalid_key" }]);
     }

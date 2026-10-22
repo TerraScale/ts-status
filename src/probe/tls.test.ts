@@ -44,7 +44,6 @@ describe("certificates", () => {
       "auth.terrascale.tech",
       "docs.terrascale.tech",
       "terrascale.tech",
-      "ts-terrabase.fly.dev",
     ]);
     expect(await checkCertificates(env, now + 3_600_000, fetcher)).toEqual([]);
     expect(await checkCertificates(env, now + 86_400_000 - 3_600_000, fetcher)).toEqual([]);
@@ -54,8 +53,8 @@ describe("certificates", () => {
       not_after: "2026-12-01 00:00:00",
       error: "Cert Spotter HTTP 429",
     });
-    expect(asked).toHaveLength(10);
-    expect(await checkCertificates(env, now + 3 * 86_400_000, fetcher)).toHaveLength(5);
+    expect(asked).toHaveLength(8);
+    expect(await checkCertificates(env, now + 3 * 86_400_000, fetcher)).toHaveLength(4);
   });
 
   it("reads every page, where the newest certificates come last", async () => {

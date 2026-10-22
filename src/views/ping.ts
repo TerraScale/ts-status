@@ -81,8 +81,7 @@ export function pingPage(view: Overview, details: Details, now: number): Page {
 
   const targets = [
     { name: "Nearest Cloudflare data center", detail: "this page's edge", url: "/api/ping" },
-    // Regions sharing an anycast URL (Fly routes the browser to its nearest
-    // region) are one target.
+    // Regions sharing a public URL are one browser target.
     ...[...new Map(view.regions.flatMap((region) => (region.pingUrl ? [[region.pingUrl, region]] : []))).values()].map(
       (region) => ({
         name: region.pingLabel ?? `${region.code} · ${region.name}`,

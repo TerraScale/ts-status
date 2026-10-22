@@ -291,7 +291,7 @@ function endpointForm(
       ),
     )}
     ${field("Cluster", input("cluster", endpoint.cluster, 'required maxlength="40" placeholder="gru"'))}
-    ${field("Provider", select("provider", PROVIDERS, endpoint.provider ?? "fly"))}
+    ${field("Provider", select("provider", PROVIDERS, endpoint.provider ?? "other"))}
     ${field(
       "Kind",
       select(
@@ -305,7 +305,7 @@ function endpointForm(
     )}
     ${field("Canary probe", select("probe", PROBES, endpoint.probe ?? null, "Data API canary"))}
     ${field("URL", input("url", endpoint.url, 'required maxlength="500" placeholder="https://api.terrascale.tech/readyz"'), true)}
-    ${field("Headers (JSON)", input("headers", endpoint.headers ?? "{}", 'placeholder=\'{"fly-prefer-region":"gru"}\''), true)}
+    ${field("Headers (JSON)", input("headers", endpoint.headers ?? "{}", 'placeholder=\'{"Cache-Control":"no-cache"}\''), true)}
     ${field("Expected status", input("expectStatus", endpoint.expectStatus ?? "2xx", 'required maxlength="40"'))}
     ${field("Blocked status", input("blockedStatus", endpoint.blockedStatus, 'inputmode="numeric" placeholder="none"'))}
     ${field("Position", input("position", endpoint.position ?? 0, 'inputmode="numeric"'))}
@@ -377,7 +377,7 @@ export function catalogPage(frame: Frame, catalog: Catalog): Page {
     {
       id: "endpoints",
       title: "Endpoints",
-      description: "Each is checked every 30 seconds. Pin a Fly region with the fly-prefer-region header.",
+      description: "Each is checked every 30 seconds. Use a verified public origin for each deployment.",
     },
     html`<ul class="ts-list">${catalog.endpoints.map(
       (endpoint) => html`<li class="ts-list-item ad-item" id="endpoint-${endpoint.id}">
@@ -414,7 +414,7 @@ export function catalogPage(frame: Frame, catalog: Catalog): Page {
     {
       id: "regions",
       title: "Regions",
-      description: "Fly.io regions (codes such as GRU), placed on the map by x 0–136 and y 0–80.",
+      description: "Deployment regions (codes such as GRU), placed on the map by x 0–136 and y 0–80.",
     },
     html`<ul class="ts-list">${catalog.regions.map(
       (region) => html`<li class="ts-list-item ad-item">

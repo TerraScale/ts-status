@@ -111,7 +111,7 @@ function vantage(code: string, failing: (url: string) => boolean = () => false, 
         vantage: code,
         colo: code.toUpperCase(),
         results: body.targets.map((target) => {
-          const region = (JSON.parse(target.headers) as Record<string, string>)["fly-prefer-region"];
+          const region = "gru";
           const answer = (status: number, json?: unknown) => ({
             key: target.key,
             status,
@@ -137,14 +137,7 @@ function vantage(code: string, failing: (url: string) => boolean = () => false, 
   };
 }
 
-const READY = [
-  "01M4E7G1W82VKFPF5FJ9AVK1D6",
-  "01M4E7G1W82VKFPF5FJ9AVK1DQ",
-  "01M4E7G1W82VKFPF5FJ9AVK1DR",
-  "01M4E7G1W82VKFPF5FJ9AVK1DX",
-  "01M4E7G1W82VKFPF5FJ9AVK1DY",
-  "01M4E7G1W82VKFPF5FJ9AVK1DZ",
-];
+const READY = ["01M4E7G1W82VKFPF5FJ9AVK1D6", "01M4E7G1W82VKFPF5FJ9AVK1DQ"];
 
 describe("runRound", () => {
   it("stores one sample per endpoint, launches passing ones, and records new versions as deploys", async () => {
@@ -195,26 +188,32 @@ describe("runRound", () => {
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DG", state: "none", ok: 0, total: 0 },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DH", state: "operational", ok: 3, total: 3 },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DQ", state: "operational", ok: 3, total: 3 },
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DR", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DR", state: "degraded", ok: 0, total: 3 },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DS", state: "degraded", ok: 0, total: 3 },
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DX", state: "operational", ok: 3, total: 3 },
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DY", state: "operational", ok: 3, total: 3 },
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DZ", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DX", state: "degraded", ok: 0, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DY", state: "degraded", ok: 0, total: 3 },
+      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DZ", state: "degraded", ok: 0, total: 3 },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1E0", state: "operational", ok: 3, total: 3 },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1E1", state: "none", ok: 0, total: 0 },
       { endpoint_id: "01M4PVGGBHD58R8HYNDBTGFRGJ", state: "operational", ok: 3, total: 3 },
-      { endpoint_id: "01M4PVGGBJ24A140MWGJV7MVKV", state: "operational", ok: 3, total: 3 },
-      { endpoint_id: "01M4PVGGBJA6S4F64HDQVD2MXM", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4PVGGBJ24A140MWGJV7MVKV", state: "degraded", ok: 0, total: 3 },
+      { endpoint_id: "01M4PVGGBJA6S4F64HDQVD2MXM", state: "degraded", ok: 0, total: 3 },
     ]);
-    // Every endpoint that passed launched with its first round; the failing website and the canaries wait.
+    // Every endpoint that passed launched with its first round; the website, canaries and unmatched regions wait.
     expect(
       db.sqlite.prepare("SELECT id, live_since FROM endpoints WHERE live_since IS NULL ORDER BY id").all(),
     ).toEqual([
       { id: "01M4E7G1W82VKFPF5FJ9AVK1D9", live_since: null },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DF", live_since: null },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DG", live_since: null },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DR", live_since: null },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DS", live_since: null },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DX", live_since: null },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DY", live_since: null },
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1DZ", live_since: null },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1E1", live_since: null },
+      { id: "01M4PVGGBJ24A140MWGJV7MVKV", live_since: null },
+      { id: "01M4PVGGBJA6S4F64HDQVD2MXM", live_since: null },
     ]);
     expect(db.sqlite.prepare("SELECT DISTINCT live_since FROM endpoints WHERE live_since IS NOT NULL").all()).toEqual([
       { live_since: "2026-09-26 10:00:30" },
@@ -323,6 +322,6 @@ describe("automatic incidents", () => {
     expect(db.sqlite.prepare("SELECT count(*) AS n FROM incidents").get()).toEqual({ n: 0 });
     expect(
       db.sqlite.prepare("SELECT DISTINCT live_since FROM endpoints WHERE url LIKE 'https://auth.%'").all(),
-    ).toEqual([{ live_since: "2026-09-26 10:04:00" }]);
+    ).toEqual([{ live_since: "2026-09-26 10:04:00" }, { live_since: null }]);
   });
 });
