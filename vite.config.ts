@@ -1,11 +1,13 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cloudflare } from "@cloudflare/vite-plugin";
-import { defineConfig } from "vite-plus";
+import type { UserConfig } from "vite-plus";
+// Cloudflare and Vitest share upstream Vite types; Vite+ uses a separate core alias.
+import { defineConfig, type ViteUserConfig } from "vitest/config";
 
 const root = dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig({
+export default defineConfig((): ViteUserConfig & Pick<UserConfig, "fmt"> => ({
   plugins: process.env.VITEST
     ? []
     : [
@@ -32,4 +34,4 @@ export default defineConfig({
     // Human-owned rule files, and the design system's generated tokens file (kept verbatim).
     ignorePatterns: ["AGENTS.md", "CLAUDE.md", "src/styles/tokens.css"],
   },
-});
+}));
