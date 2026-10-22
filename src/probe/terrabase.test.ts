@@ -53,7 +53,12 @@ describe("read-only TerraBase probes", () => {
       expect(url).toBe(`${origin}/v1/projects/${canary.project}/databases/canary/collections/canary/documents?limit=1`);
       expect(init).toMatchObject({ method: "GET", redirect: "manual", cache: "no-store" });
       expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer ${grant.access_token}`);
-      expect([...new Headers(init?.headers).keys()].sort()).toEqual(["authorization", "user-agent"]);
+      expect(new Headers(init?.headers).get("X-TerraScale-Region-Pin")).toBe("gru");
+      expect([...new Headers(init?.headers).keys()].sort()).toEqual([
+        "authorization",
+        "user-agent",
+        "x-terrascale-region-pin",
+      ]);
       expect(JSON.stringify(fetcher.mock.calls[1])).not.toContain(canary.key);
     }
   });
@@ -75,7 +80,7 @@ describe("read-only TerraBase probes", () => {
       expect(await runTerraBase("documents", canary, "round", fetcher)).toMatchObject({ ok: false });
       expect(fetcher).toHaveBeenCalledTimes(2);
     }
-    for (const status of [401, 403]) {
+    for (const status of [401, 403, 421]) {
       const fetcher = vi
         .fn<typeof fetch>()
         .mockResolvedValueOnce(Response.json(grant))
@@ -102,7 +107,8 @@ describe("read-only TerraBase probes", () => {
       const [url, init] = fetcher.mock.calls[0]!;
       expect(url).toBe(`${origin}/readyz`);
       expect(new Headers(init?.headers).has("authorization")).toBe(false);
-      expect([...new Headers(init?.headers).keys()]).toEqual(["user-agent"]);
+      expect(new Headers(init?.headers).get("X-TerraScale-Region-Pin")).toBe("gru");
+      expect([...new Headers(init?.headers).keys()].sort()).toEqual(["user-agent", "x-terrascale-region-pin"]);
     }
   });
 });

@@ -60,7 +60,10 @@ export async function deployments(env: Env, now: number): Promise<DeploymentObse
   const targets = SERVICES.map(([key, url]) => ({
     key,
     url,
-    headers: '{"Cache-Control":"no-cache"}',
+    headers: JSON.stringify({
+      "Cache-Control": "no-cache",
+      ...(key === "ts-terrabase" ? { "X-TerraScale-Region-Pin": "gru" } : {}),
+    }),
     body: true,
   }));
   const regions = VANTAGES.filter((vantage) => vantage.code === "gru" || vantage.code === "sfo");

@@ -25,7 +25,7 @@ export type TerraBaseProbe = "health" | "documents";
 export interface TerraBaseConfig {
   /** The public API origin, e.g. https://api.terrascale.tech. */
   origin: string;
-  /** The deployment region, e.g. gru; the origin selects the service. */
+  /** The deployment region, enforced by TerraBase's region pin. */
   region: string;
   /** Platform issuer, including /terrascale; required for document reads. */
   issuer?: string;
@@ -127,7 +127,10 @@ export async function runTerraBase(
   _marker: string,
   fetcher: typeof fetch = fetch,
 ): Promise<CanaryResult> {
-  const headers: Record<string, string> = { "user-agent": USER_AGENT };
+  const headers: Record<string, string> = {
+    "user-agent": USER_AGENT,
+    "X-TerraScale-Region-Pin": config.region,
+  };
   const init = (extra: RequestInit = {}): RequestInit => ({ ...extra, headers: { ...headers, ...extra.headers } });
   // Every request answers 200 unless it says otherwise.
   const call = (path: string, extra?: RequestInit, statuses: readonly number[] = [200]) =>

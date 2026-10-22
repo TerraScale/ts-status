@@ -53,7 +53,7 @@ describe("clean D1 bootstrap", () => {
       ).toEqual({
         provider: "other",
         url: "https://api.terrascale.tech/health/replication",
-        headers: '{"x-prefer-region":"custom","Cache-Control":"no-cache"}',
+        headers: '{"x-prefer-region":"custom","Cache-Control":"no-cache","X-TerraScale-Region-Pin":"gru"}',
         live_since: "2026-10-11 00:00:00",
         assertions,
       });

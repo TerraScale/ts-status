@@ -57,7 +57,7 @@ describe("probe catalog", () => {
     ] as const) {
       const row = endpoint(id);
       expect(row.url).toBe(`https://${host}.terrascale.tech/readyz`);
-      expect(JSON.parse(row.headers)).toEqual({});
+      expect(JSON.parse(row.headers)).toEqual(host === "api" ? { "X-TerraScale-Region-Pin": region } : {});
       const spec = parseSpec(row);
       const ready = (status: string, served: string) =>
         judge(spec, { status: 200, error: null, body: JSON.stringify({ status, version: "v1", region: served }) });
@@ -77,7 +77,7 @@ describe("probe catalog", () => {
     ] as const) {
       const row = endpoint(id);
       expect(row.url).toBe("https://api.terrascale.tech/health/replication");
-      expect(JSON.parse(row.headers)).toEqual({});
+      expect(JSON.parse(row.headers)).toEqual({ "X-TerraScale-Region-Pin": region });
       const spec = parseSpec(row);
       const health = (status: string, served: string) =>
         judge(spec, {
@@ -92,14 +92,14 @@ describe("probe catalog", () => {
   });
 
   it("checks every regional data API for invalid_key on an unauthenticated read", () => {
-    for (const [id] of [
+    for (const [id, region] of [
       ["01M4E7G1W82VKFPF5FJ9AVK1DB", "gru"],
       ["01M4E7G1W82VKFPF5FJ9AVK1DC", "sjc"],
       ["01M4E7G1W82VKFPF5FJ9AVK1E0", "fra"],
     ] as const) {
       const row = endpoint(id);
       expect(new URL(row.url).host).toBe("api.terrascale.tech");
-      expect(JSON.parse(row.headers)).toEqual({});
+      expect(JSON.parse(row.headers)).toEqual({ "X-TerraScale-Region-Pin": region });
       expect(row.expectStatus).toBe("401");
       expect(JSON.parse(row.assertions)).toEqual([{ path: "error.code", op: "eq", value: "invalid_key" }]);
     }
