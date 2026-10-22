@@ -27,7 +27,7 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
   - Documentation (`https://docs.terrascale.tech`) and the website (`https://terrascale.tech`) must answer 2xx; the website must mention TerraScale.
   - Email: Cloudflare Email Sending has no health endpoint, so its component on Cloudflare's status page is read instead. That check is `indirect`: when the status page cannot be reached the result is unknown, not down.
 - **Pending launch.** An endpoint counts only from its first passing round (`live_since`). Until then it shows "Pending launch" in grey, opens no incident and adds nothing to uptime, so a service that is not live yet never looks like an outage. Rounds before the launch are left out of the rollups.
-- **Canaries.** The Data API canary (`DATA_API_CANARY`) writes each round's marker into a dedicated canary document and reads it back; the Document API probes (`TERRABASE_PROBES`) write, read, query and delete a canary document at each configured origin. Both secrets are JSON keyed by endpoint ULID with the origin (`https://api.terrascale.tech`), the deployment `region`, and a project-scoped key restricted to the canary database. An endpoint the secret does not name shows "Not configured" and counts toward nothing; a malformed entry, a timeout (5 seconds per request) or a failed write fails the round.
+- **Read-only probes.** The Data API canary (`DATA_API_CANARY`) reads one precreated JSON-object document; the Document API probes (`TERRABASE_PROBES`) list documents with `limit=1` at each configured public origin. Both secrets are JSON keyed by endpoint ULID with `origin`, deployment `region`, tenant `issuer`, `project`, `database`, `collection`, and a database-scoped ts-auth `key` granting only `documents:read`. Data API entries also require the document ULID in `document`. Probes exchange the key for a short-lived access token and send no regional routing header. Readiness still requires the configured region. An unnamed endpoint shows "Not configured" and counts toward nothing; a malformed entry, timeout or failed read fails the round.
 - **TLS expiry.** A Worker cannot see a served certificate, so once an hour the cron refreshes, from certificate transparency logs (Cert Spotter), the latest valid certificate of every monitored host not checked in a day (indirect sources such as Cloudflare's status page are skipped). A latest certificate expiring within two weeks means renewal has stalled: the page warns, and cluster rows show every host's expiry.
 - **Automatic incidents.** After every round the coordinator steps a state machine per component: down for a minute (or degraded for ten) opens an incident with its timeline, a worse state raises its impact, passing checks move it to monitoring, and five healthy minutes resolve it. Maintenance windows suppress it, and incidents operators take over in the admin page are left alone.
 - **Rollups.** The minute cron rebuilds hourly rollups (per vantage and for the consensus, with latency histograms) from the samples and daily rollups from the hours. Samples are kept 48 hours, hours 90 days and days 400 days.
@@ -89,7 +89,7 @@ nice -n 19 npm run db:bootstrap:local
 nice -n 19 npm run dev
 ```
 
-For the admin page locally, put an `ADMIN_PASSWORD_HASH` (see [Admin](#admin)) and an `ADMIN_SESSION_SECRET` in `.dev.vars` (git-ignored).
+Admin authorization uses signed HTTP fakes in tests. Live sign-in uses the registered production callback; see [admin authorization](docs/admin-oidc.md).
 
 The dev server listens on every interface (reachable over the tailnet) and reloads on change. The local D1 database lives under `.wrangler/state`. Arm the coordinator (and roll up samples) with `curl 'http://localhost:5173/cdn-cgi/handler/scheduled'`; rounds then run every 30 seconds.
 
@@ -165,21 +165,10 @@ the latest round, while the stats cover the last completed hour.
 
 <https://status.terrascale.tech/admin> is the only way to change anything: publish, edit, update, resolve or delete incidents, warnings and maintenance windows; record deploy markers; add, edit and delete groups, components, endpoints and regions; remove subscribers; and check endpoints from every vantage on demand ("Check now", nothing stored). Editing an automatic incident takes it over from the probe coordinator. Planning or deleting a component, or deleting its last endpoint, is refused while an automatic incident is open for it: resolve the incident first.
 
-- **One password.** Its PBKDF2-SHA256 hash (100,000 iterations, the Workers maximum) is the Worker secret `ADMIN_PASSWORD_HASH`, as `pbkdf2-sha256$100000$<salt>$<hash>` (base64url). The plaintext lives only in `~/.config/terrascale/ts-status-admin.txt` (mode 600) on the dev servers.
-- **Sessions.** Signing in sets `__Host-ts_status_admin`, an HttpOnly, Secure, SameSite=Strict cookie holding an expiry one hour out and a nonce, signed with HMAC-SHA256 under the Worker secret `ADMIN_SESSION_SECRET`. Nothing is stored server-side; rotating the secret signs everyone out.
+- **ts-auth sign-in.** Authorization code with S256 PKCE uses the public status client. Every protected request verifies current owner or admin membership in the TerraScale organization; see [admin authorization](docs/admin-oidc.md).
+- **Sessions.** Signing in sets `__Host-ts_status_admin`, an HttpOnly, Secure, SameSite=Lax cookie encrypted under the existing Worker secret `ADMIN_SESSION_SECRET`. Its lifetime is bounded by the tokens and one hour. Nothing is stored server-side.
 - **CSRF.** Every form carries a token derived from the session nonce, and every POST must come from this origin.
-- **Rate limit.** Sign-in attempts are limited to five a minute per client (`ADMIN_LOGIN_LIMITER`). Password and signature checks are constant time. Admin responses are never cached and carry `noindex`.
-
-To change the password, hash a new one and set both secrets:
-
-```sh
-node --input-type=module -e '
-import { webcrypto as c } from "node:crypto";
-const pw = process.argv[1], salt = c.getRandomValues(new Uint8Array(16)), b64 = (x) => Buffer.from(x).toString("base64url");
-const key = await c.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveBits"]);
-const bits = await c.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: 100000 }, key, 256);
-console.log(`pbkdf2-sha256$100000$${b64(salt)}$${b64(new Uint8Array(bits))}`);' "$(cat ~/.config/terrascale/ts-status-admin.txt)"
-```
+- **Rate limit.** Sign-in attempts are limited to five a minute per client (`ADMIN_LOGIN_LIMITER`). Admin responses are never cached and carry `noindex`.
 
 ## Subscriptions
 
@@ -191,6 +180,6 @@ The minute cron enqueues up to 1,000 eligible subscriber/update pairs into the D
 
 Cloudflare Workers Builds deploys every push to main with `npm run deploy`: it builds, bootstraps D1 from `schema.sql`, then deploys the one status Worker. GitHub Actions runs `npm run check`, `npm test` and `npm run build` on pull requests and main; the `test` job must pass on the latest commit before merging. These checks use HTTP fakes and local SQLite, without deployment credentials or a TerraBase binary.
 
-Worker secrets: `SUBSCRIPTION_SECRET`, `ADMIN_PASSWORD_HASH`, `ADMIN_SESSION_SECRET`, and the probe secrets `TERRABASE_PROBES` and `DATA_API_CANARY`. Set them with `wrangler secret put` or `cf workers secrets update`; never print them.
+Worker secrets: `SUBSCRIPTION_SECRET`, `ADMIN_SESSION_SECRET`, and the probe secrets `TERRABASE_PROBES` and `DATA_API_CANARY`. Set them through the `cf` CLI using protected stdin; never print them.
 
-Canary keys must be project-scoped to a dedicated status canary organization, project and database, never customer data, with only `documents:read documents:write`.
+Probe keys must be project-scoped to a dedicated status project and database, never customer data, with only `documents:read`. Precreate the Data API fixture through an authorized provisioning identity; probes never mutate it.
