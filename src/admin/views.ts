@@ -151,11 +151,9 @@ export function loginPage(error?: string): Page {
   <header class="st-page-head"><p class="ts-eyebrow">Admin</p><h1 class="st-title">Sign in</h1></header>
   ${error ? html`<article class="ts-alert" data-state="outage" role="alert"><p class="ts-alert-body">${error}</p></article>` : ""}
   ${card(
-    { id: "login", title: "Admin password" },
-    html`<form class="st-form" method="post" action="/admin/login">
-    ${field("Password", html`<input class="ts-input" type="password" name="password" required autocomplete="current-password" autofocus>`)}
-    <button class="ts-button" type="submit">Sign in</button>
-  </form>`,
+    { id: "login", title: "TerraScale account" },
+    html`<p>Requires an owner or admin role in the TerraScale organization.</p>
+    <a class="ts-button" href="/admin/authorize">Continue with TerraScale</a>`,
   )}
 </main>`,
   };
