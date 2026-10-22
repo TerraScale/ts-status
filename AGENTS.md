@@ -15,12 +15,12 @@ AI IS NOT ALLOWED TO EDIT THIS FILE ONLY HUMANS CAN!
   subscriptions and probe coordination on Cloudflare D1/Durable Objects so a
   TerraBase outage cannot take down its status page. Other TerraScale products
   use TerraBase under the Ouroboros rule.
-- ts-orch is authoritative for OCI placement. Production is in gru, with
-  public origins `https://api.terrascale.tech` and `https://auth.terrascale.tech`.
-  Verify origins through Cloudflare DNS and HTTP; region identity does not imply
-  a hostname. Discover placement changes automatically; never invent regional
-  origins or copy probe credentials. Regional assertions fail closed if the
-  service does not report the expected region.
+- Fly is authoritative for regional origins. The global public host
+  `api.terrascale.tech` serves every region; the probe pins a region with the
+  `fly-prefer-region` header (regions gru and sjc today). Monitoring must
+  discover every region and follow placement changes automatically; do not
+  maintain a static region list or copy probe credentials. Region identity does
+  not imply a DNS hostname. Never invent a route or hostname from it.
 
 ## D1 data and the CI deploy token
 
@@ -30,8 +30,8 @@ AI IS NOT ALLOWED TO EDIT THIS FILE ONLY HUMANS CAN!
   is down. Never move ts-status data to TerraBase or add a TerraBase dependency
   to the data path.
 - Cloudflare Workers Builds deploys every push to main with its own build
-  token; GitHub Actions checks pull requests and main without deployment
-  credentials. Keep the build token scoped only to ts-status (Workers scripts and routes, D1 Edit).
+  token; this repo has no GitHub Actions workflow. Keep the build token scoped
+  only to ts-status (Workers scripts and routes, D1 Edit).
   Never print or copy it; check scope on D1 error 7403.
 
 ## Cloudflare: use the `cf` CLI
@@ -58,8 +58,8 @@ The Cloudflare CLI `cf` (npm package `cf`, v1.0.0-beta.10, installed through the
 ## Zero configuration (user decision 2026-10-09, do not revert)
 
 - Every feature is always on. No feature flags, on/off variables, opt-in settings, boolean enabled configuration keys, deploy toggles or kill switches in code, config or CI. Delete switches and their guarded paths.
-- Every deployed region serves as soon as its workloads are ready, with no per-region enable step. OCI production currently runs in gru under ts-orch.
-- OCI production secrets come from OCI Vault via instance principal, never copied by hand. ts-status uses Worker secrets and Cloudflare Workers Builds uses its own deployment token.
+- Every region always serves. Fly regions (gru and sjc today) start serving as soon as their machines boot, with no per-region enable step.
+- Production secrets are fly secrets on their Fly app, set once and never copied by hand. ts-status uses Worker secrets and Cloudflare Workers Builds uses its own deployment token.
 - Values have one correct setting in code. Expose no tuning knobs. Fakes, demo stores and skip-auth belong only in test code and test binaries.
 - CI rejects new switch-style configuration; ts-reviewer requests changes. Only unavoidable third-party names may have a narrow allowance with a one-line reason.
 
