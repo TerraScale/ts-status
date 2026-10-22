@@ -10,12 +10,11 @@ import {
   CanaryError,
   canaryJson,
   collectionPath,
-  documentPath,
   holdsDocument,
-  isCanaryConfig,
-  isFlyRegion,
-  written,
-  type CanaryConfig,
+  isDocumentProbeConfig,
+  isRegion,
+  readToken,
+  type DocumentProbeConfig,
   type CanaryResult,
 } from "./canary";
 import { USER_AGENT } from "./check";
@@ -26,9 +25,11 @@ export type TerraBaseProbe = "health" | "documents";
 export interface TerraBaseConfig {
   /** The public API origin, e.g. https://api.terrascale.tech. */
   origin: string;
-  /** The Fly region the requests prefer, e.g. gru. */
+  /** The region the API must serve, e.g. gru. */
   region: string;
-  /** Document API key. */
+  /** Platform issuer, including /terrascale; required for document reads. */
+  issuer?: string;
+  /** Database-scoped ts-auth project key with documents:read. */
   key?: string;
   project?: string;
   database?: string;
@@ -52,21 +53,10 @@ const isString = (value: unknown): value is string => typeof value === "string" 
 /** One item is enough to prove a list or query route answers. */
 const PAGE_SIZE = 1;
 
-/** The one document the canary writes, each round over the last: a create
-    whose answer is lost, or a failed delete, leaves at most this document
-    behind, and the next round overwrites and deletes it. */
-const CANARY_DOCUMENT = "01M4E7G1W82VKFPF5FJ9AVK1DW";
-
-const documentConfig = (config: TerraBaseConfig): CanaryConfig =>
-  ({
-    ...config,
-    document: CANARY_DOCUMENT,
-  }) as CanaryConfig;
-
 const ROUTES = {
   readyz: "/readyz",
-  document: (config: TerraBaseConfig) => documentPath(documentConfig(config)),
-  query: (config: TerraBaseConfig) => `${collectionPath(documentConfig(config))}/query`,
+  documents: (config: TerraBaseConfig) =>
+    `${collectionPath(config as DocumentProbeConfig)}/documents?limit=${PAGE_SIZE}`,
 };
 
 /** Whether the secret configures an endpoint: it names it, with the key
@@ -97,12 +87,12 @@ function isOrigin(value: unknown): boolean {
 export function isTerraBaseConfig(probe: TerraBaseProbe, value: unknown): value is TerraBaseConfig {
   if (typeof value !== "object" || value === null) return false;
   const entry = value as Record<string, unknown>;
-  if (!isOrigin(entry.origin) || !isFlyRegion(entry.region)) return false;
+  if (!isOrigin(entry.origin) || !isRegion(entry.region)) return false;
   switch (probe) {
     case "health":
       return entry.key === undefined || isString(entry.key);
     case "documents":
-      return isCanaryConfig(documentConfig(entry as unknown as TerraBaseConfig));
+      return isDocumentProbeConfig(entry);
   }
 }
 
@@ -130,56 +120,14 @@ const invalid = (): never => {
 
 const isCursor = (value: unknown): boolean => value === null || typeof value === "string";
 
-async function documents(
-  config: TerraBaseConfig,
-  marker: string,
-  call: (path: string, init?: RequestInit, statuses?: readonly number[]) => Promise<unknown>,
-): Promise<void> {
-  const json = (method: string, body: unknown): RequestInit => ({
-    method,
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const id = CANARY_DOCUMENT;
-  let failure: unknown;
-  try {
-    // 201 creates it; 200 replaces one a failed round left behind.
-    const created = await call(ROUTES.document(config), json("PUT", { canary: marker }), [200, 201]);
-    if (written(created) !== id) invalid();
-    if (!holdsDocument(await call(ROUTES.document(config), { cache: "no-store" }), id, marker)) invalid();
-    const found = (await call(
-      ROUTES.query(config),
-      json("POST", { filter: { eq: ["$id", id] }, limit: PAGE_SIZE }),
-    )) as {
-      items?: unknown;
-      next_cursor?: unknown;
-    };
-    if (!Array.isArray(found.items) || !isCursor(found.next_cursor)) invalid();
-    if (!(found.items as unknown[]).some((item) => holdsDocument(item, id, marker)))
-      throw new CanaryError("Query missed the document");
-  } catch (error) {
-    failure = error;
-  } finally {
-    // Deleted every round, even after a failed or unanswered write, which
-    // may still have committed; the first failure is reported.
-    try {
-      if (written(await call(ROUTES.document(config), { method: "DELETE" })) !== id) invalid();
-    } catch (error) {
-      failure ??= error;
-    }
-  }
-  if (failure !== undefined) throw failure;
-}
-
-/** Runs one TerraBase probe; `marker` makes the documents canary's write unique. */
+/** Readiness or a bounded document list; neither probe mutates application data. */
 export async function runTerraBase(
   probe: TerraBaseProbe,
   config: TerraBaseConfig,
-  marker: string,
+  _marker: string,
   fetcher: typeof fetch = fetch,
 ): Promise<CanaryResult> {
-  const headers: Record<string, string> = { "user-agent": USER_AGENT, "fly-prefer-region": config.region };
-  if (config.key) headers.authorization = `Bearer ${config.key}`;
+  const headers: Record<string, string> = { "user-agent": USER_AGENT, "X-TerraScale-Region-Pin": config.region };
   const init = (extra: RequestInit = {}): RequestInit => ({ ...extra, headers: { ...headers, ...extra.headers } });
   // Every request answers 200 unless it says otherwise.
   const call = (path: string, extra?: RequestInit, statuses: readonly number[] = [200]) =>
@@ -189,13 +137,26 @@ export async function runTerraBase(
     if (!isTerraBaseConfig(probe, config)) throw new CanaryError("Invalid probe config");
     switch (probe) {
       case "health": {
-        const ready = (await call(ROUTES.readyz, { cache: "no-store" })) as { status?: unknown; version?: unknown };
-        if (ready.status !== "ready" || !isString(ready.version)) invalid();
+        const ready = (await call(ROUTES.readyz, { cache: "no-store" })) as {
+          status?: unknown;
+          version?: unknown;
+          region?: unknown;
+        };
+        if (ready.status !== "ready" || !isString(ready.version) || ready.region !== config.region) invalid();
         break;
       }
-      case "documents":
-        await documents(config, marker, call);
+      case "documents": {
+        headers.authorization = `Bearer ${await readToken(config as DocumentProbeConfig, fetcher)}`;
+        const page = (await call(ROUTES.documents(config), { method: "GET", cache: "no-store" })) as {
+          items?: unknown;
+          next_cursor?: unknown;
+        };
+        if (!Array.isArray(page.items) || page.items.length > PAGE_SIZE || !isCursor(page.next_cursor)) invalid();
+        for (const item of page.items as { id?: unknown }[]) {
+          if (typeof item?.id !== "string" || !holdsDocument(item, item.id)) invalid();
+        }
         break;
+      }
     }
     return { ok: true, latencyMs: Date.now() - started, error: null };
   } catch (error) {
