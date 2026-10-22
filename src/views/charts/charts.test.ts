@@ -55,7 +55,7 @@ describe("lineChart", () => {
     expect(svg.match(/class="ts-chart-column"/g)).toHaveLength(3);
     expect(svg).toContain('aria-label="p1: US West —, Europe 90 ms"');
     // Flat areas per run, the larger series behind; no gradient.
-    expect(svg.match(/class="ts-chart-area/g)).toHaveLength(3);
+    expect(svg.match(/class="ts-chart-area /g)).toHaveLength(3);
     expect(svg).toContain('class="ts-chart-area ts-cat-2 ts-chart-back"');
     expect(svg).not.toContain("Gradient");
   });

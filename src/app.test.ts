@@ -529,8 +529,9 @@ describe("app", () => {
     expect(body).toContain("Slow &lt;queries&gt;");
     expect(body).toContain("Looking into it.");
     expect(body.indexOf("We are watching it.")).toBeLessThan(body.indexOf("Looking into it."));
-    // Updates of an open minor incident carry its impact's colour.
-    expect(body.match(/<li class="st-timeline-item" data-state="degraded">/g)).toHaveLength(2);
+    // Investigation is an outage state; monitoring has the neutral timeline color.
+    expect(body.match(/<li class="st-timeline-item" data-state="partial_outage">/g)).toHaveLength(1);
+    expect(body.match(/<li class="st-timeline-item" data-state="none">/g)).toHaveLength(1);
     expect(body).toContain("All components");
     expect((await app.fetch(request("/incidents/nope"), seededEnv(), ctx)).status).toBe(404);
   });
