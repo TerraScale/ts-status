@@ -1,12 +1,5 @@
-/* The authenticated data API canary. Each round the coordinator writes the
-   round's marker into a dedicated canary document with a scoped key, then
-   reads it back. Unlike the vantages' unauthenticated probes, this proves
-   that keys are accepted and that writes commit and become readable.
-
-   It is configured by the DATA_API_CANARY Worker secret: a JSON object
-   mapping canary endpoint ids to their document and key. A canary the
-   secret does not configure shows "Not configured" and counts toward no
-   uptime, like the TerraBase probes. */
+/* Read-only Data API probe. DATA_API_CANARY maps endpoint ULIDs to a
+   pre-created document and a database-scoped ts-auth client credential. */
 
 import { isId } from "../ids";
 import { logEvent } from "../log";
@@ -31,13 +24,15 @@ export interface CanaryConfig {
   database: string;
   collection: string;
   document: string;
-  /** A tb_ API key with documents:read and documents:write. */
+  /** Platform issuer, including /terrascale. */
+  issuer: string;
+  /** A ts-auth project key with only documents:read, narrowed to this database. */
   key: string;
 }
 
 export interface CanaryResult {
   ok: boolean;
-  /** Write plus read-back time; null when the canary failed. */
+  /** Token exchange plus read time; null when the canary failed. */
   latencyMs: number | null;
   error: string | null;
 }
@@ -49,14 +44,19 @@ const REGION_CODE = /^[a-z]{3}$/;
 /** A three-letter deployment region code, e.g. gru or sjc. */
 export const isRegionCode = (value: unknown): value is string => typeof value === "string" && REGION_CODE.test(value);
 
-export function isCanaryConfig(value: unknown): value is CanaryConfig {
+export type DocumentProbeConfig = Omit<CanaryConfig, "document">;
+
+export function isDocumentProbeConfig(value: unknown): value is DocumentProbeConfig {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const entry = value as Record<string, unknown>;
   try {
     const url = new URL(String(entry.origin));
+    const issuer = new URL(String(entry.issuer));
     return (
       url.protocol === "https:" &&
       url.origin === entry.origin &&
+      issuer.protocol === "https:" &&
+      `${issuer.origin}/terrascale` === entry.issuer &&
       isRegionCode(entry.region) &&
       typeof entry.project === "string" &&
       isId(entry.project) &&
@@ -64,15 +64,20 @@ export function isCanaryConfig(value: unknown): value is CanaryConfig {
       NAME.test(entry.database) &&
       typeof entry.collection === "string" &&
       NAME.test(entry.collection) &&
-      typeof entry.document === "string" &&
-      isId(entry.document) &&
       typeof entry.key === "string" &&
-      entry.key.startsWith("tb_") &&
-      entry.key.length > 3
+      entry.key.length === 79 &&
+      isId(entry.key.slice(0, 26)) &&
+      /^_[0-9a-hjkmnp-tv-z]{52}$/.test(entry.key.slice(26))
     );
   } catch {
     return false;
   }
+}
+
+export function isCanaryConfig(value: unknown): value is CanaryConfig {
+  return (
+    isDocumentProbeConfig(value) && "document" in value && typeof value.document === "string" && isId(value.document)
+  );
 }
 
 export const collectionPath = (config: Pick<CanaryConfig, "project" | "database" | "collection">): string =>
@@ -82,31 +87,18 @@ export const collectionPath = (config: Pick<CanaryConfig, "project" | "database"
 export const documentPath = (config: CanaryConfig): string =>
   `${collectionPath(config)}/documents/by-key?id=${config.document}`;
 
-/** Validate the C# document write acknowledgement, including durability. */
-export function written(value: unknown): string {
-  const body = value as { id?: unknown; version?: unknown; offset?: unknown; durability?: unknown } | null;
-  if (
-    !body ||
-    typeof body.id !== "string" ||
-    !isId(body.id) ||
-    typeof body.version !== "string" ||
-    !VERSION.test(body.version) ||
-    typeof body.offset !== "string" ||
-    !/^(0|[1-9][0-9]*)$/.test(body.offset) ||
-    body.durability !== "local_durable"
-  )
-    throw new CanaryError("Invalid response");
-  return body.id;
-}
-
-export const holdsDocument = (value: unknown, id: string, marker: string): boolean => {
-  const body = value as { id?: unknown; version?: unknown; state?: unknown; document?: { canary?: unknown } } | null;
+/** Validate the current document envelope; no response content reaches public errors. */
+export const holdsDocument = (value: unknown, id: string): boolean => {
+  const body = value as { id?: unknown; version?: unknown; state?: unknown; document?: unknown } | null;
   return (
+    isId(id) &&
     body?.id === id &&
     typeof body.version === "string" &&
     VERSION.test(body.version) &&
     body.state === "value" &&
-    body.document?.canary === marker
+    typeof body.document === "object" &&
+    body.document !== null &&
+    !Array.isArray(body.document)
   );
 };
 
@@ -261,33 +253,64 @@ export async function canaryJson(
   return body;
 }
 
-/** Writes the round marker to one dedicated document and verifies it immediately. */
+/** Exchange only at ts-auth; the long-lived key is never sent to TerraBase. */
+export async function readToken(
+  config: Pick<CanaryConfig, "issuer" | "project" | "key">,
+  fetcher: typeof fetch,
+): Promise<string> {
+  const body = (await canaryJson(
+    `${config.issuer}/oauth/token`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": USER_AGENT },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: config.key.slice(0, 26),
+        client_secret: config.key,
+        project: config.project,
+        scope: "documents:read",
+      }).toString(),
+      cache: "no-store",
+    },
+    fetcher,
+    [200],
+  )) as { access_token?: unknown; token_type?: unknown; expires_in?: unknown };
+  if (
+    typeof body.access_token !== "string" ||
+    !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(body.access_token) ||
+    body.token_type !== "Bearer" ||
+    typeof body.expires_in !== "number" ||
+    !Number.isSafeInteger(body.expires_in) ||
+    body.expires_in <= 0
+  )
+    throw new CanaryError("Invalid token response");
+  return body.access_token;
+}
+
+/** Read a pre-created fixture; the round marker remains in the coordinator's call signature. */
 export async function runCanary(
   config: CanaryConfig,
-  marker: string,
+  _marker: string,
   fetcher: typeof fetch = fetch,
 ): Promise<CanaryResult> {
-  const url = config.origin + documentPath(config);
-  const headers = {
-    authorization: `Bearer ${config.key}`,
-    "user-agent": USER_AGENT,
-  };
   const started = Date.now();
   try {
     if (!isCanaryConfig(config)) throw new CanaryError("Invalid probe config");
-    const write = await canaryJson(
-      url,
+    const token = await readToken(config, fetcher);
+    const read = await canaryJson(
+      config.origin + documentPath(config),
       {
-        method: "PUT",
-        headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({ canary: marker }),
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "user-agent": USER_AGENT,
+        },
+        cache: "no-store",
       },
       fetcher,
-      [200, 201],
+      [200],
     );
-    if (written(write) !== config.document) throw new CanaryError("Invalid response");
-    const read = await canaryJson(url, { headers, cache: "no-store" }, fetcher, [200]);
-    if (!holdsDocument(read, config.document, marker)) throw new CanaryError("Write not readable");
+    if (!holdsDocument(read, config.document)) throw new CanaryError("Invalid response");
     return { ok: true, latencyMs: Date.now() - started, error: null };
   } catch (error) {
     if (error instanceof CanaryError) return { ok: false, latencyMs: null, error: error.message };

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { isCanaryConfig, parseCanaries, written } from "./canary";
+import { isCanaryConfig, parseCanaries, holdsDocument } from "./canary";
 import { isTerraBaseConfig, parseTerraBase } from "./terrabase";
 import { isSdkProbeConfig, runSdkDocuments } from "./sdk";
 
@@ -11,7 +11,8 @@ const canary = {
   database: "status_canary",
   collection: "canary",
   document: id,
-  key: "tb_test",
+  issuer: "https://auth.example.test/terrascale",
+  key: `${id}_${"a".repeat(52)}`,
 };
 const sdk = {
   ...canary,
@@ -66,9 +67,9 @@ describe("probe entity IDs", () => {
         expect(isCanaryConfig({ ...canary, [field]: invalid })).toBe(false);
         expect(isSdkProbeConfig("documents", { ...sdk, [field]: invalid })).toBe(false);
       }
-      expect(() =>
-        written({ id: invalid, version: `tbv1-${"0".repeat(32)}`, offset: "1", durability: "local_durable" }),
-      ).toThrow("Invalid response");
+      expect(
+        holdsDocument({ id: invalid, version: `tbv1-${"0".repeat(32)}`, state: "value", document: {} }, invalid),
+      ).toBe(false);
     }
   });
 });
