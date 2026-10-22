@@ -26,7 +26,7 @@ export type IncidentStatus =
 
 export type IncidentImpact = "none" | "minor" | "major" | "critical";
 
-export type Provider = "fly" | "cloudflare" | "other";
+export type Provider = "cloudflare" | "other";
 
 export interface ComponentGroup {
   id: string;

@@ -71,7 +71,7 @@ const HERO_ICONS: Record<Status, IconName> = {
 
 const lower = (state: TimelineState): string => STATE_LABELS[state].toLowerCase();
 
-/** Who serves a region, such as "Fly.io". */
+/** Who serves a region, such as "Cloudflare". */
 export const providersOf = (entry: RegionOverview): string =>
   [...new Set(entry.clusters.map((cluster) => PROVIDERS[cluster.provider]))].join(", ") || "No clusters yet";
 

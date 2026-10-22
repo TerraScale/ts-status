@@ -19,7 +19,7 @@ Non-production branch builds are off.
 it, created with the location hints wnam, sam, weur and apac, so there is no
 other Worker to deploy. Pull requests get no preview deploy and the Worker has
 no preview URLs. Cloudflare runs it all;
-ts-status has no process on Fly, so it keeps working while the platform is down.
+ts-status has no process on OCI, so it keeps working while the platform is down.
 
 Workers Builds deploys with its own build token. The status Worker's admin,
 subscription and probe credentials are Worker secrets.

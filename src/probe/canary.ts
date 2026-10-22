@@ -25,7 +25,7 @@ export const CANARY_VANTAGE = "canary";
 export interface CanaryConfig {
   /** The public API origin, e.g. https://api.terrascale.tech. */
   origin: string;
-  /** The Fly region the requests prefer, e.g. gru: one host serves every region. */
+  /** The deployment region, e.g. gru; the origin selects the service. */
   region: string;
   project: string;
   database: string;
@@ -44,10 +44,10 @@ export interface CanaryResult {
 
 const NAME = /^[a-z][a-z0-9_-]{0,62}$/;
 const VERSION = /^tbv1-[0-9a-f]{32}$/;
-const FLY_REGION = /^[a-z]{3}$/;
+const REGION_CODE = /^[a-z]{3}$/;
 
-/** A Fly region code, e.g. gru or sjc. */
-export const isFlyRegion = (value: unknown): value is string => typeof value === "string" && FLY_REGION.test(value);
+/** A three-letter deployment region code, e.g. gru or sjc. */
+export const isRegionCode = (value: unknown): value is string => typeof value === "string" && REGION_CODE.test(value);
 
 export function isCanaryConfig(value: unknown): value is CanaryConfig {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
@@ -57,7 +57,7 @@ export function isCanaryConfig(value: unknown): value is CanaryConfig {
     return (
       url.protocol === "https:" &&
       url.origin === entry.origin &&
-      isFlyRegion(entry.region) &&
+      isRegionCode(entry.region) &&
       typeof entry.project === "string" &&
       isId(entry.project) &&
       typeof entry.database === "string" &&
@@ -271,7 +271,6 @@ export async function runCanary(
   const headers = {
     authorization: `Bearer ${config.key}`,
     "user-agent": USER_AGENT,
-    "fly-prefer-region": config.region,
   };
   const started = Date.now();
   try {

@@ -2,11 +2,11 @@
 
 Adopted 2026-10-09 (TS-795).
 
-- Every feature is always on and every Fly region serves as soon as its
+- Every feature is always on and every deployed region serves as soon as its
   machines boot. There are no feature flags, region activation steps, deploy
   toggles or kill switches.
-- Production secrets are set once: Fly secrets on each Fly app, Worker secrets
-  on ts-status, and the deployment token in Cloudflare Workers Builds.
+- OCI production secrets come from OCI Vault via instance principal; ts-status
+  uses Worker secrets and Cloudflare Workers Builds keeps its deployment token.
   Operators never copy production credentials by hand.
 - Each value has one correct setting in code. Production exposes no tuning
   knobs. Fakes, demo stores and authentication bypasses belong only in test

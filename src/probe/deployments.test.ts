@@ -33,7 +33,7 @@ describe("regional deployment observations", () => {
         "https://api.terrascale.tech/healthz",
         "https://auth.terrascale.tech/healthz",
         "https://status.terrascale.tech/health/version",
-        "https://ts-dashboard.fly.dev/health/ready",
+        "https://dash.terrascale.tech/health/ready",
       ]),
     );
   });

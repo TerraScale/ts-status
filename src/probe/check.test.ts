@@ -4,7 +4,7 @@ import { check, MAX_BODY_BYTES } from "./check";
 const target = {
   key: "dash",
   url: "https://dash.test/health/ready",
-  headers: '{"fly-prefer-region":"gru"}',
+  headers: '{"Cache-Control":"no-cache"}',
   body: false,
 };
 
@@ -17,7 +17,7 @@ describe("check", () => {
     });
     expect(result).toMatchObject({ key: "dash", status: 503, error: null });
     expect(result.body).toBeUndefined();
-    expect(sent?.get("fly-prefer-region")).toBe("gru");
+    expect(sent?.get("Cache-Control")).toBe("no-cache");
     expect(sent?.get("user-agent")).toMatch(/^TerraScale-Status/);
   });
 

@@ -16,7 +16,7 @@ export const KINDS: readonly IncidentKind[] = ["incident", "warning", "maintenan
 export const IMPACTS: readonly IncidentImpact[] = ["none", "minor", "major", "critical"];
 export const INCIDENT_STATUSES: readonly IncidentStatus[] = ["investigating", "identified", "monitoring", "resolved"];
 export const MAINTENANCE_STATUSES: readonly IncidentStatus[] = ["scheduled", "in_progress", "completed"];
-export const PROVIDERS = ["fly", "cloudflare", "other"] as const;
+export const PROVIDERS = ["cloudflare", "other"] as const;
 export const PROBES = ["health", "documents", "management"] as const;
 const FINAL: readonly IncidentStatus[] = ["resolved", "completed"];
 

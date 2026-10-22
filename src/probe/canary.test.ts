@@ -12,6 +12,24 @@ const canary = {
 };
 
 describe("TerraBase canary", () => {
+  it("uses the configured public origin without regional routing headers", async () => {
+    const ack = {
+      id: canary.document,
+      version: `tbv1-${"a".repeat(32)}`,
+      offset: "1",
+      durability: "local_durable",
+    };
+    const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toMatch(/^https:\/\/api\.terrascale\.tech\/v1\//);
+      expect([...new Headers(init?.headers).keys()].sort()).toEqual(
+        init?.method === "PUT" ? ["authorization", "content-type", "user-agent"] : ["authorization", "user-agent"],
+      );
+      return Response.json(init?.method === "PUT" ? ack : { ...ack, state: "value", document: { canary: "round" } });
+    });
+    expect(await runCanary(canary, "round", fetcher)).toMatchObject({ ok: true, error: null });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it("rejects malformed config and write/read acknowledgements", () => {
     expect(isCanaryConfig(canary)).toBe(true);
     for (const patch of [

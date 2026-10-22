@@ -12,11 +12,12 @@ never print it. There is no API token and no direct D1 edit.
 - **Components** are what customers use. "Active" ones are probed; "Coming
   soon" ones are shown and never probed (the dashboard today). An active
   component without endpoints shows "Pending launch" until its first passing round.
-- **Regions** are Fly regions: `GRU` São Paulo, `SJC` San Francisco Bay Area,
+- **Regions** use deployment codes: `GRU` São Paulo, `SJC` San Francisco Bay Area,
   `FRA` Frankfurt. Map x/y place the hub on the 136×80 region map.
 - **Endpoints** are one check each. A regional endpoint names its region and
-  pins it with the header `{"fly-prefer-region":"gru"}`; global ones have no
-  region. `provider` is `fly`, `cloudflare` or `other`.
+  uses a verified public origin; global ones have no region. `provider` is
+  `cloudflare` or `other` (including OCI). Production runs in OCI gru under
+  ts-orch; do not infer regional hosts from a region code.
 
 Every endpoint carries a check:
 
@@ -40,7 +41,7 @@ Every endpoint carries a check:
 
 1. Add the region (code, name, country, map position).
 2. Add its endpoints: copy each gru endpoint, change the region, cluster,
-   `fly-prefer-region` header and `region` assertion.
+   verified public origin and `region` assertion; never invent a routing header.
 3. Press "Check now" on each new endpoint. New endpoints show "Pending launch"
    until their first passing round, then count toward uptime.
 

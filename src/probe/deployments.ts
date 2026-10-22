@@ -6,7 +6,7 @@ const SERVICES = [
   ["ts-terrabase", "https://api.terrascale.tech/healthz"],
   ["ts-auth", "https://auth.terrascale.tech/healthz"],
   ["ts-status", "https://status.terrascale.tech/health/version"],
-  ["ts-dashboard", "https://ts-dashboard.fly.dev/health/ready"],
+  ["ts-dashboard", "https://dash.terrascale.tech/health/ready"],
 ] as const;
 
 export interface DeploymentObservation {
