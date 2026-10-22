@@ -30,8 +30,8 @@ AI IS NOT ALLOWED TO EDIT THIS FILE ONLY HUMANS CAN!
   is down. Never move ts-status data to TerraBase or add a TerraBase dependency
   to the data path.
 - Cloudflare Workers Builds deploys every push to main with its own build
-  token; this repo has no GitHub Actions workflow. Keep the build token scoped
-  only to ts-status (Workers scripts and routes, D1 Edit).
+  token; GitHub Actions checks pull requests and main without deployment
+  credentials. Keep the build token scoped only to ts-status (Workers scripts and routes, D1 Edit).
   Never print or copy it; check scope on D1 error 7403.
 
 ## Cloudflare: use the `cf` CLI

@@ -59,7 +59,7 @@ Every entity ID is a plain, canonical uppercase 26-character Crockford ULID. `sr
 
 `schema.sql` is the idempotent clean bootstrap (one SQL statement per line for D1 `exec`); historical data migrations are removed. Fresh stores recreate the schema and catalog before serving requests or running scheduled probes. Repeated startup preserves incidents, subscriptions and catalog edits made in the admin page. Seeded catalog IDs are fixed ULIDs; the admin page shows every component and endpoint ID. Probe secrets are keyed by endpoint ULID.
 
-Existing stores normalize retired providers to `other` (the existing self-hosted value), remove obsolete affinity headers and update the replication URL during bootstrap. Endpoint IDs, history, other headers, assertions and operator edits on supported providers are preserved; no table is rebuilt.
+Existing stores normalize retired providers to `other` (the existing self-hosted value), remove obsolete affinity headers and update the replication URL during bootstrap. Endpoint IDs, history, other headers, assertions and custom URLs, labels and descriptions are preserved; no table is rebuilt.
 
 Production uses the D1 store `ts-status` (`c2eca5bc-6045-4983-941a-4e01e4e0c749`).
 
@@ -189,7 +189,7 @@ The minute cron enqueues up to 1,000 eligible subscriber/update pairs into the D
 
 ## Deploy
 
-Cloudflare Workers Builds deploys every push to main with `npm run deploy`: it builds, bootstraps D1 from `schema.sql`, then deploys the one status Worker. There is no GitHub Actions workflow, so run `npm run lint`, `npm run check` and `npm test` before merging. Pull requests get no preview build and the Worker has no preview URLs.
+Cloudflare Workers Builds deploys every push to main with `npm run deploy`: it builds, bootstraps D1 from `schema.sql`, then deploys the one status Worker. GitHub Actions runs `npm run check`, `npm test` and `npm run build` on pull requests and main; the `test` job must pass on the latest commit before merging. These checks use HTTP fakes and local SQLite, without deployment credentials or a TerraBase binary.
 
 Worker secrets: `SUBSCRIPTION_SECRET`, `ADMIN_PASSWORD_HASH`, `ADMIN_SESSION_SECRET`, and the probe secrets `TERRABASE_PROBES` and `DATA_API_CANARY`. Set them with `wrangler secret put` or `cf workers secrets update`; never print them.
 
