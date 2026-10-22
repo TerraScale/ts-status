@@ -1,17 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import app from "../app";
 import type { Env } from "../env";
 import { isId } from "../ids";
 import type { ProbeRequest, ProbeResponse } from "../probe/protocol";
 import { testD1, type TestD1 } from "../testing/d1";
-import { checkPassword, COOKIE, hashPassword, issue, sameBytes, SESSION_MS } from "./auth";
+import { COOKIE, issue, SESSION_MS } from "./auth";
 import { vantageNamespace } from "../testing/vantages";
 
-const PASSWORD = "correct horse battery staple 42";
 const SECRET = "s".repeat(43);
-const ORIGIN = "https://status.test";
+const ORIGIN = "https://status.terrascale.tech";
 const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as unknown as ExecutionContext;
-const hash = hashPassword(PASSWORD);
+afterEach(() => vi.restoreAllMocks());
 
 /** A vantage answering every target with `status`. */
 const vantage = (code: string, status = 200) => ({
@@ -25,11 +24,11 @@ const vantage = (code: string, status = 200) => ({
   },
 });
 
-async function setup(options: { allowed?: boolean; secrets?: boolean } = {}) {
+async function setup(options: { allowed?: boolean } = {}) {
   const attempts: string[] = [];
   const env = {
     STATUS_DB: testD1(),
-    ...(options.secrets === false ? {} : { ADMIN_PASSWORD_HASH: await hash, ADMIN_SESSION_SECRET: SECRET }),
+    ADMIN_SESSION_SECRET: SECRET,
     ADMIN_LOGIN_LIMITER: {
       limit: async ({ key }: { key: string }) => (attempts.push(key), { success: options.allowed ?? true }),
     },
@@ -52,14 +51,8 @@ async function setup(options: { allowed?: boolean; secrets?: boolean } = {}) {
     for (const [name, value] of Object.entries(fields)) for (const item of [value].flat()) body.append(name, item);
     return body;
   };
-  const login = (password: string, origin = ORIGIN) =>
-    call("/admin/login", {
-      method: "POST",
-      headers: { origin, "content-type": "application/x-www-form-urlencoded", "cf-connecting-ip": "203.0.113.9" },
-      body: form({ password }),
-    });
-  const cookieOf = (response: Response) => /^([^;]+)/.exec(response.headers.get("set-cookie") ?? "")?.[1] ?? "";
-  const cookie = cookieOf(await login(PASSWORD));
+  const login = () => call("/admin/login", { method: "POST", headers: { origin: ORIGIN, "cf-connecting-ip": "203.0.113.9" } });
+  const cookie = `${COOKIE}=${await issue(SECRET, Date.now())}`;
   const get = (path: string, as = cookie) => call(path, { headers: { cookie: as } });
   const csrf = async (as = cookie) =>
     /name="csrf" value="([^"]+)"/.exec(await (await get("/admin", as)).text())?.[1] ?? "";
@@ -76,29 +69,10 @@ async function setup(options: { allowed?: boolean; secrets?: boolean } = {}) {
     });
   const one = (query: string, ...values: (string | number | null)[]) =>
     env.STATUS_DB.sqlite.prepare(query).get(...values);
-  return { env, call, login, get, post, csrf, cookie, token, cookieOf, attempts, one };
+  return { env, call, login, get, post, csrf, cookie, token, attempts, one };
 }
 
 describe("admin sign-in", () => {
-  it("hashes the password with PBKDF2 and checks it in constant time", async () => {
-    const stored = await hash;
-    expect(stored).toMatch(/^pbkdf2-sha256\$100000\$[\w-]{22}\$[\w-]{43}$/);
-    expect(await checkPassword(PASSWORD, stored)).toBe(true);
-    expect(await checkPassword(`${PASSWORD} `, stored)).toBe(false);
-    expect(await checkPassword("", stored)).toBe(false);
-    for (const broken of [
-      undefined,
-      "",
-      "plain",
-      stored.replace("pbkdf2-sha256", "md5"),
-      stored.replace("100000", "0"),
-    ])
-      expect(await checkPassword(PASSWORD, broken)).toBe(false);
-    expect(sameBytes(new Uint8Array([1, 2]), new Uint8Array([1, 2]))).toBe(true);
-    expect(sameBytes(new Uint8Array([1, 2]), new Uint8Array([1, 3]))).toBe(false);
-    expect(sameBytes(new Uint8Array([1, 2]), new Uint8Array([1, 2, 0]))).toBe(false);
-  });
-
   it("sends visitors without a session to the sign-in page", async () => {
     const { call } = await setup();
     const response = await call("/admin");
@@ -112,37 +86,9 @@ describe("admin sign-in", () => {
     expect(await page.text()).toContain('type="password"');
   });
 
-  it("rejects a wrong password", async () => {
-    const { login, get } = await setup();
-    const response = await login("wrong password");
-    expect(response.status).toBe(401);
-    expect(response.headers.get("set-cookie")).toBeNull();
-    expect(await response.text()).toContain("Wrong password.");
-    expect((await get("/admin", "")).status).toBe(303);
-  });
-
-  it("issues an HttpOnly, Secure, SameSite=Strict host cookie for the right one", async () => {
-    const { login, get, cookie } = await setup();
-    const response = await login(PASSWORD);
-    expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe("/admin");
-    expect(response.headers.get("set-cookie")).toMatch(
-      new RegExp(`^${COOKIE}=\\d{13}\\.[\\w-]+\\.[\\w-]+; Path=/; Max-Age=3600; HttpOnly; Secure; SameSite=Strict$`),
-    );
-    const page = await get("/admin", cookie);
-    expect(page.status).toBe(200);
-    expect(page.headers.get("cache-control")).toBe("no-store");
-    expect(await page.text()).toContain("Publish");
-  });
-
-  it("refuses sign-in when the secrets are missing", async () => {
-    const { login } = await setup({ secrets: false });
-    expect((await login(PASSWORD)).status).toBe(401);
-  });
-
-  it("rate limits sign-in per client before checking the password", async () => {
+  it("rate limits sign-in per client before contacting the identity provider", async () => {
     const { login, attempts } = await setup({ allowed: false });
-    const response = await login(PASSWORD);
+    const response = await login();
     expect(response.status).toBe(429);
     expect(response.headers.get("set-cookie")).toBeNull();
     expect(attempts.at(-1)).toBe("admin:203.0.113.9");
@@ -150,15 +96,11 @@ describe("admin sign-in", () => {
 
   it("refuses expired, forged and foreign cookies", async () => {
     const { get, cookie } = await setup();
-    const [expires, nonce, signature] = cookie.slice(COOKIE.length + 1).split(".");
-    const expired = `${COOKIE}=${await issue(SECRET, Date.now() - SESSION_MS - 1_000)}`;
+    const expired = `${COOKIE}=${await issue(SECRET, Date.now() - SESSION_MS - 1000)}`;
     const forged = [
       expired,
-      `${COOKIE}=${Number(expires) + 60_000}.${nonce}.${signature}`,
-      `${COOKIE}=${expires}.${nonce}x.${signature}`,
-      `${COOKIE}=${expires}.${nonce}.${signature?.replace(/^./, (char) => (char === "A" ? "B" : "A"))}`,
+      `${cookie}x`,
       `${COOKIE}=${await issue("another secret", Date.now())}`,
-      `${COOKIE}=${expires}.${nonce}`,
       `other=${cookie.slice(COOKIE.length + 1)}`,
     ];
     for (const value of forged) expect((await get("/admin", value)).status).toBe(303);
@@ -166,12 +108,14 @@ describe("admin sign-in", () => {
   });
 
   it("requires the session's CSRF token and this origin on every form", async () => {
-    const { post, env, csrf, login, cookieOf } = await setup();
+    const { post, env, csrf } = await setup();
     const fields = { kind: "incident", title: "Outage", message: "Looking." };
     expect((await post("/admin/incidents", { ...fields, csrf: "" })).status).toBe(403);
     expect((await post("/admin/incidents", { ...fields, csrf: "bm90LXRoZS10b2tlbg" })).status).toBe(403);
     // Another session's token is not this session's.
-    const other = await csrf(cookieOf(await login(PASSWORD)));
+    const other = await csrf(
+      `${COOKIE}=${await issue(SECRET, Date.now())}`,
+    );
     expect((await post("/admin/incidents", { ...fields, csrf: other })).status).toBe(403);
     expect((await post("/admin/incidents", fields, { origin: "https://evil.test" })).status).toBe(403);
     expect((await post("/admin/incidents", fields, {})).status).toBe(403);
@@ -179,9 +123,9 @@ describe("admin sign-in", () => {
     expect((await post("/admin/incidents", fields)).status).toBe(303);
   });
 
-  it("refuses cross-site sign-in and form posts without a session", async () => {
-    const { login, call } = await setup();
-    expect((await login(PASSWORD, "https://evil.test")).status).toBe(403);
+  it("refuses cross-site form posts and mutations without a session", async () => {
+    const { call } = await setup();
+    expect((await call("/admin/login", { method: "POST", headers: { origin: "https://evil.test" } })).status).toBe(403);
     const response = await call("/admin/incidents", {
       method: "POST",
       headers: { origin: ORIGIN, "content-type": "application/x-www-form-urlencoded" },

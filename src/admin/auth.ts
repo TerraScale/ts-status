@@ -1,8 +1,4 @@
-/* Admin authentication: one password, stored as a PBKDF2 hash in the
-   ADMIN_PASSWORD_HASH secret, exchanged for a short-lived session cookie
-   signed with ADMIN_SESSION_SECRET. Nothing is stored server-side: the
-   cookie carries its expiry and a nonce, and every form carries a CSRF
-   token derived from that nonce. Comparisons are constant time. */
+/* Encrypted admin sessions and session-bound CSRF tokens. */
 
 import { base64url, decode } from "../notify/tokens";
 
@@ -86,18 +82,18 @@ export async function checkCsrf(secret: string, current: Session, presented: str
 }
 
 /** The admin cookie's value from a request. */
-export function readCookie(request: Request): string | null {
+export function readCookie(request: Request, cookie = COOKIE): string | null {
   for (const part of (request.headers.get("cookie") ?? "").split(";")) {
     const [name, ...value] = part.trim().split("=");
-    if (name === COOKIE) return value.join("=");
+    if (name === cookie) return value.join("=");
   }
   return null;
 }
 
 export const setCookie = (value: string): string =>
-  `${COOKIE}=${value}; Path=/; Max-Age=${SESSION_MS / 1000}; HttpOnly; Secure; SameSite=Strict`;
+  `${COOKIE}=${value}; Path=/; Max-Age=${SESSION_MS / 1000}; HttpOnly; Secure; SameSite=Lax`;
 
-export const clearCookie = `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`;
+export const clearCookie = `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
 
 /** Whether a form post comes from this site: browsers send Origin on every POST. */
 export function sameOrigin(request: Request): boolean {
