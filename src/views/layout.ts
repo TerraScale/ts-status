@@ -3,11 +3,11 @@
    font. */
 
 import mark from "../assets/mark.svg?raw";
+import type { Status } from "../domain/status";
 import { html, raw, type Html } from "../html";
 import styles from "../styles/index.css?inline";
 import { CHART_SCRIPT } from "./chart-client";
 import { CLIENT_SCRIPT, REFRESH_SECONDS } from "./client";
-import { icon } from "./icons";
 
 export const STYLES = styles;
 

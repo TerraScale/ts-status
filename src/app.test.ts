@@ -180,6 +180,7 @@ describe("app", () => {
     expect(response.headers.get("content-security-policy")).toMatch(/script-src 'sha256-[^']+'/);
     expect(response.headers.get("content-security-policy")).toContain("https://static.cloudflareinsights.com");
     expect(response.headers.get("content-security-policy")).toContain("https://cloudflareinsights.com");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
     // Email is down but under maintenance, so only the warning degrades the headline.
     expect(body).toContain("Some systems are degraded");
     expect(body).toContain("Scheduled maintenance");
@@ -191,6 +192,9 @@ describe("app", () => {
     expect(body).toContain("Ping 42 ms");
     expect(body).toContain('data-lifecycle="planned"');
     expect(body).not.toContain("Monitoring delayed");
+    expect(body).toContain('class="st-region-clusters"');
+    expect(body).toContain("6 clusters");
+    expect(body.match(/id="region-GRU"/g)).toHaveLength(1);
   });
 
   it("warns about certificates close to expiry and shows them on clusters", async () => {
@@ -525,8 +529,9 @@ describe("app", () => {
     expect(body).toContain("Slow &lt;queries&gt;");
     expect(body).toContain("Looking into it.");
     expect(body.indexOf("We are watching it.")).toBeLessThan(body.indexOf("Looking into it."));
-    // Updates of an open minor incident carry its impact's colour.
-    expect(body.match(/<li class="st-timeline-item" data-state="degraded">/g)).toHaveLength(2);
+    // Investigation is an outage state; monitoring has the neutral timeline color.
+    expect(body.match(/<li class="st-timeline-item" data-state="partial_outage">/g)).toHaveLength(1);
+    expect(body.match(/<li class="st-timeline-item" data-state="none">/g)).toHaveLength(1);
     expect(body).toContain("All components");
     expect((await app.fetch(request("/incidents/nope"), seededEnv(), ctx)).status).toBe(404);
   });
@@ -828,6 +833,7 @@ describe("app", () => {
     const env = seededEnv();
     const embed = await app.fetch(request("/embed"), env, ctx);
     expect(embed.headers.get("content-security-policy")).toContain("frame-ancestors *");
+    expect(embed.headers.get("x-frame-options")).toBeNull();
     const body = await embed.text();
     expect(body).toContain("st-embed");
     expect(body).not.toContain("st-top");
