@@ -67,6 +67,7 @@ function grid(detail: IncidentDetail): number[] {
     picking a view; CSS shows the picked one, so it works without scripts. */
 export function latency(detail: IncidentDetail): { chart: Html; picker: Html } {
   const points = grid(detail);
+  const names = new Map(detail.components.map((component) => [component.id, component.name]));
   const series = detail.endpoints
     .map((endpoint) => {
       const values = new Map(

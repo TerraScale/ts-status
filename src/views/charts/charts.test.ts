@@ -127,6 +127,7 @@ describe("incident latency ranges", () => {
     ({
       resolution,
       window: { from, to: from + minutes * 60_000 },
+      components: [{ id: "api", name: "TerraBase API" }],
       endpoints: [{ id: "e1", componentId: "api", cluster: "gru" }],
       series: Array.from({ length: minutes * 2 }, (_, index) => ({
         endpointId: "e1",
@@ -146,8 +147,8 @@ describe("incident latency ranges", () => {
     const last30 = views[2] ?? "";
     // 60 rounds of 30 s, starting at 15:00 with the real values from there.
     expect(last30.match(/class="ts-chart-column"/g)).toHaveLength(60);
-    expect(last30).toContain("Oct 9 15:00 UTC: api · gru 280 ms");
-    expect(last30).toContain("api · gru —");
+    expect(last30).toContain("Oct 9 15:00 UTC: TerraBase API · gru 280 ms");
+    expect(last30).toContain("TerraBase API · gru —");
     expect(last30.match(/class="ts-chart-line/g)).toHaveLength(2);
   });
 
