@@ -71,7 +71,13 @@ describe("read-only Data API probe", () => {
     );
     expect(readInit).toMatchObject({ method: "GET", cache: "no-store", redirect: "manual" });
     expect(new Headers(readInit?.headers).get("authorization")).toBe(`Bearer ${token}`);
-    expect([...new Headers(readInit?.headers).keys()].sort()).toEqual(["authorization", "user-agent"]);
+    expect(new Headers(readInit?.headers).get("X-TerraScale-Region-Pin")).toBe("gru");
+    expect([...new Headers(readInit?.headers).keys()].sort()).toEqual([
+      "authorization",
+      "user-agent",
+      "x-terrascale-region-pin",
+    ]);
+    expect(new Headers(init?.headers).has("X-TerraScale-Region-Pin")).toBe(false);
     expect(JSON.stringify(fetcher.mock.calls[1])).not.toContain(canary.key);
   });
 
@@ -87,7 +93,7 @@ describe("read-only Data API probe", () => {
       const result = await runCanary(canary, "round", fake({ ...document, ...patch }));
       expect(result).toMatchObject({ ok: false, error: "Invalid response" });
     }
-    for (const status of [401, 403, 404, 302]) {
+    for (const status of [401, 403, 404, 421, 302]) {
       const fetcher = fake({ error: { code: canary.key, message: token } }, status);
       expect(await runCanary(canary, "round", fetcher)).toMatchObject({ ok: false, error: `HTTP ${status}` });
       expect(fetcher).toHaveBeenCalledTimes(2);

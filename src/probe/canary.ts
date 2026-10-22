@@ -18,7 +18,7 @@ export const CANARY_VANTAGE = "canary";
 export interface CanaryConfig {
   /** The public API origin, e.g. https://api.terrascale.tech. */
   origin: string;
-  /** The deployment region, e.g. gru; the origin selects the service. */
+  /** The deployment region, enforced by TerraBase's region pin. */
   region: string;
   project: string;
   database: string;
@@ -304,6 +304,7 @@ export async function runCanary(
         headers: {
           authorization: `Bearer ${token}`,
           "user-agent": USER_AGENT,
+          "X-TerraScale-Region-Pin": config.region,
         },
         cache: "no-store",
       },
