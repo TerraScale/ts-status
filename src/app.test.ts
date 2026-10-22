@@ -180,6 +180,7 @@ describe("app", () => {
     expect(response.headers.get("content-security-policy")).toMatch(/script-src 'sha256-[^']+'/);
     expect(response.headers.get("content-security-policy")).toContain("https://static.cloudflareinsights.com");
     expect(response.headers.get("content-security-policy")).toContain("https://cloudflareinsights.com");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
     // Email is down but under maintenance, so only the warning degrades the headline.
     expect(body).toContain("Some systems are degraded");
     expect(body).toContain("Scheduled maintenance");
@@ -191,6 +192,9 @@ describe("app", () => {
     expect(body).toContain("Ping 42 ms");
     expect(body).toContain('data-lifecycle="planned"');
     expect(body).not.toContain("Monitoring delayed");
+    expect(body).toContain('class="st-region-clusters"');
+    expect(body).toContain("6 clusters");
+    expect(body.match(/id="region-GRU"/g)).toHaveLength(1);
   });
 
   it("warns about certificates close to expiry and shows them on clusters", async () => {
@@ -828,6 +832,7 @@ describe("app", () => {
     const env = seededEnv();
     const embed = await app.fetch(request("/embed"), env, ctx);
     expect(embed.headers.get("content-security-policy")).toContain("frame-ancestors *");
+    expect(embed.headers.get("x-frame-options")).toBeNull();
     const body = await embed.text();
     expect(body).toContain("st-embed");
     expect(body).not.toContain("st-top");

@@ -134,6 +134,9 @@ function regionBars(entry: RegionOverview): Bucket[] {
     repeating every component's bars for each. */
 function region(entry: RegionOverview, view: Overview) {
   const planned = entry.clusters.length === 0;
+  const list = regionBars(entry);
+  const summary = `${entry.name}: status over the last ${RANGES[view.range].label}`;
+  const clusters = `${entry.clusters.length} ${entry.clusters.length === 1 ? "cluster" : "clusters"}`;
   return html`<section class="st-region" aria-labelledby="region-${entry.code}">
   <header class="ts-row-between">
     <div class="ts-row">
@@ -150,7 +153,7 @@ function region(entry: RegionOverview, view: Overview) {
     planned
       ? html`<p class="ts-meta">No clusters serve this region yet.</p>`
       : html`${bars(list, { label: summary })}
-  <details class="st-region-clusters" id="region-${entry.code}">
+  <details class="st-region-clusters">
     <summary>${icon("chevron-right", "ts-icon-sm st-region-chevron")}${clusters}</summary>
     <ul class="ts-list">${entry.clusters.map((item) => clusterRow(item, view.range))}</ul>
   </details>`

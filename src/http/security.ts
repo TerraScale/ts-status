@@ -8,5 +8,17 @@ export function secure(response: Response, cacheable: boolean): Response {
   headers.set("cache-control", cacheable ? `public, max-age=${CACHE_SECONDS}` : "no-store");
   headers.set("x-content-type-options", "nosniff");
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
+  headers.set("strict-transport-security", "max-age=31536000");
+  headers.set("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  if (!headers.has("content-security-policy")) {
+    headers.set(
+      "content-security-policy",
+      "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    );
+  }
+  // The public /embed widget deliberately permits framing on other sites.
+  if (headers.get("content-security-policy")?.includes("frame-ancestors 'none'")) {
+    headers.set("x-frame-options", "DENY");
+  }
   return new Response(response.body, { status: response.status, headers });
 }
