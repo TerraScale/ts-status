@@ -22,9 +22,7 @@ export interface Env {
   COORDINATOR: DurableObjectNamespace<Coordinator>;
   /** One object per vantage (src/probe/vantages.ts). */
   VANTAGE: DurableObjectNamespace<VantagePoint>;
-  /** The admin password's PBKDF2 hash (a Worker secret; see src/admin/auth.ts). */
-  ADMIN_PASSWORD_HASH?: string;
-  /** Signs admin session cookies and CSRF tokens (a Worker secret). */
+  /** Encrypts admin cookies and signs CSRF tokens (a Worker secret). */
   ADMIN_SESSION_SECRET?: string;
   /** Limits admin sign-in attempts per client. */
   ADMIN_LOGIN_LIMITER: RateLimit;

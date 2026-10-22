@@ -5,6 +5,7 @@ import { isId } from "../ids";
 import type { ProbeRequest, ProbeResponse } from "../probe/protocol";
 import { testD1, type TestD1 } from "../testing/d1";
 import { COOKIE, issue, SESSION_MS } from "./auth";
+import { ORGANIZATION, ORGANIZATION_URL } from "./oidc";
 import { vantageNamespace } from "../testing/vantages";
 
 const SECRET = "s".repeat(43);
@@ -26,6 +27,10 @@ const vantage = (code: string, status = 200) => ({
 
 async function setup(options: { allowed?: boolean } = {}) {
   const attempts: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+    expect(url).toBe(ORGANIZATION_URL);
+    return Response.json({ id: ORGANIZATION, role: "admin" });
+  });
   const env = {
     STATUS_DB: testD1(),
     ADMIN_SESSION_SECRET: SECRET,
@@ -51,8 +56,8 @@ async function setup(options: { allowed?: boolean } = {}) {
     for (const [name, value] of Object.entries(fields)) for (const item of [value].flat()) body.append(name, item);
     return body;
   };
-  const login = () => call("/admin/login", { method: "POST", headers: { origin: ORIGIN, "cf-connecting-ip": "203.0.113.9" } });
-  const cookie = `${COOKIE}=${await issue(SECRET, Date.now())}`;
+  const login = () => call("/admin/authorize", { headers: { "cf-connecting-ip": "203.0.113.9" } });
+  const cookie = `${COOKIE}=${await issue(SECRET, Date.now(), "synthetic-access", Date.now() + SESSION_MS)}`;
   const get = (path: string, as = cookie) => call(path, { headers: { cookie: as } });
   const csrf = async (as = cookie) =>
     /name="csrf" value="([^"]+)"/.exec(await (await get("/admin", as)).text())?.[1] ?? "";
@@ -77,13 +82,13 @@ describe("admin sign-in", () => {
     const { call } = await setup();
     const response = await call("/admin");
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe("/admin/login");
+    expect(response.headers.get("location")).toBe("/admin/authorize");
     const page = await call("/admin/login");
     expect(page.status).toBe(200);
     expect(page.headers.get("cache-control")).toBe("no-store");
     expect(page.headers.get("x-robots-tag")).toBe("noindex, nofollow");
     expect(page.headers.get("content-security-policy")).toContain("form-action 'self'");
-    expect(await page.text()).toContain('type="password"');
+    expect(await page.text()).toContain("Continue with TerraScale");
   });
 
   it("rate limits sign-in per client before contacting the identity provider", async () => {
@@ -96,11 +101,11 @@ describe("admin sign-in", () => {
 
   it("refuses expired, forged and foreign cookies", async () => {
     const { get, cookie } = await setup();
-    const expired = `${COOKIE}=${await issue(SECRET, Date.now() - SESSION_MS - 1000)}`;
+    const expired = `${COOKIE}=${await issue(SECRET, Date.now() - SESSION_MS - 1000, "synthetic-access", Date.now())}`;
     const forged = [
       expired,
       `${cookie}x`,
-      `${COOKIE}=${await issue("another secret", Date.now())}`,
+      `${COOKIE}=${await issue("another secret", Date.now(), "synthetic-access", Date.now() + SESSION_MS)}`,
       `other=${cookie.slice(COOKIE.length + 1)}`,
     ];
     for (const value of forged) expect((await get("/admin", value)).status).toBe(303);
@@ -114,7 +119,7 @@ describe("admin sign-in", () => {
     expect((await post("/admin/incidents", { ...fields, csrf: "bm90LXRoZS10b2tlbg" })).status).toBe(403);
     // Another session's token is not this session's.
     const other = await csrf(
-      `${COOKIE}=${await issue(SECRET, Date.now())}`,
+      `${COOKIE}=${await issue(SECRET, Date.now(), "synthetic-access", Date.now() + SESSION_MS)}`,
     );
     expect((await post("/admin/incidents", { ...fields, csrf: other })).status).toBe(403);
     expect((await post("/admin/incidents", fields, { origin: "https://evil.test" })).status).toBe(403);

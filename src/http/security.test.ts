@@ -22,11 +22,12 @@ describe("response security", () => {
     const policy = "default-src 'none'; script-src 'sha256-example'; frame-ancestors *";
     const response = secure(
       new Response("widget", {
-        headers: { "content-security-policy": policy, "access-control-allow-origin": "*" },
+        headers: { "content-security-policy": policy, "access-control-allow-origin": "*", "referrer-policy": "no-referrer" },
       }),
       true,
     );
     expect(response.headers.get("content-security-policy")).toBe(policy);
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     expect(response.headers.get("x-frame-options")).toBeNull();
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
     expect(response.headers.get("access-control-allow-credentials")).toBeNull();
