@@ -58,6 +58,36 @@ describe("read-only TerraBase probes", () => {
     }
   });
 
+  it("rejects malformed pages and authorization failures without cleanup mutations", async () => {
+    for (const body of [
+      null,
+      [],
+      { items: [], next_cursor: 1 },
+      { items: [] },
+      { items: [null], next_cursor: null },
+      { items: [{ ...document, version: "bad" }], next_cursor: null },
+      { items: [document, document], next_cursor: null },
+    ]) {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json(grant))
+        .mockResolvedValueOnce(Response.json(body));
+      expect(await runTerraBase("documents", canary, "round", fetcher)).toMatchObject({ ok: false });
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    }
+    for (const status of [401, 403]) {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json(grant))
+        .mockResolvedValueOnce(Response.json({ error: { code: "forbidden_scope" } }, { status }));
+      expect(await runTerraBase("documents", canary, "round", fetcher)).toMatchObject({
+        ok: false,
+        error: `HTTP ${status} forbidden_scope`,
+      });
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    }
+  });
+
   it("keeps readiness anonymous and rejects a wrong region, unavailable or invalid response", async () => {
     for (const [body, status, ok] of [
       [{ status: "ready", version: "1.0", region: "gru" }, 200, true],

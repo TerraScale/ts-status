@@ -75,4 +75,49 @@ describe("read-only Data API probe", () => {
     expect(JSON.stringify(fetcher.mock.calls[1])).not.toContain(canary.key);
   });
 
+  it("fails closed on invalid documents, JSON, auth failures and redirects without leaking responses", async () => {
+    for (const patch of [
+      { id: "bad" },
+      { id: canary.project },
+      { version: "bad" },
+      { state: "deleted" },
+      { document: null },
+      { document: [] },
+    ]) {
+      const result = await runCanary(canary, "round", fake({ ...document, ...patch }));
+      expect(result).toMatchObject({ ok: false, error: "Invalid response" });
+    }
+    for (const status of [401, 403, 404, 302]) {
+      const fetcher = fake({ error: { code: canary.key, message: token } }, status);
+      expect(await runCanary(canary, "round", fetcher)).toMatchObject({ ok: false, error: `HTTP ${status}` });
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    }
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(grant))
+      .mockResolvedValueOnce(new Response("bad json"));
+    expect(await runCanary(canary, "round", fetcher)).toMatchObject({ ok: false, error: "Invalid JSON" });
+    expect(holdsDocument(null, canary.document)).toBe(false);
+  });
+
+  it("does not contact TerraBase when config or token exchange fails", async () => {
+    const invalid = vi.fn<typeof fetch>();
+    expect(await runCanary({ ...canary, key: "tb_fake" }, "round", invalid)).toMatchObject({
+      ok: false,
+      error: "Invalid probe config",
+    });
+    expect(invalid).not.toHaveBeenCalled();
+    for (const response of [
+      Response.json({ error: "invalid_client", error_description: canary.key }, { status: 401 }),
+      ...[{ access_token: canary.key }, { token_type: "Basic" }, { expires_in: 0 }, { expires_in: 1.5 }].map((patch) =>
+        Response.json({ ...grant, ...patch }),
+      ),
+    ]) {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(response);
+      expect(await runCanary(canary, "round", fetcher)).toMatchObject({ ok: false });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    }
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new Error(canary.key));
+    expect(await runCanary(canary, "round", fetcher)).toEqual({ ok: false, latencyMs: null, error: "Unreachable" });
+  });
 });
