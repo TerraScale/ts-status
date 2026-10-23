@@ -87,7 +87,7 @@ export function uptimePage(view: Overview, periods: readonly VantagePeriod[], no
     <p class="ts-eyebrow">Reliability</p>
     <h1 class="st-title">Uptime</h1>
     <p class="ts-muted">Measured uptime comes from health check history stored independently in Cloudflare D1. It is the share of 30-second rounds from answering vantage points in which a component was not down. Unmeasured time is excluded, not counted as healthy.</p>
-    <p class="ts-muted"><strong>No SLA during Public Alpha.</strong> These preliminary measurements are not an availability commitment or a basis for service credits. SLA numbers will only be considered after 30 consecutive days of clean monitoring data.</p>
+    <p class="ts-muted"><strong>No SLA during Public Alpha.</strong> These preliminary measurements are not an availability commitment or a basis for service credits. SLA numbers will only be considered after 30 consecutive days of clean monitoring data. <a class="ts-link" href="https://docs.terrascale.tech/legal/sla">Read the SLA policy</a>.</p>
     <p class="ts-muted">Current monitoring coverage: ${view.monitoring.coverage.verified} of ${view.monitoring.coverage.total} vantage points verified.${view.monitoring.delayed ? " Monitoring is delayed; recent status may be out of date." : ""} Historical data may include incomplete coverage and earlier probe defects.</p>
   </header>
 
