@@ -53,7 +53,7 @@ describe("clean D1 bootstrap", () => {
       ).toEqual({
         provider: "other",
         url: "https://api.terrascale.tech/health/replication",
-        headers: '{"x-prefer-region":"custom","Cache-Control":"no-cache","X-TerraScale-Region-Pin":"gru"}',
+        headers: '{"x-prefer-region":"custom","Cache-Control":"no-cache"}',
         live_since: "2026-10-11 00:00:00",
         assertions,
       });
@@ -106,11 +106,12 @@ describe("clean D1 bootstrap", () => {
       sqlite.exec(schema);
       sqlite.exec(schema);
       const row = sqlite.prepare("SELECT assertions, live_since FROM endpoints WHERE id = ?").get(endpoint)!;
-      expect(JSON.parse(String(row.assertions))).toEqual([
-        ...JSON.parse(old),
-        { path: "peers[0]", op: "exists" },
-        { path: "maxLagSeconds", op: "gt", value: -1 },
-      ]);
+      expect(JSON.parse(String(row.assertions))).toEqual([{ path: "status", op: "eq", value: "ok" }]);
+      expect(sqlite.prepare("SELECT region_code, cluster, headers FROM endpoints WHERE id = ?").get(endpoint)).toEqual({
+        region_code: null,
+        cluster: "reported peers",
+        headers: "{}",
+      });
       expect(row.live_since).toBe("2026-10-11 00:00:00");
       expect(sqlite.prepare("SELECT count(*) AS n FROM probe_samples").get()?.n).toBe(1);
       expect(

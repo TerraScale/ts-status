@@ -5,6 +5,7 @@
    round: its samples are kept but count toward no uptime or incident. */
 
 import { newId } from "../ids";
+import { judgeReplication } from "../domain/replication";
 
 import { sqlTime } from "../db/reads";
 import { judge, needsBody, parseSpec, type CheckSpec } from "../domain/assertions";
@@ -40,6 +41,7 @@ export interface RoundEndpoint {
   headers: string;
   spec: CheckSpec;
   componentId?: string;
+  regionCode?: string | null;
 }
 
 export interface Sample {
@@ -57,13 +59,23 @@ export interface Sample {
 
 const keyOf = (endpoint: Pick<RoundEndpoint, "url" | "headers">): string => `${endpoint.url}\n${endpoint.headers}`;
 
+const REPLICATION_URL = "https://api.terrascale.tech/health/replication";
+
+/** The first-party replication report describes peers, not regional origins. */
+export function judgeEndpoint(endpoint: RoundEndpoint, observation: Parameters<typeof judge>[1]) {
+  const result = judge(endpoint.spec, observation);
+  if (endpoint.url !== REPLICATION_URL || result.outcome !== "ok") return result;
+  const replication = judgeReplication(observation, endpoint.regionCode);
+  return { ...replication, values: { ...result.values, ...replication.values } };
+}
+
 /** Targets to probe: endpoints sharing a URL and headers are probed once,
     with the body when any of them needs it. */
 export function targets(endpoints: readonly RoundEndpoint[]): Target[] {
   const unique = new Map<string, Target>();
   for (const endpoint of endpoints) {
     const key = keyOf(endpoint);
-    const body = (unique.get(key)?.body ?? false) || needsBody(endpoint.spec);
+    const body = (unique.get(key)?.body ?? false) || needsBody(endpoint.spec) || endpoint.url === REPLICATION_URL;
     unique.set(key, { key, url: endpoint.url, headers: endpoint.headers, body });
   }
   return [...unique.values()];
@@ -86,7 +98,7 @@ export function evaluate(
     const judged = answered.flatMap((response) => {
       const observation = response.results.find((entry) => entry.key === key);
       return observation
-        ? [{ vantage: response.vantage, observation, judgement: judge(endpoint.spec, observation) }]
+        ? [{ vantage: response.vantage, observation, judgement: judgeEndpoint(endpoint, observation) }]
         : [];
     });
     const known: VantageResult[] = judged
@@ -153,7 +165,7 @@ export async function checkNow(env: Env, endpoints: readonly RoundEndpoint[]): P
 
 const ENDPOINTS = `SELECT e.id, e.url, e.headers, e.expect_status AS expectStatus, e.blocked_status AS blockedStatus,
     e.keyword, e.assertions, e.extract, e.indirect, e.component_id AS componentId, e.kind, e.probe,
-    e.live_since AS liveSince
+    e.region_code AS regionCode, e.live_since AS liveSince
   FROM endpoints e JOIN components c ON c.id = e.component_id WHERE c.lifecycle = 'active'`;
 
 const COMPONENTS = "SELECT id, name FROM components WHERE lifecycle = 'active'";
@@ -288,6 +300,7 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
     headers: row.headers,
     spec: parseSpec(row),
     componentId: row.componentId,
+    regionCode: row.regionCode,
   });
   const probed = rows.filter((row) => row.kind !== "canary").map(toEndpoint);
   // A canary or TerraBase probe the secret does not name is not configured;
