@@ -21,7 +21,7 @@ TerraScale's public status page at <https://status.terrascale.tech>: a TypeScrip
 - **Coverage.** Separately from service health, the page and API report which vantages answered the latest round and where they ran. Fewer than two answers means HTTP checks cannot decide (insufficient coverage); a missing, unproven or out-of-area vantage means degraded coverage. Neither is shown as a service outage.
 - **OCI placement.** TerraBase (`https://api.terrascale.tech`), ts-auth (`https://auth.terrascale.tech`) and the dashboard (`https://dash.terrascale.tech`) run in OCI gru under ts-orch, with GHCR images and OCI Vault secrets read via instance principal. Status stays on Cloudflare Workers + D1. Public origins select the service; there is no regional routing header. Existing regional readiness and replication assertions are retained: a response without the matching `region` fails, and the SJC/FRA entries do not prove those regions serve. Never invent regional hostnames.
 - **Deep checks.** Besides answering, an endpoint can be required to return an expected status, contain a keyword, or satisfy JSON assertions:
-  - TerraBase and ts-auth readiness: `GET /readyz` must return `200 {"status":"ready","version":…,"region":"gru"}`; the version is recorded, so deploys show on the latency charts.
+  - TerraBase readiness: `GET /readyz` must return `200 {"status":"ready","version":…,"region":"gru"}`. ts-auth readiness must return `200 {"status":"ready"}` once, since its host serves every region and names none. The dashboard's `GET /health/ready` must return `{"status":"ok"}`. Versions are recorded, so deploys show on the latency charts.
   - Data API: an unauthenticated `GET /v1/projects/{project}/databases/{database}/collections/{collection}/documents/{id}` must answer `401 invalid_key`, which proves the request reached the public document handler; this check does not prove regional placement.
   - Authentication: the platform tenant's OIDC discovery at `https://auth.terrascale.tech/terrascale/.well-known/openid-configuration` must name the issuer `https://auth.terrascale.tech/terrascale` and a JWKS. Every tenant has its own issuer at `/<tenant>`.
   - Documentation (`https://docs.terrascale.tech`) and the website (`https://terrascale.tech`) must answer 2xx; the website must mention TerraScale.
@@ -67,17 +67,17 @@ Production uses the D1 store `ts-status` (`c2eca5bc-6045-4983-941a-4e01e4e0c749`
 
 Status is measured, never hand-edited. Components sit in display groups and are checked by regional or global endpoints:
 
-| Group     | Component      | Endpoints                                                                             |
-| --------- | -------------- | ------------------------------------------------------------------------------------- |
-| TerraBase | TerraBase API  | `api.terrascale.tech/readyz`, with retained gru, sjc and fra assertions                                      |
-| TerraBase | Data API       | Public unauthenticated document read; the gru canary                     |
-| TerraBase | Document API   | Document canaries at their configured public origins                                         |
+| Group     | Component      | Endpoints                                                                 |
+| --------- | -------------- | ------------------------------------------------------------------------- |
+| TerraBase | TerraBase API  | `api.terrascale.tech/readyz`, with retained gru, sjc and fra assertions   |
+| TerraBase | Data API       | Public unauthenticated `documents/by-key` read per region; the gru canary |
+| TerraBase | Document API   | Document canaries at their configured public origins                      |
 | TerraBase | Replication    | `api.terrascale.tech/health/replication`, with retained region assertions |
-| Platform  | Authentication | `auth.terrascale.tech/readyz`, with retained region assertions; the tenant OIDC issuer             |
-| Platform  | Documentation  | `docs.terrascale.tech`                                                                |
-| Platform  | Website        | `terrascale.tech`                                                                     |
-| Platform  | Email          | Cloudflare Email Sending, from Cloudflare's status page                               |
-| Platform  | Dashboard      | None yet: "Coming soon"                                                               |
+| Platform  | Authentication | `auth.terrascale.tech/readyz`; the tenant OIDC issuer                     |
+| Platform  | Documentation  | `docs.terrascale.tech`                                                    |
+| Platform  | Website        | `terrascale.tech`                                                         |
+| Platform  | Email          | Cloudflare Email Sending, from Cloudflare's status page                   |
+| Platform  | Dashboard      | `dash.terrascale.tech/health/ready`                                       |
 
 A component is either active (measured) or "Coming soon" (shown, never probed). Replication is probed per region and passes only when TerraBase reports `status: ok` from the expected region. Until a region's first passing round it shows "Pending launch", so an unhealthy report opens no incident before then. Edit the catalog, regions and groups in the admin page; see the [`status-endpoint`](skills/status-endpoint/SKILL.md) skill.
 

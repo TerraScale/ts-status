@@ -120,6 +120,7 @@ function vantage(code: string, failing: (url: string) => boolean = () => false, 
             body: target.body ? (json === undefined ? "TerraScale" : JSON.stringify(json)) : undefined,
           });
           if (failing(target.url)) return answer(503, {});
+          if (target.url.endsWith("/health/ready")) return answer(200, { status: "ok", version: version() });
           if (target.url.endsWith("/readyz")) return answer(200, { status: "ready", version: version(), region });
           if (target.url.includes("/v1/")) return answer(401, { error: { code: "invalid_key" } });
           if (target.url.includes("openid-configuration"))
@@ -137,7 +138,7 @@ function vantage(code: string, failing: (url: string) => boolean = () => false, 
   };
 }
 
-const READY = ["01M4E7G1W82VKFPF5FJ9AVK1D6", "01M4E7G1W82VKFPF5FJ9AVK1DQ"];
+const READY = ["01M4E7G1W82VKFPF5FJ9AVK1D6", "01M4E7G1W82VKFPF5FJ9AVK1DQ", "01M5K15M315JB1H3FYW3VS1S55"];
 
 describe("runRound", () => {
   it("stores one sample per endpoint, launches passing ones, and records new versions as deploys", async () => {
@@ -190,14 +191,13 @@ describe("runRound", () => {
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DQ", state: "operational", ok: 3, total: 3 },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DR", state: "degraded", ok: 0, total: 3 },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DS", state: "degraded", ok: 0, total: 3 },
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DX", state: "degraded", ok: 0, total: 3 },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DY", state: "degraded", ok: 0, total: 3 },
-      { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1DZ", state: "degraded", ok: 0, total: 3 },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1E0", state: "operational", ok: 3, total: 3 },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1E1", state: "none", ok: 0, total: 0 },
       { endpoint_id: "01M4PVGGBHD58R8HYNDBTGFRGJ", state: "operational", ok: 3, total: 3 },
       { endpoint_id: "01M4PVGGBJ24A140MWGJV7MVKV", state: "degraded", ok: 0, total: 3 },
       { endpoint_id: "01M4PVGGBJA6S4F64HDQVD2MXM", state: "degraded", ok: 0, total: 3 },
+      { endpoint_id: "01M5K15M315JB1H3FYW3VS1S55", state: "operational", ok: 3, total: 3 },
     ]);
     // Every endpoint that passed launched with its first round; the website, canaries and unmatched regions wait.
     expect(
@@ -208,9 +208,7 @@ describe("runRound", () => {
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DG", live_since: null },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DR", live_since: null },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DS", live_since: null },
-      { id: "01M4E7G1W82VKFPF5FJ9AVK1DX", live_since: null },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DY", live_since: null },
-      { id: "01M4E7G1W82VKFPF5FJ9AVK1DZ", live_since: null },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1E1", live_since: null },
       { id: "01M4PVGGBJ24A140MWGJV7MVKV", live_since: null },
       { id: "01M4PVGGBJA6S4F64HDQVD2MXM", live_since: null },
@@ -322,6 +320,6 @@ describe("automatic incidents", () => {
     expect(db.sqlite.prepare("SELECT count(*) AS n FROM incidents").get()).toEqual({ n: 0 });
     expect(
       db.sqlite.prepare("SELECT DISTINCT live_since FROM endpoints WHERE url LIKE 'https://auth.%'").all(),
-    ).toEqual([{ live_since: "2026-09-26 10:04:00" }, { live_since: null }]);
+    ).toEqual([{ live_since: "2026-09-26 10:04:00" }]);
   });
 });

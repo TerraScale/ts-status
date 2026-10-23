@@ -88,6 +88,63 @@ describe("clean D1 bootstrap", () => {
     }
   });
 
+  it("upgrades a store seeded before the dashboard probe, the by-key read route and single auth readiness", () => {
+    const sqlite = new DatabaseSync(":memory:");
+    const pinned = '[{"path":"status","op":"eq","value":"ready"},{"path":"region","op":"eq","value":"gru"}]';
+    const document =
+      "https://api.terrascale.tech/v1/projects/01M4E7G1W82VKFPF5FJ9AVK1DT/databases/status_canary/collections/canary/documents/01M4E7G1W82VKFPF5FJ9AVK1DV";
+    try {
+      sqlite.exec(schema);
+      // The earlier seed: a deferred dashboard, a region-pinned auth check and its SJC/FRA copies, the old read route.
+      sqlite.exec(`
+        DELETE FROM endpoints WHERE component_id = '01M4E7G1W82VKFPF5FJ9AVK1CV';
+        UPDATE components SET lifecycle = 'planned' WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1CV';
+        UPDATE endpoints SET assertions = '${pinned}' WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1D6';
+        UPDATE endpoints SET url = '${document}' WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1DB', '01M4E7G1W82VKFPF5FJ9AVK1DC');
+        UPDATE endpoints SET url = 'https://operator.test/read' WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1E0';
+        UPDATE regions SET ping_url = 'https://api.terrascale.tech/healthz', ping_label = 'TerraBase API, OCI gru' WHERE code IN ('SJC', 'FRA');
+        INSERT INTO endpoints (id, component_id, region_code, cluster, provider, url) VALUES
+          ('01M4E7G1W82VKFPF5FJ9AVK1DX', '01M4E7G1W82VKFPF5FJ9AVK1CT', 'SJC', 'sjc', 'other', 'https://auth.terrascale.tech/readyz'),
+          ('01M4E7G1W82VKFPF5FJ9AVK1DZ', '01M4E7G1W82VKFPF5FJ9AVK1CT', 'FRA', 'fra', 'other', 'https://operator.test/readyz');
+        INSERT INTO probe_samples (endpoint_id, at, state, ok, total, results) VALUES
+          ('01M4E7G1W82VKFPF5FJ9AVK1DX', '2026-10-11 00:00:00', 'major_outage', 0, 4, '[]');
+      `);
+      sqlite.exec(schema);
+      const one = (query: string) => sqlite.prepare(query).get();
+      expect(one("SELECT lifecycle FROM components WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1CV'")?.lifecycle).toBe("active");
+      expect(one("SELECT url FROM endpoints WHERE component_id = '01M4E7G1W82VKFPF5FJ9AVK1CV'")?.url).toBe(
+        "https://dash.terrascale.tech/health/ready",
+      );
+      expect(one("SELECT assertions FROM endpoints WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1D6'")?.assertions).toBe(
+        '[{"path":"status","op":"eq","value":"ready"}]',
+      );
+      // Seeded values move on; an operator's own URL or endpoint stays.
+      expect(
+        sqlite
+          .prepare(
+            "SELECT id, url FROM endpoints WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1DB', '01M4E7G1W82VKFPF5FJ9AVK1DC', '01M4E7G1W82VKFPF5FJ9AVK1E0', '01M4E7G1W82VKFPF5FJ9AVK1DX', '01M4E7G1W82VKFPF5FJ9AVK1DZ') ORDER BY id",
+          )
+          .all(),
+      ).toEqual([
+        { id: "01M4E7G1W82VKFPF5FJ9AVK1DB", url: document.replace("documents/", "documents/by-key?id=") },
+        { id: "01M4E7G1W82VKFPF5FJ9AVK1DC", url: document.replace("documents/", "documents/by-key?id=") },
+        { id: "01M4E7G1W82VKFPF5FJ9AVK1DZ", url: "https://operator.test/readyz" },
+        { id: "01M4E7G1W82VKFPF5FJ9AVK1E0", url: "https://operator.test/read" },
+      ]);
+      expect(one("SELECT count(*) AS n FROM probe_samples")?.n).toBe(0);
+      expect(sqlite.prepare("SELECT code FROM regions WHERE ping_url IS NOT NULL").all()).toEqual([{ code: "GRU" }]);
+      // An operator deferring the dashboard again is respected.
+      sqlite.exec("UPDATE components SET lifecycle = 'planned' WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1CV'");
+      sqlite.exec(schema);
+      expect(one("SELECT lifecycle FROM components WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1CV'")?.lifecycle).toBe(
+        "planned",
+      );
+      expect(sqlite.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    } finally {
+      sqlite.close();
+    }
+  });
+
   it("recreates an empty store on startup and preserves IDs and operator edits on repeat", async () => {
     const sqlite = new DatabaseSync(":memory:");
     let executions = 0;
@@ -103,7 +160,7 @@ describe("clean D1 bootstrap", () => {
       await Promise.all([bootstrap(env), bootstrap(env)]);
       expect(executions).toBe(1);
       const ids = sqlite.prepare("SELECT id FROM endpoints ORDER BY id").all();
-      expect(ids).toHaveLength(20);
+      expect(ids).toHaveLength(19);
       expect(ids.every((row) => isId(row.id))).toBe(true);
       const incidentId = newId();
       sqlite

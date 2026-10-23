@@ -8,11 +8,12 @@ import { vantageNamespace } from "./testing/vantages";
 const NOW = "2026-09-26T10:15:00Z";
 type RegionLatency = ReturnType<typeof regionLatencyDocument>;
 
-/** The seeded catalog plus a warning and the dashboard's recent probes. */
+/** The seeded catalog, with the dashboard deferred, plus a warning and recent probes. */
 function seededEnv(): Env & { STATUS_DB: TestD1 } {
   const db = testD1();
   db.sqlite.exec(`
     UPDATE endpoints SET live_since = '2026-01-01 00:00:00';
+    UPDATE components SET lifecycle = 'planned' WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1CV';
     INSERT INTO incidents (id, kind, title, status, impact, created_at, updated_at) VALUES
       ('00000000000000000000000002', 'warning', 'Slow <queries>', 'monitoring', 'minor', '2026-09-26 09:00:00', '2026-09-26 09:30:00');
     INSERT INTO incident_updates (id, incident_id, status, body, created_at) VALUES
@@ -427,7 +428,7 @@ describe("app", () => {
   it("shows probes the secret does not name as not configured, and unlaunched endpoints as pending, not down", async () => {
     const env = seededEnv();
     env.STATUS_DB.sqlite.exec(`
-      UPDATE endpoints SET live_since = NULL WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1D6', '01M4E7G1W82VKFPF5FJ9AVK1DX', '01M4E7G1W82VKFPF5FJ9AVK1DZ', '01M4E7G1W82VKFPF5FJ9AVK1D7', '01M4PVGGBHD58R8HYNDBTGFRGJ', '01M4PVGGBJ24A140MWGJV7MVKV', '01M4PVGGBJA6S4F64HDQVD2MXM');
+      UPDATE endpoints SET live_since = NULL WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1D6', '01M4E7G1W82VKFPF5FJ9AVK1D7', '01M4PVGGBHD58R8HYNDBTGFRGJ', '01M4PVGGBJ24A140MWGJV7MVKV', '01M4PVGGBJA6S4F64HDQVD2MXM');
       INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES
         ('01M4E7G1W82VKFPF5FJ9AVK1DF', '2026-09-26 10:14:30', 'none', 0, 0, NULL,
           '[{"v":"canary","ok":null,"ms":null,"e":"Not configured"}]'),
@@ -741,9 +742,10 @@ describe("app", () => {
         },
       ],
     });
+    // No public URL reaches SJC, so its browser ping is not offered.
     expect(data.regions[1]).toMatchObject({
       status: "planned",
-      ping_url: "https://api.terrascale.tech/healthz",
+      ping_url: null,
       consensus: { median_ms: null, p95_ms: null, samples: 0 },
     });
     await app.fetch(request("/api/latency?bust=1"), env, ctx);
