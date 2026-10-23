@@ -7,7 +7,7 @@ export function secure(response: Response, cacheable: boolean): Response {
   const headers = new Headers(response.headers);
   headers.set("cache-control", cacheable ? `public, max-age=${CACHE_SECONDS}` : "no-store");
   headers.set("x-content-type-options", "nosniff");
-  headers.set("referrer-policy", "strict-origin-when-cross-origin");
+  if (!headers.has("referrer-policy")) headers.set("referrer-policy", "strict-origin-when-cross-origin");
   headers.set("strict-transport-security", "max-age=31536000");
   headers.set("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
   if (!headers.has("content-security-policy")) {

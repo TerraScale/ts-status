@@ -9,7 +9,15 @@ describe("regional deployment observations", () => {
     const fetched: string[] = [];
     const vantage = (colo: string) => ({
       async fetch(_url: string, init: RequestInit) {
-        const { targets } = JSON.parse(init.body as string) as { targets: { key: string; url: string }[] };
+        const { targets } = JSON.parse(init.body as string) as {
+          targets: { key: string; url: string; headers: string }[];
+        };
+        for (const target of targets) {
+          expect(JSON.parse(target.headers)).toEqual({
+            "Cache-Control": "no-cache",
+            ...(target.key === "ts-terrabase" ? { "X-TerraScale-Region-Pin": "gru" } : {}),
+          });
+        }
         fetched.push(...targets.map((target) => target.url));
         return Response.json({
           colo,

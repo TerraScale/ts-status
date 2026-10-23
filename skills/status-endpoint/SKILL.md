@@ -2,9 +2,9 @@
 
 Use this repo skill to inspect or change what https://status.terrascale.tech
 measures. Every change goes through the admin page,
-https://status.terrascale.tech/admin (Catalog). Its password is in
-`~/.config/terrascale/ts-status-admin.txt` on delta, mariogk-dev and beta;
-never print it. There is no API token and no direct D1 edit.
+https://status.terrascale.tech/admin (Catalog). Sign in through ts-auth with
+owner or admin membership in the TerraScale organization. There is no API
+token and no direct D1 edit.
 
 ## Model
 

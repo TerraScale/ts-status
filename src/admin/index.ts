@@ -1,6 +1,6 @@
 /* The admin page under /admin: sign-in, then every operator action through
    forms. GETs without a session go to the sign-in page; every POST must come
-   from this origin, and every POST but sign-in must carry the session's CSRF
+   from this origin, and every protected POST must carry the session's CSRF
    token. Sign-in attempts are rate limited per client. Nothing here is
    cached. */
 
@@ -16,18 +16,8 @@ import { createRouter } from "../router";
 import type { Page } from "../views/layout";
 import { actions, Conflict, formBody, NotFound } from "./actions";
 import { Invalid } from "../api/validate";
-import {
-  checkCsrf,
-  checkPassword,
-  clearCookie,
-  csrfToken,
-  issue,
-  readCookie,
-  sameOrigin,
-  session,
-  setCookie,
-  type Session,
-} from "./auth";
+import { checkCsrf, clearCookie, csrfToken, readCookie, sameOrigin, session, setCookie, type Session } from "./auth";
+import { authorized, begin, callback } from "./oidc";
 import {
   catalogPage,
   incidentAdminPage,
@@ -182,13 +172,7 @@ const NO_INDEX = { "x-robots-tag": "noindex, nofollow" };
 async function signIn(request: Request, env: Env, now: number): Promise<AdminAnswer> {
   const limited = !(await env.ADMIN_LOGIN_LIMITER.limit({ key: `admin:${clientKey(request)}` })).success;
   if (limited) return { page: loginPage("Too many attempts. Wait a minute and try again."), status: 429 };
-  const form = new URLSearchParams((await request.text()).slice(0, 4_000));
-  const secret = env.ADMIN_SESSION_SECRET;
-  if (!secret || !(await checkPassword(form.get("password") ?? "", env.ADMIN_PASSWORD_HASH))) {
-    logEvent("warn", "admin sign-in failed", { component: "admin", request });
-    return { page: loginPage("Wrong password."), status: 401 };
-  }
-  return redirect("/admin", { "set-cookie": setCookie(await issue(secret, now)) });
+  return begin(env, now);
 }
 
 /** Answers a request under /admin. */
@@ -201,15 +185,27 @@ export async function admin(request: Request, env: Env, now: number): Promise<Ad
   if (method === "POST" && !sameOrigin(request)) {
     return new Response("Cross-site request refused.", { status: 403 });
   }
-  if (url.pathname === "/admin/login") {
-    return method === "GET" ? { page: loginPage(), status: 200, headers: NO_INDEX } : signIn(request, env, now);
-  }
-
   const secret = env.ADMIN_SESSION_SECRET;
   const current = await session(secret, readCookie(request), now);
-  if (!secret || !current) {
-    return method === "GET" ? redirect("/admin/login") : new Response("Sign in first.", { status: 401 });
+  try {
+    if (["/admin/login", "/admin/authorize", "/admin/callback"].includes(url.pathname)) {
+      if (method !== "GET") return new Response("Method not allowed", { status: 405, headers: { allow: "GET" } });
+      if (url.pathname === "/admin/login") return { page: loginPage(), status: 200, headers: NO_INDEX };
+      return url.pathname === "/admin/authorize" ? await signIn(request, env, now) : await callback(request, env, now);
+    }
+    if (!secret || !current) {
+      return method === "GET" ? redirect("/admin/authorize") : new Response("Sign in first.", { status: 401 });
+    }
+    if (!(await authorized(current.accessToken)))
+      return new Response("TerraScale owner or admin membership is required.", { status: 403 });
+  } catch {
+    return {
+      page: loginPage("Authorization could not be verified. Start sign-in again."),
+      status: 503,
+      headers: { ...NO_INDEX, "referrer-policy": "no-referrer" },
+    };
   }
+  if (!secret || !current) return new Response("Sign in first.", { status: 401 });
   const csrf = await csrfToken(secret, current);
 
   try {
