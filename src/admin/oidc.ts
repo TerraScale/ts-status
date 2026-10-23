@@ -27,7 +27,7 @@ function sessionSecret(env: Env): string {
 }
 
 async function json(url: string, init: RequestInit = {}): Promise<Record<string, unknown>> {
-  const response = await fetch(url, { ...init, redirect: "error", signal: AbortSignal.timeout(10_000) });
+  const response = await fetch(url, { ...init, redirect: "manual", signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error("Identity provider refused the request");
   return response.json();
 }
