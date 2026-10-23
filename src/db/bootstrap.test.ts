@@ -16,6 +16,25 @@ const tables = [
 ];
 
 describe("clean D1 bootstrap", () => {
+  it("drops the hosting provider from the TerraBase API labels", () => {
+    const sqlite = new DatabaseSync(":memory:");
+    try {
+      sqlite.exec(schema);
+      sqlite.exec(
+        "UPDATE components SET description = 'api.terrascale.tech, served from OCI gru' WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1D2'; UPDATE regions SET ping_label = 'TerraBase API, OCI gru' WHERE code = 'GRU'",
+      );
+      sqlite.exec(schema);
+      expect(
+        sqlite.prepare("SELECT description FROM components WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1D2'").get()?.description,
+      ).toBe("api.terrascale.tech, the global TerraBase endpoint");
+      expect(sqlite.prepare("SELECT ping_label FROM regions WHERE code = 'GRU'").get()?.ping_label).toBe(
+        "TerraBase API, gru",
+      );
+    } finally {
+      sqlite.close();
+    }
+  });
+
   it("updates retired hosting metadata without rebuilding tables or losing history", () => {
     const sqlite = new DatabaseSync(":memory:");
     const endpoint = "01M4PVGGBHD58R8HYNDBTGFRGJ";
@@ -59,11 +78,11 @@ describe("clean D1 bootstrap", () => {
       });
       expect(
         sqlite.prepare("SELECT description FROM components WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1D2'").get()?.description,
-      ).toBe("api.terrascale.tech, served from OCI gru");
+      ).toBe("api.terrascale.tech, the global TerraBase endpoint");
       expect(
         sqlite.prepare("SELECT code, ping_label FROM regions WHERE code IN ('GRU', 'SJC') ORDER BY code").all(),
       ).toEqual([
-        { code: "GRU", ping_label: "TerraBase API, OCI gru" },
+        { code: "GRU", ping_label: "TerraBase API, gru" },
         { code: "SJC", ping_label: "Custom probe" },
       ]);
       expect(
