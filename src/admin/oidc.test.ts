@@ -23,6 +23,7 @@ async function setup(
     issuer?: string;
     user?: string;
     unavailable?: boolean;
+    redirect?: boolean;
   } = {},
 ) {
   const keys = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
@@ -53,7 +54,10 @@ async function setup(
   const access = `${accessToken}.${accessSignature}`;
   let redeemed = false;
   const network = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    // workerd rejects redirect:"error"; manual also prevents credentials following redirects.
+    if (init?.redirect !== "manual") throw new TypeError("Unsupported Worker redirect mode");
     const url = String(input);
+    if (options.redirect) return new Response(null, { status: 302, headers: { location: "https://other.test/" } });
     if (url === `${ISSUER}/.well-known/openid-configuration`)
       return Response.json({
         issuer: options.issuer ?? ISSUER,
@@ -129,6 +133,12 @@ async function setup(
 }
 
 describe("admin OIDC authorization", () => {
+  it("refuses identity-provider redirects without following them", async () => {
+    const f = await setup({ redirect: true });
+    expect(f.start.status).toBe(503);
+    expect(f.network).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["admin", "owner"])("uses public PKCE and issues a protected session for TerraScale %s", async (role) => {
     const f = await setup({ role });
     expect(f.start.status).toBe(303);
