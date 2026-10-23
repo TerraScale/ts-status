@@ -194,7 +194,7 @@ describe("app", () => {
     expect(body).toContain('data-lifecycle="planned"');
     expect(body).not.toContain("Monitoring delayed");
     expect(body).toContain('class="st-region-clusters"');
-    expect(body).toContain("6 clusters");
+    expect(body).toContain("5 clusters");
     expect(body.match(/id="region-GRU"/g)).toHaveLength(1);
   });
 
