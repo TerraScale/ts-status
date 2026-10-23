@@ -120,6 +120,7 @@ async function setup(
   };
   return {
     env,
+    access,
     start,
     authorization,
     callback,
@@ -155,8 +156,9 @@ describe("admin OIDC authorization", () => {
     expect(cookies).toContain(`${FLOW_COOKIE}=; Path=/; Max-Age=0`);
     expect(cookies).toContain("HttpOnly; Secure; SameSite=Lax");
     const value = cookies.match(new RegExp(`${COOKIE}=([^; ,]+)`))?.[1] ?? "";
-    expect(value).not.toContain("eyJ");
-    expect(await session(SECRET, value, Date.now())).not.toBeNull();
+    expect(value).toMatch(/^[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]+$/);
+    expect(value).not.toContain(f.access);
+    expect((await session(SECRET, value, Date.now()))?.accessToken).toBe(f.access);
     expect((await f.call("/admin", { headers: { cookie: `${COOKIE}=${value}` } })).status).toBe(200);
     f.setRole("member");
     expect((await f.call("/admin", { headers: { cookie: `${COOKIE}=${value}` } })).status).toBe(403);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { judge, parseSpec } from "../domain/assertions";
+import { judgeEndpoint } from "./round";
 import { testD1 } from "../testing/d1";
 
 /* The seeded catalog: the deployment regions, and what is probed in each. */
@@ -9,9 +10,10 @@ describe("probe catalog", () => {
   const endpoint = (id: string) =>
     sql
       .prepare(
-        "SELECT url, headers, expect_status AS expectStatus, blocked_status AS blockedStatus, keyword, assertions, extract, indirect FROM endpoints WHERE id = ?",
+        "SELECT region_code AS regionCode, url, headers, expect_status AS expectStatus, blocked_status AS blockedStatus, keyword, assertions, extract, indirect FROM endpoints WHERE id = ?",
       )
       .get(id) as {
+      regionCode: string | null;
       url: string;
       headers: string;
       expectStatus: string;
@@ -85,40 +87,31 @@ describe("probe catalog", () => {
     }
   });
 
-  it("requires TerraBase replication health from each catalog region and passes only when it is ok from that region", () => {
-    for (const [id, region] of [
-      ["01M4PVGGBHD58R8HYNDBTGFRGJ", "gru"],
-      ["01M4PVGGBJ24A140MWGJV7MVKV", "sjc"],
-      ["01M4PVGGBJA6S4F64HDQVD2MXM", "fra"],
-    ] as const) {
-      const row = endpoint(id);
-      expect(row.url).toBe("https://api.terrascale.tech/health/replication");
-      expect(JSON.parse(row.headers)).toEqual({ "X-TerraScale-Region-Pin": region });
-      const spec = parseSpec(row);
-      const health = (status: string, served: string, overrides: Record<string, unknown> = {}) =>
-        judge(spec, {
+  it("checks the reported peer list without requiring a fixed regional origin", () => {
+    const row = endpoint("01M4PVGGBHD58R8HYNDBTGFRGJ");
+    expect(row.regionCode).toBeNull();
+    expect(JSON.parse(row.headers)).toEqual({});
+    const check = (body: unknown, id = "01M4PVGGBHD58R8HYNDBTGFRGJ") => {
+      const endpointRow = endpoint(id);
+      return judgeEndpoint(
+        { id, ...endpointRow, spec: parseSpec(endpointRow) },
+        {
           status: 200,
           error: null,
-          body: JSON.stringify({ region: served, status, maxLagSeconds: 4, peers: [{ region: "peer" }], ...overrides }),
-        });
-      expect(health("ok", region)).toEqual({ outcome: "ok", error: null, values: { lag: 4 } });
-      expect(health("ok", region, { maxLagSeconds: 0 }).outcome).toBe("ok");
-      for (const peers of [[], null, undefined, {}, "peer"]) {
-        expect(health("ok", region, { peers }).outcome).toBe("fail");
-      }
-      for (const lag of [null, undefined, "4", {}, -1]) {
-        expect(health("ok", region, { maxLagSeconds: lag }).outcome).toBe("fail");
-      }
-      expect(
-        judge(spec, {
-          status: 200,
-          error: null,
-          body: `{"status":"ok","region":"${region}","peers":[{}],"maxLagSeconds":1e400}`,
-        }).outcome,
-      ).toBe("fail");
-      expect(health("degraded", region).outcome).toBe("fail");
-      expect(health("ok", region === "gru" ? "fra" : "gru").outcome).toBe("fail");
+          body: JSON.stringify(body),
+        },
+      );
+    };
+    const single = { region: "gru", status: "ok", maxLagSeconds: null, peers: [] };
+    expect(check(single).outcome).toBe("ok");
+    expect(check(single, "01M4PVGGBJ24A140MWGJV7MVKV").outcome).toBe("unknown");
+    const peer = { region: "future", status: "ok", lagSeconds: 30 };
+    const report = { ...single, maxLagSeconds: 30, peers: [peer] };
+    expect(check(report)).toMatchObject({ outcome: "ok", values: { lag: 30 } });
+    for (const broken of [{ ...peer, lagSeconds: null }, { ...peer, lagSeconds: 31 }, { region: "future" }]) {
+      expect(check({ ...report, peers: [broken] }).outcome).toBe("fail");
     }
+    expect(check({ ...report, peers: [{ ...peer, region: "sjc" }] }, "01M4PVGGBJ24A140MWGJV7MVKV").outcome).toBe("ok");
   });
 
   it("checks every regional data API for invalid_key on an unauthenticated read", () => {

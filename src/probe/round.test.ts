@@ -56,6 +56,39 @@ describe("roundOf", () => {
 });
 
 describe("evaluate", () => {
+  it("accepts a single reported region and starts checking new peers without catalog edits", () => {
+    const url = "https://api.terrascale.tech/health/replication";
+    const reportEndpoints: RoundEndpoint[] = [
+      { id: "report", url, headers: "{}", spec: plain, regionCode: null },
+      { id: "sjc", url, headers: "{}", spec: { ...plain, indirect: true }, regionCode: "SJC" },
+    ];
+    expect(targets(reportEndpoints)).toHaveLength(1);
+    expect(targets(reportEndpoints)[0]?.body).toBe(true);
+    const response = (peers: unknown[], lag: number | null): ProbeResponse[] =>
+      ["sfo", "gru"].map((vantage) => ({
+        vantage,
+        colo: vantage.toUpperCase(),
+        results: [
+          {
+            key: `${url}\n{}`,
+            status: 200,
+            latencyMs: 10,
+            error: null,
+            body: JSON.stringify({ region: "gru", status: "ok", maxLagSeconds: lag, peers }),
+          },
+        ],
+      }));
+    expect(evaluate(reportEndpoints, response([], null), {}).samples.map((s) => [s.state, s.total])).toEqual([
+      ["operational", 2],
+      ["none", 0],
+    ]);
+    const added = response([{ region: "new-region", status: "ok", lagSeconds: 31 }], 31);
+    const first = evaluate(reportEndpoints, added, {});
+    expect(evaluate(reportEndpoints, added, first.streaks).samples[0]?.state).toBe("major_outage");
+    expect(first.samples[0]?.results[0]?.e).toContain("new-region");
+    expect(first.samples[1]?.total).toBe(0);
+  });
+
   it("judges each endpoint on the shared observation", () => {
     const { samples, streaks } = evaluate(endpoints, [answer("sfo", 200), answer("fra", 200), null], {});
     expect(samples.map((sample) => [sample.endpointId, sample.state, sample.ok, sample.total])).toEqual([
@@ -131,7 +164,12 @@ function vantage(code: string, failing: (url: string) => boolean = () => false, 
               jwks_uri: "https://auth.terrascale.tech/terrascale/jwks",
             });
           if (target.url.endsWith("/health/replication"))
-            return answer(200, { region, status: "ok", maxLagSeconds: 2, peers: [{ region: "sjc" }] });
+            return answer(200, {
+              region,
+              status: "ok",
+              maxLagSeconds: 2,
+              peers: [{ region: "sjc", status: "ok", lagSeconds: 2 }],
+            });
           if (target.url.includes("cloudflarestatus")) return answer(200, { component: { status: "operational" } });
           return answer(200);
         }),
@@ -197,8 +235,8 @@ describe("runRound", () => {
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1E0", state: "operational", ok: 3, total: 3 },
       { endpoint_id: "01M4E7G1W82VKFPF5FJ9AVK1E1", state: "none", ok: 0, total: 0 },
       { endpoint_id: "01M4PVGGBHD58R8HYNDBTGFRGJ", state: "operational", ok: 3, total: 3 },
-      { endpoint_id: "01M4PVGGBJ24A140MWGJV7MVKV", state: "degraded", ok: 0, total: 3 },
-      { endpoint_id: "01M4PVGGBJA6S4F64HDQVD2MXM", state: "degraded", ok: 0, total: 3 },
+      { endpoint_id: "01M4PVGGBJ24A140MWGJV7MVKV", state: "operational", ok: 3, total: 3 },
+      { endpoint_id: "01M4PVGGBJA6S4F64HDQVD2MXM", state: "none", ok: 0, total: 0 },
       { endpoint_id: "01M5K15M315JB1H3FYW3VS1S55", state: "operational", ok: 3, total: 3 },
     ]);
     // Every endpoint that passed launched with its first round; the website, canaries and unmatched regions wait.
@@ -212,7 +250,6 @@ describe("runRound", () => {
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DS", live_since: null },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1DY", live_since: null },
       { id: "01M4E7G1W82VKFPF5FJ9AVK1E1", live_since: null },
-      { id: "01M4PVGGBJ24A140MWGJV7MVKV", live_since: null },
       { id: "01M4PVGGBJA6S4F64HDQVD2MXM", live_since: null },
     ]);
     expect(db.sqlite.prepare("SELECT DISTINCT live_since FROM endpoints WHERE live_since IS NOT NULL").all()).toEqual([
@@ -317,7 +354,7 @@ describe("automatic incidents", () => {
     ]);
   });
 
-  it("keeps nonreplicating gru down publicly and posts each changed cause once", async () => {
+  it("keeps a missing or lagging reported peer down publicly and refreshes each cause once", async () => {
     const db = testD1();
     let round = 0;
     const env = {
@@ -338,8 +375,8 @@ describe("automatic incidents", () => {
                       result.body = JSON.stringify({
                         status: "ok",
                         region: "gru",
-                        maxLagSeconds: null,
-                        peers: round >= 6 ? [{ region: "sjc" }] : [],
+                        maxLagSeconds: round >= 6 ? 31 : null,
+                        peers: [{ region: "future", status: "ok", lagSeconds: round >= 6 ? 31 : null }],
                       });
                     }
                   }
@@ -360,7 +397,7 @@ describe("automatic incidents", () => {
       .flatMap((group) => group.components)
       .find((component) => component.name === "Replication")!;
     expect(replication.status).toBe("major_outage");
-    expect(replication.clusters.find((cluster) => cluster.regionCode === "GRU")).toMatchObject({
+    expect(replication.clusters.find((cluster) => cluster.regionCode === null)).toMatchObject({
       status: "major_outage",
       note: null,
     });
@@ -371,8 +408,9 @@ describe("automatic incidents", () => {
     expect(updates).toHaveLength(3);
     expect(updates.map((update) => update.status)).toEqual(["investigating", "investigating", "investigating"]);
     expect(updates[0]?.body).toContain("HTTP 503");
-    expect(updates[1]?.body).toContain("Expected peers[0] exists");
-    expect(updates[2]?.body).toContain("Expected maxLagSeconds gt -1");
+    expect(updates[1]?.body).toContain("future");
+    expect(updates[1]?.body).toContain("lag");
+    expect(updates[2]?.body).toContain("30");
   });
 
   it("opens nothing for a service that has not launched yet, and launches it on its first passing round", async () => {
