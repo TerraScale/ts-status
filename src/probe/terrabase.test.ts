@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { isId } from "../ids";
 import { isConfigured, isTerraBaseConfig, notConfiguredSample, parseTerraBase, runTerraBase } from "./terrabase";
 
 const origin = "https://api.terrascale.tech";
@@ -37,59 +38,73 @@ describe("TerraBase probe config", () => {
   });
 });
 
-describe("read-only TerraBase probes", () => {
+describe("TerraBase probes", () => {
   const grant = { access_token: "header.payload.signature", token_type: "Bearer", expires_in: 900 };
-  const document = { id: canary.document, version: `tbv1-${"a".repeat(32)}`, state: "value", document: {} };
+  const collection = `${origin}/v1/projects/${canary.project}/databases/canary/collections/canary`;
+  const version = `tbv1-${"a".repeat(32)}`;
 
-  it("GETs one bounded page using only the exchanged read token, including empty collections", async () => {
-    for (const items of [[], [document]]) {
-      const fetcher = vi
-        .fn<typeof fetch>()
-        .mockResolvedValueOnce(Response.json(grant))
-        .mockResolvedValueOnce(Response.json({ items, next_cursor: null }));
-      expect(await runTerraBase("documents", canary, "round", fetcher)).toMatchObject({ ok: true });
-      expect(fetcher).toHaveBeenCalledTimes(2);
-      const [url, init] = fetcher.mock.calls[1]!;
-      expect(url).toBe(`${origin}/v1/projects/${canary.project}/databases/canary/collections/canary/documents?limit=1`);
-      expect(init).toMatchObject({ method: "GET", redirect: "manual", cache: "no-store" });
+  /** A TerraBase fake that stores the canary document; `fail` swaps one step's answer. */
+  function fake(fail: Partial<Record<"PUT" | "GET" | "POST" | "DELETE", Response>> = {}) {
+    let stored: { id: string; document: unknown } | null = null;
+    return vi.fn<typeof fetch>(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/oauth/token")) return Response.json(grant);
+      const method = init?.method as "PUT" | "GET" | "POST" | "DELETE";
+      if (fail[method]) return fail[method]!;
+      const id = url.searchParams.get("id") ?? "";
+      const body = () => ({ id: stored!.id, version, state: "value", document: stored!.document });
+      switch (method) {
+        case "PUT":
+          stored = { id, document: JSON.parse(String(init?.body)) };
+          return Response.json({ id, version, offset: "1", durability: "local_durable" }, { status: 201 });
+        case "GET":
+          return Response.json(body());
+        case "POST":
+          return Response.json({ items: stored ? [body()] : [], next_cursor: null });
+        case "DELETE":
+          stored = null;
+          return Response.json({ id, version, offset: "2", durability: "local_durable" });
+      }
+    });
+  }
+
+  it("writes, reads, queries and deletes a fresh document with the exchanged token", async () => {
+    const fetcher = fake();
+    expect(await runTerraBase("documents", canary, "round", fetcher)).toMatchObject({ ok: true });
+    const calls = fetcher.mock.calls.map(([url, init]) => [init?.method, String(url)]);
+    const id = new URL(String(fetcher.mock.calls[1]![0])).searchParams.get("id")!;
+    expect(isId(id)).toBe(true);
+    expect(calls).toEqual([
+      ["POST", `${canary.issuer}/oauth/token`],
+      ["PUT", `${collection}/documents/by-key?id=${id}`],
+      ["GET", `${collection}/documents/by-key?id=${id}`],
+      ["POST", `${collection}/query`],
+      ["DELETE", `${collection}/documents/by-key?id=${id}`],
+    ]);
+    expect(String(fetcher.mock.calls[0]![1]?.body)).toContain("scope=documents%3Aread+documents%3Awrite");
+    expect(JSON.parse(String(fetcher.mock.calls[1]![1]?.body))).toEqual({ canary: "round" });
+    expect(new Headers(fetcher.mock.calls[1]![1]?.headers).get("if-none-match")).toBe("*");
+    expect(JSON.parse(String(fetcher.mock.calls[3]![1]?.body))).toEqual({ filter: { eq: ["$id", id] }, limit: 1 });
+    for (const [, init] of fetcher.mock.calls.slice(1)) {
+      expect(init).toMatchObject({ redirect: "manual" });
       expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer ${grant.access_token}`);
       expect(new Headers(init?.headers).get("X-TerraScale-Region-Pin")).toBe("gru");
-      expect([...new Headers(init?.headers).keys()].sort()).toEqual([
-        "authorization",
-        "user-agent",
-        "x-terrascale-region-pin",
-      ]);
-      expect(JSON.stringify(fetcher.mock.calls[1])).not.toContain(canary.key);
     }
+    expect(JSON.stringify(fetcher.mock.calls.slice(1))).not.toContain(canary.key);
   });
 
-  it("rejects malformed pages and authorization failures without cleanup mutations", async () => {
-    for (const body of [
-      null,
-      [],
-      { items: [], next_cursor: 1 },
-      { items: [] },
-      { items: [null], next_cursor: null },
-      { items: [{ ...document, version: "bad" }], next_cursor: null },
-      { items: [document, document], next_cursor: null },
-    ]) {
-      const fetcher = vi
-        .fn<typeof fetch>()
-        .mockResolvedValueOnce(Response.json(grant))
-        .mockResolvedValueOnce(Response.json(body));
-      expect(await runTerraBase("documents", canary, "round", fetcher)).toMatchObject({ ok: false });
-      expect(fetcher).toHaveBeenCalledTimes(2);
-    }
-    for (const status of [401, 403, 421]) {
-      const fetcher = vi
-        .fn<typeof fetch>()
-        .mockResolvedValueOnce(Response.json(grant))
-        .mockResolvedValueOnce(Response.json({ error: { code: "forbidden_scope" } }, { status }));
-      expect(await runTerraBase("documents", canary, "round", fetcher)).toMatchObject({
-        ok: false,
-        error: `HTTP ${status} forbidden_scope`,
-      });
-      expect(fetcher).toHaveBeenCalledTimes(2);
+  it("fails a step it cannot prove and still deletes the document", async () => {
+    for (const [fail, error] of [
+      [{ PUT: Response.json({ error: { code: "forbidden_scope" } }, { status: 403 }) }, "HTTP 403 forbidden_scope"],
+      [{ PUT: Response.json({ id: "x", version }, { status: 201 }) }, "Invalid response"],
+      [{ GET: Response.json({ error: { code: "not_found" } }, { status: 404 }) }, "HTTP 404 not_found"],
+      [{ GET: Response.json({ id: "x", version, state: "value", document: {} }) }, "Write not readable"],
+      [{ POST: Response.json({ items: [], next_cursor: null }) }, "Query missed the document"],
+      [{ DELETE: Response.json({ error: { code: "internal_error" } }, { status: 500 }) }, "HTTP 500 internal_error"],
+    ] as const) {
+      const fetcher = fake(fail);
+      expect(await runTerraBase("documents", canary, "round", fetcher)).toEqual({ ok: false, latencyMs: null, error });
+      expect(fetcher.mock.calls.at(-1)![1]?.method).toBe("DELETE");
     }
   });
 

@@ -1,7 +1,7 @@
 /* Coordinator probes of the C# TerraBase contract. Unconfigured secrets
    remain unjudged; malformed configuration and contract failures fail closed. */
 
-import { isId } from "../ids";
+import { isId, newId } from "../ids";
 import { logEvent } from "../log";
 
 import { NOT_CONFIGURED } from "../domain/status";
@@ -29,7 +29,7 @@ export interface TerraBaseConfig {
   region: string;
   /** Platform issuer, including /terrascale; required for document reads. */
   issuer?: string;
-  /** Database-scoped ts-auth project key with documents:read. */
+  /** Database-scoped ts-auth project key with documents:read and documents:write. */
   key?: string;
   project?: string;
   database?: string;
@@ -50,13 +50,14 @@ export const notConfiguredSample = (endpointId: string): Sample => ({
 
 const isString = (value: unknown): value is string => typeof value === "string" && value.length > 0;
 
-/** One item is enough to prove a list or query route answers. */
-const PAGE_SIZE = 1;
+/** The document probe writes and deletes its own canary documents. */
+const DOCUMENT_SCOPES = "documents:read documents:write";
 
 const ROUTES = {
   readyz: "/readyz",
-  documents: (config: TerraBaseConfig) =>
-    `${collectionPath(config as DocumentProbeConfig)}/documents?limit=${PAGE_SIZE}`,
+  document: (config: TerraBaseConfig, id: string) =>
+    `${collectionPath(config as DocumentProbeConfig)}/documents/by-key?id=${id}`,
+  query: (config: TerraBaseConfig) => `${collectionPath(config as DocumentProbeConfig)}/query`,
 };
 
 /** Whether the secret configures an endpoint: it names it, with the key
@@ -118,13 +119,18 @@ const invalid = (): never => {
   throw new CanaryError("Invalid response");
 };
 
-const isCursor = (value: unknown): boolean => value === null || typeof value === "string";
+/** A write's acknowledgement must name the canary document and a version. */
+const acknowledged = (value: unknown, id: string): boolean => {
+  const body = value as { id?: unknown; version?: unknown } | null;
+  return body?.id === id && isString(body.version);
+};
 
-/** Readiness or a bounded document list; neither probe mutates application data. */
+/** Readiness, or a fresh canary document written, read, queried and
+    deleted; the delete is attempted even when an earlier step failed. */
 export async function runTerraBase(
   probe: TerraBaseProbe,
   config: TerraBaseConfig,
-  _marker: string,
+  marker: string,
   fetcher: typeof fetch = fetch,
 ): Promise<CanaryResult> {
   const headers: Record<string, string> = {
@@ -149,15 +155,40 @@ export async function runTerraBase(
         break;
       }
       case "documents": {
-        headers.authorization = `Bearer ${await readToken(config as DocumentProbeConfig, fetcher)}`;
-        const page = (await call(ROUTES.documents(config), { method: "GET", cache: "no-store" })) as {
-          items?: unknown;
-          next_cursor?: unknown;
-        };
-        if (!Array.isArray(page.items) || page.items.length > PAGE_SIZE || !isCursor(page.next_cursor)) invalid();
-        for (const item of page.items as { id?: unknown }[]) {
-          if (typeof item?.id !== "string" || !holdsDocument(item, item.id)) invalid();
+        headers.authorization = `Bearer ${await readToken(config as DocumentProbeConfig, fetcher, DOCUMENT_SCOPES)}`;
+        // Fresh per region and round, so concurrent probes never collide.
+        const id = newId();
+        const json = { "content-type": "application/json" };
+        let failure: unknown;
+        try {
+          const written = await call(
+            ROUTES.document(config, id),
+            { method: "PUT", headers: { ...json, "if-none-match": "*" }, body: JSON.stringify({ canary: marker }) },
+            [201],
+          );
+          if (!acknowledged(written, id)) invalid();
+          const read = (await call(ROUTES.document(config, id), { method: "GET", cache: "no-store" })) as {
+            document?: { canary?: unknown };
+          };
+          if (!holdsDocument(read, id) || read.document?.canary !== marker) throw new CanaryError("Write not readable");
+          const page = (await call(ROUTES.query(config), {
+            method: "POST",
+            headers: json,
+            body: JSON.stringify({ filter: { eq: ["$id", id] }, limit: 1 }),
+          })) as { items?: unknown };
+          const items = Array.isArray(page.items) ? (page.items as { document?: { canary?: unknown } }[]) : [];
+          if (items.length !== 1 || !holdsDocument(items[0], id) || items[0]?.document?.canary !== marker)
+            throw new CanaryError("Query missed the document");
+        } catch (error) {
+          failure = error;
+        } finally {
+          try {
+            if (!acknowledged(await call(ROUTES.document(config, id), { method: "DELETE" }), id)) invalid();
+          } catch (error) {
+            failure ??= error;
+          }
         }
+        if (failure !== undefined) throw failure;
         break;
       }
     }

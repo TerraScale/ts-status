@@ -26,7 +26,8 @@ export interface CanaryConfig {
   document: string;
   /** Platform issuer, including /terrascale. */
   issuer: string;
-  /** A ts-auth project key with only documents:read, narrowed to this database. */
+  /** A ts-auth project key narrowed to this database: documents:read for the
+      Data API canary, plus documents:write for the Document API probe. */
   key: string;
 }
 
@@ -257,6 +258,7 @@ export async function canaryJson(
 export async function readToken(
   config: Pick<CanaryConfig, "issuer" | "project" | "key">,
   fetcher: typeof fetch,
+  scope = "documents:read",
 ): Promise<string> {
   const body = (await canaryJson(
     `${config.issuer}/oauth/token`,
@@ -268,7 +270,7 @@ export async function readToken(
         client_id: config.key.slice(0, 26),
         client_secret: config.key,
         project: config.project,
-        scope: "documents:read",
+        scope,
       }).toString(),
       cache: "no-store",
     },
