@@ -1,12 +1,13 @@
 name: CI
 
-# Docs-only changes run nothing; Cloudflare Workers Builds deploys main.
+# Cloudflare Workers Builds deploys main; GitHub validates before merge.
 "on":
   pull_request:
-    paths-ignore: &docs ['**.md', 'docs/**', 'skills/**', 'LICENSE', '.github/workflows/codeql.yml', '.github/dependabot.yml']
-  push:
-    branches: [main]
-    paths-ignore: *docs
+  merge_group:
+  schedule:
+    # Recheck main and refresh its shared npm cache once a week.
+    - cron: '47 1 * * 6'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,16 +19,48 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Select changed area
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+        run: |
+          if [[ -z "$BASE_SHA" ]] || ! git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- . \
+            ':(exclude)**.md' ':(exclude)docs/**' ':(exclude)skills/**' \
+            ':(exclude)LICENSE' ':(exclude).github/workflows/codeql.yml' ':(exclude).github/dependabot.yml'; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        if: steps.changes.outputs.run == 'true'
         with:
           node-version-file: .node-version
-          cache: npm
-      - run: npm ci
-      - run: npm run check
-      - run: npm test
-      - run: npm run build
+          package-manager-cache: false
+      - name: Restore npm cache
+        if: steps.changes.outputs.run == 'true'
+        id: npm-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('.node-version', 'package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+      - name: Check, test and build
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          npm ci
+          npm run check
+          npm test
+          npm run build
+      - name: Save main npm cache
+        if: steps.changes.outputs.run == 'true' && github.ref == 'refs/heads/main' && steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.npm
+          key: ${{ steps.npm-cache.outputs.cache-primary-key }}
