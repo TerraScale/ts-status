@@ -30,34 +30,50 @@ describe("probe catalog", () => {
     ]);
   });
 
-  it("starts every endpoint pending launch and keeps the deferred dashboard unprobed", () => {
-    expect(sql.prepare("SELECT name, lifecycle FROM components WHERE id = '01M4E7G1W82VKFPF5FJ9AVK1D0'").get()).toEqual(
-      {
-        name: "Replication",
-        lifecycle: "active",
-      },
-    );
+  it("starts every endpoint pending launch and probes every component", () => {
     expect(sql.prepare("SELECT count(*) AS n FROM endpoints WHERE live_since IS NOT NULL").get()).toEqual({ n: 0 });
-    expect(sql.prepare("SELECT name FROM components WHERE lifecycle = 'planned'").all()).toEqual([
-      { name: "Dashboard" },
-    ]);
+    expect(sql.prepare("SELECT name FROM components WHERE lifecycle = 'planned'").all()).toEqual([]);
     expect(
-      sql.prepare("SELECT count(*) AS n FROM endpoints WHERE component_id = '01M4E7G1W82VKFPF5FJ9AVK1CV'").get(),
-    ).toEqual({ n: 0 });
+      sql
+        .prepare(
+          "SELECT name FROM components WHERE NOT EXISTS (SELECT 1 FROM endpoints WHERE component_id = components.id)",
+        )
+        .all(),
+    ).toEqual([]);
   });
 
-  it("requires TerraBase and ts-auth readiness from each catalog region and fails a check another region answered", () => {
+  it("requires the dashboard's readiness", () => {
+    const row = endpoint("01M5K15M315JB1H3FYW3VS1S55");
+    expect(row.url).toBe("https://dash.terrascale.tech/health/ready");
+    const spec = parseSpec(row);
+    const ready = (status: string) =>
+      judge(spec, { status: 200, error: null, body: JSON.stringify({ status, version: "v1" }) });
+    expect(ready("ok")).toEqual({ outcome: "ok", error: null, values: { version: "v1" } });
+    expect(ready("starting").outcome).toBe("fail");
+    expect(judge(spec, { status: 503, error: null }).outcome).toBe("fail");
+  });
+
+  it("requires ts-auth readiness once: its host serves every region and names none", () => {
+    expect(sql.prepare("SELECT id FROM endpoints WHERE url = 'https://auth.terrascale.tech/readyz'").all()).toEqual([
+      { id: "01M4E7G1W82VKFPF5FJ9AVK1D6" },
+    ]);
+    const spec = parseSpec(endpoint("01M4E7G1W82VKFPF5FJ9AVK1D6"));
+    const ready = (status: string) =>
+      judge(spec, { status: 200, error: null, body: JSON.stringify({ status, version: "v1" }) });
+    expect(ready("ready")).toEqual({ outcome: "ok", error: null, values: { version: "v1" } });
+    expect(ready("not_ready").outcome).toBe("fail");
+    expect(judge(spec, { status: 503, error: null }).outcome).toBe("fail");
+  });
+
+  it("requires TerraBase readiness from each catalog region and fails a check another region answered", () => {
     for (const [id, host, region] of [
       ["01M4E7G1W82VKFPF5FJ9AVK1DQ", "api", "gru"],
       ["01M4E7G1W82VKFPF5FJ9AVK1DR", "api", "sjc"],
       ["01M4E7G1W82VKFPF5FJ9AVK1DY", "api", "fra"],
-      ["01M4E7G1W82VKFPF5FJ9AVK1D6", "auth", "gru"],
-      ["01M4E7G1W82VKFPF5FJ9AVK1DX", "auth", "sjc"],
-      ["01M4E7G1W82VKFPF5FJ9AVK1DZ", "auth", "fra"],
     ] as const) {
       const row = endpoint(id);
       expect(row.url).toBe(`https://${host}.terrascale.tech/readyz`);
-      expect(JSON.parse(row.headers)).toEqual(host === "api" ? { "X-TerraScale-Region-Pin": region } : {});
+      expect(JSON.parse(row.headers)).toEqual({ "X-TerraScale-Region-Pin": region });
       const spec = parseSpec(row);
       const ready = (status: string, served: string) =>
         judge(spec, { status: 200, error: null, body: JSON.stringify({ status, version: "v1", region: served }) });
@@ -98,7 +114,9 @@ describe("probe catalog", () => {
       ["01M4E7G1W82VKFPF5FJ9AVK1E0", "fra"],
     ] as const) {
       const row = endpoint(id);
-      expect(new URL(row.url).host).toBe("api.terrascale.tech");
+      expect(row.url).toBe(
+        "https://api.terrascale.tech/v1/projects/01M4E7G1W82VKFPF5FJ9AVK1DT/databases/status_canary/collections/canary/documents/by-key?id=01M4E7G1W82VKFPF5FJ9AVK1DV",
+      );
       expect(JSON.parse(row.headers)).toEqual({ "X-TerraScale-Region-Pin": region });
       expect(row.expectStatus).toBe("401");
       expect(JSON.parse(row.assertions)).toEqual([{ path: "error.code", op: "eq", value: "invalid_key" }]);
@@ -152,7 +170,7 @@ describe("probe catalog", () => {
     expect(
       sql
         .prepare(
-          "SELECT url FROM endpoints WHERE url LIKE '%git.%' OR url LIKE '%dash.%' OR url LIKE '%sync.%' OR url LIKE '%gru.api%' OR url LIKE '%/tenants/%'",
+          "SELECT url FROM endpoints WHERE url LIKE '%git.%' OR url LIKE '%sync.%' OR url LIKE '%gru.api%' OR url LIKE '%/tenants/%'",
         )
         .all(),
     ).toEqual([]);
