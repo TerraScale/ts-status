@@ -6,6 +6,7 @@ import { html, raw, type Html } from "../html";
 import type { ClusterOverview } from "../overview";
 import { EXPIRY_WARNING_MS } from "../probe/tls";
 import { sparkline } from "./charts/sparkline";
+import { hash } from "./charts/geometry";
 import { icon, type IconName } from "./icons";
 import { percentile } from "../domain/histogram";
 import {
@@ -85,7 +86,12 @@ export function empty(title: string, detail: string, glyph: IconName = "info", a
     time zone. */
 export function time(at: string | number, format: "datetime" | "seconds" | "clock"): Html {
   const iso = new Date(at).toISOString().replace(".000Z", "Z");
-  const text = format === "datetime" ? formatDateTime(at) : format === "clock" ? formatClock(Number(new Date(at))) : formatClockSeconds(Number(new Date(at)));
+  const text =
+    format === "datetime"
+      ? formatDateTime(at)
+      : format === "clock"
+        ? formatClock(Number(new Date(at)))
+        : formatClockSeconds(Number(new Date(at)));
   return html`<time datetime="${iso}" data-format="${format}">${text}</time>`;
 }
 
@@ -126,17 +132,36 @@ function when(bucket: Bucket): string {
   return `${formatDay(bucket.start)}, ${formatClock(bucket.start)}–${formatClock(bucket.end)} UTC`;
 }
 
-/** Status bars: one cell per bucket, colored by its worst state. The strip
-    is one focusable image; arrow keys move between cells, and every cell
-    opens a hover card with its details. */
+/** Compact server-rendered bars keep date/state details without scripts;
+    the client expands the shared tooltip data into the usual interactive strip. */
 export function bars<T extends Bucket>(list: readonly T[], options: BarsOptions<T>): Html {
-  const cells = list.map((bucket) => {
-    const state = STATE_LABELS[bucket.state];
-    const span = bucket.end - bucket.start >= DAY ? "day" : "hour";
-    const card = JSON.stringify(options.card?.(bucket) ?? { rows: probeRows(bucket.counts) });
-    return html`<li data-state="${stateAttr(bucket.state)}" data-from="${bucket.start}" data-to="${bucket.end}" data-span="${span}" data-label="${state}" data-when="${when(bucket)}" data-tip="${when(bucket)} · ${state}" data-card="${card}"></li>`;
+  if (list.length === 0) return html``;
+  const states = [...new Set(list.map((bucket) => bucket.state))];
+  const data = JSON.stringify(
+    list.map((bucket) => ({
+      state: [stateAttr(bucket.state), STATE_LABELS[bucket.state]],
+      from: bucket.start,
+      to: bucket.end,
+      card: options.card?.(bucket) ?? { rows: probeRows(bucket.counts) },
+    })),
+  );
+  const id = `bars-${hash(options.label + list[0]!.start)}`;
+  const paths = states.map((state) => {
+    const rectangles: string[] = [];
+    const spans: string[] = [];
+    let from = -1;
+    for (let index = 0; index <= list.length; index++) {
+      if (list[index]?.state === state) {
+        if (from < 0) from = index;
+      } else if (from >= 0) {
+        rectangles.push(`M${from * 10},0h${(index - from) * 10 - 2}v28H${from * 10}z`);
+        spans.push(`${when(list[from]!)}${index - from > 1 ? `–${when(list[index - 1]!)}` : ""}`);
+        from = -1;
+      }
+    }
+    return html`<path data-state="${stateAttr(state)}" d="${rectangles.join("")}"><title>${STATE_LABELS[state]}: ${spans.join(", ")}</title></path>`;
   });
-  return html`<ol class="st-bars${options.large ? " st-bars-lg" : ""}" role="img" tabindex="0" data-strip aria-label="${options.label}">${cells}</ol>`;
+  return html`<svg class="st-bars st-bars-static${options.large ? " st-bars-lg" : ""}" role="img" tabindex="0" aria-label="${options.label}" viewBox="0 0 ${list.length * 10 - 2} 28" preserveAspectRatio="none" data-bars><defs><pattern id="${id}-pattern" width="10" height="28" patternUnits="userSpaceOnUse"><rect width="8" height="28" rx="2" fill="white"></rect></pattern><mask id="${id}-mask"><rect width="100%" height="28" fill="url(#${id}-pattern)"></rect></mask></defs><g mask="url(#${id}-mask)">${paths}</g></svg><script type="application/json" data-bar-record>${raw(data.replaceAll("<", "\\u003c"))}</script>`;
 }
 
 export function legend(states: readonly TimelineState[]): Html {

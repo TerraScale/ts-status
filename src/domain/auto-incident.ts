@@ -22,6 +22,8 @@ export interface Tracker {
   impact: IncidentImpact | null;
   /** When checks started passing again, while the incident is monitoring. */
   healthySince: number | null;
+  /** Last failure detail posted; absent in trackers saved before detail updates. */
+  detail?: string;
 }
 
 export interface Observation {
@@ -130,6 +132,7 @@ export function step(
           current.incidentId = options.newId();
           current.impact = IMPACT_OF[observation.state];
           current.state = observation.state;
+          current.detail = observation.detail;
           actions.push({
             type: "open",
             incidentId: current.incidentId,
@@ -142,7 +145,7 @@ export function step(
       } else {
         const impact = IMPACT_OF[observation.state];
         const raised = IMPACTS.indexOf(impact) > IMPACTS.indexOf(current.impact ?? "none");
-        if (raised || current.healthySince !== null) {
+        if (raised || current.healthySince !== null || current.detail !== observation.detail) {
           actions.push({
             type: "update",
             incidentId: current.incidentId,
@@ -151,8 +154,11 @@ export function step(
             body:
               current.healthySince !== null
                 ? `Health checks are failing again: ${observation.detail}. We are investigating.`
-                : `The impact has grown to ${label}: ${observation.detail}.`,
+                : raised
+                  ? `The impact has grown to ${label}: ${observation.detail}.`
+                  : `Health checks are still failing: ${observation.detail}. We are investigating.`,
           });
+          current.detail = observation.detail;
           if (raised) current.impact = impact;
         }
         current.healthySince = null;

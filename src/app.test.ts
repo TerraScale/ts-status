@@ -3,7 +3,7 @@ import app from "./app";
 import type { Env } from "./env";
 import { regionLatencyDocument } from "./api/latency";
 import { testD1, type TestD1 } from "./testing/d1";
-import { vantageNamespace } from "./testing/vantages";
+import { vantageBindings } from "./testing/vantages";
 
 const NOW = "2026-09-26T10:15:00Z";
 type RegionLatency = ReturnType<typeof regionLatencyDocument>;
@@ -97,7 +97,7 @@ describe("app", () => {
       await gate;
       return Response.json({ version, results: [] });
     });
-    const env = { VANTAGE: vantageNamespace({ gru: { fetch }, sfo: { fetch } }) } as unknown as Env;
+    const env = { ...vantageBindings({ gru: { fetch }, sfo: { fetch } }) } as unknown as Env;
     const responses = Promise.all([
       app.fetch(request("/api/v1/deployments?bust=1"), env, ctx),
       app.fetch(request("/api/v1/deployments?target=https://other.test"), env, ctx),
@@ -120,7 +120,7 @@ describe("app", () => {
   it("returns valid observations to every waiter when the deployment cache write fails", async () => {
     const version = "a".repeat(40);
     const fetch = vi.fn(async () => Response.json({ version, results: [] }));
-    const env = { VANTAGE: vantageNamespace({ gru: { fetch }, sfo: { fetch } }) } as unknown as Env;
+    const env = { ...vantageBindings({ gru: { fetch }, sfo: { fetch } }) } as unknown as Env;
     const error = new Error("cache unavailable");
     const put = vi.spyOn(caches.default, "put").mockRejectedValue(error);
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -156,7 +156,7 @@ describe("app", () => {
 
   it("expires deployment observations after ten seconds without refreshing cached timestamps or reading D1", async () => {
     const fetch = vi.fn(async () => Response.json({ version: "a".repeat(40), results: [] }));
-    const env = { ...seededEnv(), VANTAGE: vantageNamespace({ gru: { fetch }, sfo: { fetch } }) } as unknown as Env;
+    const env = { ...seededEnv(), ...vantageBindings({ gru: { fetch }, sfo: { fetch } }) } as unknown as Env;
     const exec = vi.spyOn(env.STATUS_DB, "exec").mockRejectedValue(new Error("D1 unavailable"));
     const first = await (await app.fetch(request("/api/v1/deployments"), env, ctx)).json();
     vi.setSystemTime(Date.parse(NOW) + 9_999);
@@ -178,7 +178,7 @@ describe("app", () => {
     const body = await response.text();
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("public, max-age=10");
-    expect(response.headers.get("content-security-policy")).toMatch(/script-src 'sha256-[^']+'/);
+    expect(response.headers.get("content-security-policy")).toContain("script-src 'self'");
     expect(response.headers.get("content-security-policy")).toContain("https://static.cloudflareinsights.com");
     expect(response.headers.get("content-security-policy")).toContain("https://cloudflareinsights.com");
     expect(response.headers.get("x-frame-options")).toBe("DENY");
@@ -289,7 +289,7 @@ describe("app", () => {
         expect(regions.vantages.find((entry) => entry.code === "gru")).toEqual({
           code: "gru",
           name: "South America",
-          placement: "sam",
+          placement: "aws:sa-east-1",
           colo: "GRU",
           lastAnswerAt: "2026-09-26T09:14:30.000Z",
           coverage: "missing",
@@ -305,7 +305,9 @@ describe("app", () => {
       const body = await page(env);
       expect(body).toContain("Monitoring coverage degraded");
       expect(body).toContain("2 of 4 vantage points answered the latest round and 2 proved");
-      expect(body).toContain("South America (requested sam): did not answer the latest round, never answered");
+      expect(body).toContain(
+        "South America (requested aws:sa-east-1): did not answer the latest round, never answered",
+      );
       expect((await api(env)).status.monitoringCoverage).toMatchObject({ level: "degraded", answered: 2, verified: 2 });
     });
 
@@ -318,7 +320,7 @@ describe("app", () => {
       ]);
       const body = await page(env);
       expect(body).toContain("Monitoring coverage degraded");
-      expect(body).toContain("South America (requested sam): ran in IAD, not where it was placed");
+      expect(body).toContain("South America (requested aws:sa-east-1): ran in IAD, not where it was placed");
       expect(body).toContain("Europe (requested weur): answered without proof of where it ran");
       const { regions } = await api(env);
       expect(regions.vantages.map((entry) => [entry.code, entry.colo, entry.coverage])).toEqual([
@@ -491,14 +493,18 @@ describe("app", () => {
     expect(day.groups[0]?.components[0]?.bars.at(-1)).toBe("operational");
     const body = await (await app.fetch(request("/?range=7d"), env, ctx)).text();
     expect(body).toContain('<a href="/?range=7d" aria-current="true">7d</a>');
-    expect(body.match(/<li data-state=/g)?.length).toBeGreaterThanOrEqual(28);
+    expect(body.match(/data-bars/g)?.length).toBeGreaterThan(0);
     await app.fetch(request("/?range=bogus"), env, ctx);
     expect(env.STATUS_DB.batches).toBe(3);
   });
 
   it("gives every bar a hover card and every live region a map hub", async () => {
     const body = await (await app.fetch(request("/?range=24h"), seededEnv(), ctx)).text();
-    expect(body).toContain('data-card="{&quot;rows&quot;:[[&quot;Uptime&quot;,&quot;100%&quot;]');
+    const encoded = body.match(/data-bar-data>([^<]+)</)?.[1];
+    expect(encoded).toBeTruthy();
+    const bytes = Uint8Array.from(atob(encoded!), (char) => char.charCodeAt(0));
+    const cards = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+    expect(cards).toContain('["Uptime","100%"]');
     expect(body).toContain('data-title="GRU · São Paulo"');
     expect(body).toContain('class="st-arc"');
     expect(body).toContain("Response time");
@@ -548,7 +554,7 @@ describe("app", () => {
     const body = await (await app.fetch(request("/uptime"), seededEnv(), ctx)).text();
     expect(body.match(/<rect [^>]*data-state=/g)).toHaveLength(365);
     expect(body).toContain('class="st-sla"');
-    expect(body).toContain('data-sla="met"');
+    expect(body).toContain('data-sla="measured"');
   });
 
   it("renders component and region pages, and 404s for unknown ones", async () => {
@@ -699,7 +705,7 @@ describe("app", () => {
           p95_ms: 198,
           samples: 2,
           label: "US West",
-          requested_location: "wnam",
+          requested_location: "aws:us-west-1",
           observed_colo: null,
           last_answer_at: null,
           coverage: "missing",
@@ -711,7 +717,7 @@ describe("app", () => {
           p95_ms: 48,
           samples: 2,
           label: "South America",
-          requested_location: "sam",
+          requested_location: "aws:sa-east-1",
           observed_colo: null,
           last_answer_at: null,
           coverage: "missing",

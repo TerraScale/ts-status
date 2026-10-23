@@ -14,6 +14,22 @@ export default defineConfig((): ViteUserConfig & Pick<UserConfig, "fmt"> => ({
         cloudflare({
           // Workers Builds sets the commit; baked into the build so any deploy command reports it.
           config: (config) => ({ vars: { ...config.vars, VERSION: process.env.WORKERS_CI_COMMIT_SHA ?? "unknown" } }),
+          auxiliaryWorkers: (
+            [
+              ["sfo", "aws:us-west-1"],
+              ["gru", "aws:sa-east-1"],
+            ] as const
+          ).map(([code, region]) => ({
+            config: {
+              name: `ts-status-vantage-${code}`,
+              main: "src/vantage/worker.ts",
+              compatibility_date: "2026-09-13",
+              workers_dev: false,
+              preview_urls: false,
+              placement: { region },
+              vars: { VERSION: process.env.WORKERS_CI_COMMIT_SHA ?? "unknown" },
+            },
+          })),
         }),
       ],
   css: { transformer: "lightningcss" },

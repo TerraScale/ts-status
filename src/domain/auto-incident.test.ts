@@ -72,6 +72,52 @@ describe("step", () => {
     ]);
   });
 
+  it("posts changed failure details without changing status or impact and deduplicates repeats", () => {
+    const changed = { ...seen("major_outage"), detail: "4 of 4 vantage points failing: Expected peers[0] exists" };
+    const { actions, trackers } = run([
+      ...Array.from({ length: 3 }, () => seen("major_outage")),
+      changed,
+      changed,
+      seen("major_outage"),
+      seen("major_outage"),
+    ]);
+    expect(actions).toHaveLength(3);
+    expect(actions[1]).toMatchObject({
+      type: "update",
+      status: "investigating",
+      impact: null,
+      body: `Health checks are still failing: ${changed.detail}. We are investigating.`,
+    });
+    expect(actions[2]).toMatchObject({
+      type: "update",
+      status: "investigating",
+      impact: null,
+      body: `Health checks are still failing: ${seen("major_outage").detail}. We are investigating.`,
+    });
+    expect(trackers[changed.componentId]).toMatchObject({ since: 0, impact: "critical", healthySince: null });
+    const persisted = JSON.parse(JSON.stringify(trackers));
+    expect(
+      step(persisted, [seen("major_outage")], 7 * 30_000, { newId: () => "unused", touched: new Set() }).actions,
+    ).toEqual([]);
+  });
+
+  it("refreshes legacy or adopted trackers once, but never during maintenance or operator ownership", () => {
+    const observation = seen("major_outage");
+    const start = adopt({}, [
+      {
+        id: "00000000000000000000000019",
+        componentId: observation.componentId,
+        impact: "critical",
+        createdAt: 0,
+      },
+    ]);
+    expect(run([seen("major_outage", true)], { start }).actions).toEqual([]);
+    expect(run([observation], { start, touched: new Set(["00000000000000000000000019"]) }).actions).toEqual([]);
+    const { actions } = run([observation, observation], { start });
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({ type: "update", status: "investigating", impact: null });
+  });
+
   it("never opens during maintenance and lets go of operator-edited incidents", () => {
     expect(run(Array.from({ length: 5 }, () => seen("major_outage", true))).actions).toEqual([]);
     const start = {

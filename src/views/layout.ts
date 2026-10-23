@@ -1,22 +1,24 @@
-/* The document shell: head, top bar, and footer. The stylesheet, logo and
-   script are inlined, so a page paints after one request plus the preloaded
-   font. */
+/* The document shell: head, top bar, and footer. Vite emits the shared
+   stylesheet as a cacheable asset. */
 
 import mark from "../assets/mark.svg?raw";
 import type { Status } from "../domain/status";
 import { html, raw, type Html } from "../html";
-import styles from "../styles/index.css?inline";
-import { CHART_SCRIPT } from "./chart-client";
-import { CLIENT_SCRIPT, REFRESH_SECONDS } from "./client";
-
-export const STYLES = styles;
+import stylesheet from "../styles/index.css?url";
+import chartScript from "../assets/chart-client.js?url";
+import clientScript from "../assets/client.js?url";
+import { REFRESH_SECONDS } from "./client";
 
 const NAV = [
   { href: "/", label: "Overview", icon: "M3 12h4l3-8 4 16 3-8h4" },
   { href: "/history", label: "History", icon: "M3 11a9 9 0 1 1 2 7 M3 4v7h7 M12 7v5l3 2" },
   { href: "/uptime", label: "Uptime", icon: "M4 19V9 M12 19V4 M20 19v-7" },
   { href: "/ping", label: "Ping", icon: "M3 8a15 15 0 0 1 18 0 M6 12a10 10 0 0 1 12 0 M9 16a5 5 0 0 1 6 0 M12 20h.01" },
-  { href: "/maintenance", label: "Maintenance", icon: "M14 6a5 5 0 0 0-6 6L3 17a3 3 0 0 0 4 4l5-5a5 5 0 0 0 6-6l-4 4-4-4 4-4Z" },
+  {
+    href: "/maintenance",
+    label: "Maintenance",
+    icon: "M14 6a5 5 0 0 0-6 6L3 17a3 3 0 0 0 4 4l5-5a5 5 0 0 0 6-6l-4 4-4-4 4-4Z",
+  },
   { href: "/subscribe", label: "Subscribe", icon: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9 M10 21h4" },
 ] as const;
 
@@ -106,15 +108,34 @@ export function document(page: Page, year: number): Html {
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
 <link rel="alternate" type="application/atom+xml" title="TerraScale Status" href="/feed.atom">
 <link rel="preload" href="/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
-<style>${raw(STYLES)}</style>
+<link rel="stylesheet" href="${stylesheet}">
 ${page.live ? html`<noscript><meta http-equiv="refresh" content="${REFRESH_SECONDS}"></noscript>` : ""}
 </head>
 <body>
 ${page.bare ? "" : top(page)}
 ${page.body}
 ${page.bare ? "" : bottom(page, year)}
-<script>${raw(CLIENT_SCRIPT)}</script>
-<script>${raw(CHART_SCRIPT)}</script>
+<script defer src="${clientScript}"></script>
+<script defer src="${chartScript}"></script>
 </body>
 </html>`;
+}
+
+/** Keep repeated tooltip records out of the HTML budget. SVG labels and
+    native date/state tooltips remain readable without JavaScript. */
+export async function compactBarData(markup: string): Promise<string> {
+  if (!markup.includes("</main>")) return markup;
+  const data: unknown[] = [];
+  const body = markup.replace(
+    /<script type="application\/json" data-bar-record>([^]*?)<\/script>/g,
+    (_, payload: string) => {
+      data.push(JSON.parse(payload));
+      return "";
+    },
+  );
+  if (data.length === 0) return markup;
+  const stream = new Blob([JSON.stringify(data)]).stream().pipeThrough(new CompressionStream("gzip"));
+  const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  const encoded = btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
+  return body.replace("</main>", `<script type="application/octet-stream" data-bar-data>${encoded}</script></main>`);
 }

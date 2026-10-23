@@ -1,18 +1,17 @@
-/* The vantage points: one VantagePoint Durable Object each, created near a
-   location hint so every endpoint is probed from four continents. A hint is
-   a preference: Cloudflare may create an object elsewhere (South America
-   most often), and every answer reports the data center it really ran in. */
+/* US West and South America use explicitly placed private Workers. Europe
+   and Asia Pacific retain their Durable Objects. Every answer must still
+   prove its actual data center; placement alone never proves coverage. */
 
 import type { Env } from "../env";
 
 export interface Vantage {
   code: "sfo" | "gru" | "fra" | "nrt";
   name: string;
-  /** The location hint the vantage's Durable Object is created near. */
-  placement: DurableObjectLocationHint;
+  /** Explicit Worker region or Durable Object location hint. */
+  placement: DurableObjectLocationHint | "aws:us-west-1" | "aws:sa-east-1";
   /** Data centers that count as this vantage's area. An answer from anywhere
       else is a coverage failure, never relabeled as this vantage.
-      shortcut: hand-kept IATA lists, update when Cloudflare moves objects. */
+      shortcut: hand-kept IATA lists, review only for actual regional colos. */
   colos: readonly string[];
   /** Position in region map viewBox units (MAP_WIDTH × MAP_HEIGHT in
       views/charts/geometry), just off the hub of the region it sits in. */
@@ -26,7 +25,7 @@ export const VANTAGES: readonly Vantage[] = [
   {
     code: "sfo",
     name: "US West",
-    placement: "wnam",
+    placement: "aws:us-west-1",
     colos: ["SJC", "SFO", "LAX", "SEA", "PDX"],
     mapX: 18.8,
     mapY: 31.4,
@@ -35,7 +34,7 @@ export const VANTAGES: readonly Vantage[] = [
   {
     code: "gru",
     name: "South America",
-    placement: "sam",
+    placement: "aws:sa-east-1",
     colos: ["GRU", "GIG", "VCP", "EZE", "SCL", "BOG", "LIM"],
     mapX: 47.4,
     mapY: 62.4,
@@ -79,6 +78,11 @@ export const VANTAGES: readonly Vantage[] = [
   },
 ];
 
-/** The vantage's Durable Object; it stays where it was first created. */
-export const vantageStub = (env: Pick<Env, "VANTAGE">, vantage: Pick<Vantage, "code" | "placement">) =>
-  env.VANTAGE.get(env.VANTAGE.idFromName(vantage.code), { locationHint: vantage.placement });
+export function vantageStub(
+  env: Pick<Env, "VANTAGE" | "VANTAGE_SFO" | "VANTAGE_GRU">,
+  vantage: Pick<Vantage, "code" | "placement">,
+) {
+  if (vantage.placement === "aws:us-west-1") return env.VANTAGE_SFO;
+  if (vantage.placement === "aws:sa-east-1") return env.VANTAGE_GRU;
+  return env.VANTAGE.get(env.VANTAGE.idFromName(vantage.code), { locationHint: vantage.placement });
+}

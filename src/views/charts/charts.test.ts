@@ -27,6 +27,24 @@ describe("geometry", () => {
     ).toMatch(/^M 0\.0,10\.0 C .* C .*20\.0,10\.0$/);
   });
 
+  it("collapses collinear curves without removing turns", () => {
+    expect(
+      smoothPath([
+        [0, 0],
+        [1, 1],
+        [2, 2],
+        [3, 3],
+      ]),
+    ).toBe("M 0.0,0.0 L 3.0,3.0");
+    expect(
+      smoothPath([
+        [0, 0],
+        [1, 1],
+        [2, 0],
+      ]),
+    ).toContain("C ");
+  });
+
   it("splits series at gaps", () => {
     expect(runs([1, null, 2, 3, null])).toEqual([
       [{ index: 0, value: 1 }],
@@ -53,7 +71,7 @@ describe("lineChart", () => {
     ]).value;
     expect(svg.match(/class="ts-chart-line/g)).toHaveLength(3);
     expect(svg.match(/class="ts-chart-column"/g)).toHaveLength(3);
-    expect(svg).toContain('aria-label="p1: US West —, Europe 90 ms"');
+    expect(svg).toContain("<title>p1: US West —, Europe 90 ms</title>");
     // Flat areas per run, the larger series behind; no gradient.
     expect(svg.match(/class="ts-chart-area /g)).toHaveLength(3);
     expect(svg).toContain('class="ts-chart-area ts-cat-2 ts-chart-back"');
@@ -117,8 +135,6 @@ describe("chart script", () => {
     expect(CHART_SCRIPT).toContain('document.addEventListener("pointermove"');
     expect(CHART_SCRIPT).not.toContain("innerHTML");
   });
-
-
 });
 
 describe("incident latency ranges", () => {

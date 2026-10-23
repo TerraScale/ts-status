@@ -31,6 +31,10 @@
     { "tag": "v2", "new_sqlite_classes": ["VantagePoint"] },
   ],
   "vars": { "PUBLIC_ORIGIN": "https://status.terrascale.tech" },
+  "services": [
+    { "binding": "VANTAGE_SFO", "service": "ts-status-vantage-sfo" },
+    { "binding": "VANTAGE_GRU", "service": "ts-status-vantage-gru" },
+  ],
   // Subscription requests and admin sign-in attempts per client IP
   // (src/notify/subscribe.ts, src/admin/index.ts).
   "ratelimits": [

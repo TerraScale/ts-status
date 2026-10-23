@@ -98,9 +98,21 @@ export function holds(assertion: Assertion, actual: unknown): boolean {
     case "ne":
       return JSON.stringify(actual) !== JSON.stringify(assertion.value);
     case "lt":
-      return typeof actual === "number" && typeof assertion.value === "number" && actual < assertion.value;
+      return (
+        typeof actual === "number" &&
+        Number.isFinite(actual) &&
+        typeof assertion.value === "number" &&
+        Number.isFinite(assertion.value) &&
+        actual < assertion.value
+      );
     case "gt":
-      return typeof actual === "number" && typeof assertion.value === "number" && actual > assertion.value;
+      return (
+        typeof actual === "number" &&
+        Number.isFinite(actual) &&
+        typeof assertion.value === "number" &&
+        Number.isFinite(assertion.value) &&
+        actual > assertion.value
+      );
     case "contains":
       return typeof actual === "string"
         ? typeof assertion.value === "string" && actual.includes(assertion.value)

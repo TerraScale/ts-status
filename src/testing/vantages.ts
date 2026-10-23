@@ -1,11 +1,14 @@
-/* Stands in for the VANTAGE Durable Object namespace: each vantage code
-   gets its own stub, and a missing one fails like an unreachable object. */
+/* Private Worker bindings and the remaining Durable Object namespace. */
 
 interface Stub {
   fetch(url: string, init: RequestInit): Promise<Response>;
 }
 
-export const vantageNamespace = (stubs: Record<string, Stub>) => ({
-  idFromName: (code: string) => code,
-  get: (code: string) => stubs[code] ?? { fetch: async () => Promise.reject(new Error(`no vantage ${code}`)) },
-});
+export const vantageBindings = (stubs: Record<string, Stub>) => {
+  const stub = (code: string) => stubs[code] ?? { fetch: async () => Promise.reject(new Error(`no vantage ${code}`)) };
+  return {
+    VANTAGE_SFO: stub("sfo"),
+    VANTAGE_GRU: stub("gru"),
+    VANTAGE: { idFromName: (code: string) => code, get: stub },
+  };
+};

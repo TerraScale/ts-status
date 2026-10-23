@@ -1,5 +1,5 @@
 /* Uptime: a year of daily platform status as a calendar, a monthly uptime
-   table per component against the 99.9% target, and every component's
+   table per component, and every component's
    90-day bars. Uptime is the share of probe rounds that were not down. */
 
 import type { VantagePeriod } from "../db/details";
@@ -11,9 +11,6 @@ import type { Overview } from "../overview";
 import { heatmap, lastDays } from "./charts/heatmap";
 import { bars, card, componentHref, empty, probeRows, stat, statusBadge } from "./components";
 import type { Page } from "./layout";
-
-/** The uptime every component aims for each month. */
-export const SLA_TARGET = 0.999;
 
 export const YEAR_DAYS = 365;
 
@@ -36,10 +33,10 @@ function months(now: number): Month[] {
   });
 }
 
-function slaCell(counts: ProbeCounts): Html {
+function uptimeCell(counts: ProbeCounts): Html {
   const value = probeUptime(counts);
   if (value === null) return html`<td class="st-sla-cell" data-sla="none">—</td>`;
-  return html`<td class="st-sla-cell ts-num" data-sla="${value >= SLA_TARGET ? "met" : "missed"}">${formatUptime(value)}</td>`;
+  return html`<td class="st-sla-cell ts-num" data-sla="measured">${formatUptime(value)}</td>`;
 }
 
 export function uptimePage(view: Overview, periods: readonly VantagePeriod[], now: number): Page {
@@ -71,17 +68,17 @@ export function uptimePage(view: Overview, periods: readonly VantagePeriod[], no
   const measuredDays = days.filter((day) => (day.counts?.checks ?? 0) > 0).length;
 
   const table = html`<div class="st-table-wrap"><table class="st-sla">
-  <caption class="ts-sr-only">Monthly uptime per component; the target is ${formatUptime(SLA_TARGET)}</caption>
+  <caption class="ts-sr-only">Measured monthly uptime per component</caption>
   <thead><tr><th scope="col">Component</th>${monthList.map((month) => html`<th scope="col">${formatMonthShort(month.from)}</th>`)}</tr></thead>
   <tbody>
     ${components.map(
       (component) =>
         html`<tr><th scope="row"><a class="st-incident-link" href="${componentHref(component.id)}">${component.name}</a></th>${monthList.map(
           (month) =>
-            slaCell(measurements.counts(byComponent.get(component.id) ?? [], "all", month.from, month.to, DAY)),
+            uptimeCell(measurements.counts(byComponent.get(component.id) ?? [], "all", month.from, month.to, DAY)),
         )}</tr>`,
     )}
-    <tr class="st-sla-total"><th scope="row">Platform</th>${monthList.map((month) => slaCell(measurements.counts(allEndpoints, "all", month.from, month.to, DAY)))}</tr>
+    <tr class="st-sla-total"><th scope="row">Platform</th>${monthList.map((month) => uptimeCell(measurements.counts(allEndpoints, "all", month.from, month.to, DAY)))}</tr>
   </tbody>
 </table></div>`;
 
@@ -89,13 +86,14 @@ export function uptimePage(view: Overview, periods: readonly VantagePeriod[], no
   <header class="st-page-head">
     <p class="ts-eyebrow">Reliability</p>
     <h1 class="st-title">Uptime</h1>
-    <p class="ts-muted">Uptime is the share of 30-second health check rounds, from every answering vantage point, in which a component was not down.</p>
+    <p class="ts-muted">Measured uptime comes from health check history stored independently in Cloudflare D1. It is the share of 30-second rounds from answering vantage points in which a component was not down. Unmeasured time is excluded, not counted as healthy.</p>
+    <p class="ts-muted"><strong>No SLA during Public Alpha.</strong> These preliminary measurements are not an availability commitment or a basis for service credits. SLA numbers will only be considered after 30 consecutive days of clean monitoring data.</p>
+    <p class="ts-muted">Current monitoring coverage: ${view.monitoring.coverage.verified} of ${view.monitoring.coverage.total} vantage points verified.${view.monitoring.delayed ? " Monitoring is delayed; recent status may be out of date." : ""} Historical data may include incomplete coverage and earlier probe defects.</p>
   </header>
 
   <dl class="ts-stats" aria-label="Uptime summary">
     ${stat("Last 12 months", formatUptime(probeUptime(year)), "platform")}
     ${stat("Last 90 days", formatUptime(view.uptimeHistory), "platform")}
-    ${stat("Target", formatUptime(SLA_TARGET), "per component, monthly")}
     ${stat("Measured", String(measuredDays), `of the last ${YEAR_DAYS}`, measuredDays === 1 ? "day" : "days")}
   </dl>
 
@@ -114,7 +112,7 @@ export function uptimePage(view: Overview, periods: readonly VantagePeriod[], no
     {
       id: "monthly",
       title: "Monthly uptime",
-      description: html`Green months met the ${formatUptime(SLA_TARGET)} target, red ones missed it. The current month is still open.`,
+      description: "Observed availability only. Missing months have no data; the current month is still open.",
     },
     components.length === 0
       ? empty("Nothing measured yet", "Monthly uptime appears once components are measured.")

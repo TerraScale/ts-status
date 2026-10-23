@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { CheckSpec } from "../domain/assertions";
 import type { Env } from "../env";
+import { loadSnapshot } from "../db/reads";
+import { overview, snapshotWindow } from "../overview";
 import { testD1 } from "../testing/d1";
 import type { ProbeRequest, ProbeResponse } from "./protocol";
 import { evaluate, roundOf, runRound, targets, type RoundEndpoint } from "./round";
-import { vantageNamespace } from "../testing/vantages";
+import { vantageBindings } from "../testing/vantages";
 
 const plain: CheckSpec = { expectStatus: "2xx", keyword: null, assertions: [], extract: {}, indirect: false };
 const atlas = (code: string): CheckSpec => ({
@@ -129,7 +131,7 @@ function vantage(code: string, failing: (url: string) => boolean = () => false, 
               jwks_uri: "https://auth.terrascale.tech/terrascale/jwks",
             });
           if (target.url.endsWith("/health/replication"))
-            return answer(200, { region, status: "ok", maxLagSeconds: 2, peers: [] });
+            return answer(200, { region, status: "ok", maxLagSeconds: 2, peers: [{ region: "sjc" }] });
           if (target.url.includes("cloudflarestatus")) return answer(200, { component: { status: "operational" } });
           return answer(200);
         }),
@@ -155,7 +157,7 @@ describe("runRound", () => {
     };
     const env = {
       STATUS_DB: db,
-      VANTAGE: vantageNamespace({
+      ...vantageBindings({
         sfo: counted("sfo"),
         gru: counted("gru"),
         fra: counted("fra"),
@@ -232,7 +234,7 @@ describe("runRound", () => {
     db.sqlite.exec("UPDATE components SET lifecycle = 'planned' WHERE id != '01M4E7G1W82VKFPF5FJ9AVK1D3'");
     const env = {
       STATUS_DB: db,
-      VANTAGE: vantageNamespace({ sfo: vantage("sfo"), gru: vantage("gru"), fra: vantage("fra"), nrt: vantage("nrt") }),
+      ...vantageBindings({ sfo: vantage("sfo"), gru: vantage("gru"), fra: vantage("fra"), nrt: vantage("nrt") }),
     } as unknown as Env;
     await runRound(env, Date.parse("2026-09-26T10:00:30Z"), { streaks: {}, colos: {}, versions: {}, trackers: {} });
     expect(db.sqlite.prepare("SELECT endpoint_id FROM probe_samples").all()).toEqual([
@@ -244,7 +246,7 @@ describe("runRound", () => {
     const db = testD1();
     const env = {
       STATUS_DB: db,
-      VANTAGE: vantageNamespace({
+      ...vantageBindings({
         sfo: vantage("sfo"),
         gru: vantage("gru"),
         fra: vantage("fra"),
@@ -278,7 +280,7 @@ describe("automatic incidents", () => {
     let round = 0;
     const env = {
       STATUS_DB: db,
-      VANTAGE: vantageNamespace(
+      ...vantageBindings(
         Object.fromEntries(
           ["sfo", "gru", "fra", "nrt"].map((code) => [code, vantage(code, (url) => failing(url, round))]),
         ),
@@ -313,6 +315,64 @@ describe("automatic incidents", () => {
     expect(db.sqlite.prepare("SELECT component_id FROM incident_components").all()).toEqual([
       { component_id: "01M4E7G1W82VKFPF5FJ9AVK1CX" },
     ]);
+  });
+
+  it("keeps nonreplicating gru down publicly and posts each changed cause once", async () => {
+    const db = testD1();
+    let round = 0;
+    const env = {
+      STATUS_DB: db,
+      ...vantageBindings(
+        Object.fromEntries(
+          ["sfo", "gru", "fra", "nrt"].map((code) => {
+            const inner = vantage(code, (url) => url.endsWith("/health/replication") && round >= 1 && round <= 3);
+            return [
+              code,
+              {
+                fetch: async (url: string, init: RequestInit) => {
+                  const response = await inner.fetch(url, init);
+                  const body = (await response.json()) as ProbeResponse;
+                  if (round >= 4) {
+                    for (const result of body.results) {
+                      if (!result.key.includes("/health/replication")) continue;
+                      result.body = JSON.stringify({
+                        status: "ok",
+                        region: "gru",
+                        maxLagSeconds: null,
+                        peers: round >= 6 ? [{ region: "sjc" }] : [],
+                      });
+                    }
+                  }
+                  return Response.json(body);
+                },
+              },
+            ];
+          }),
+        ),
+      ),
+    } as unknown as Env;
+    let state = { streaks: {}, colos: {}, versions: {}, trackers: {} };
+    const start = Date.parse("2026-09-26T10:00:00Z");
+    for (; round < 8; round++) state = await runRound(env, start + round * 30_000, state);
+    const now = start + 7 * 30_000;
+    const page = overview(await loadSnapshot(env, snapshotWindow(now, "24h")), now, "24h");
+    const replication = page.groups
+      .flatMap((group) => group.components)
+      .find((component) => component.name === "Replication")!;
+    expect(replication.status).toBe("major_outage");
+    expect(replication.clusters.find((cluster) => cluster.regionCode === "GRU")).toMatchObject({
+      status: "major_outage",
+      note: null,
+    });
+    expect(
+      db.sqlite.prepare("SELECT live_since FROM endpoints WHERE id = '01M4PVGGBHD58R8HYNDBTGFRGJ'").get()?.live_since,
+    ).toBe("2026-09-26 10:00:00");
+    const updates = db.sqlite.prepare("SELECT status, body FROM incident_updates ORDER BY created_at").all();
+    expect(updates).toHaveLength(3);
+    expect(updates.map((update) => update.status)).toEqual(["investigating", "investigating", "investigating"]);
+    expect(updates[0]?.body).toContain("HTTP 503");
+    expect(updates[1]?.body).toContain("Expected peers[0] exists");
+    expect(updates[2]?.body).toContain("Expected maxLagSeconds gt -1");
   });
 
   it("opens nothing for a service that has not launched yet, and launches it on its first passing round", async () => {

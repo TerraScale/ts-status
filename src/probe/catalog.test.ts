@@ -95,13 +95,27 @@ describe("probe catalog", () => {
       expect(row.url).toBe("https://api.terrascale.tech/health/replication");
       expect(JSON.parse(row.headers)).toEqual({ "X-TerraScale-Region-Pin": region });
       const spec = parseSpec(row);
-      const health = (status: string, served: string) =>
+      const health = (status: string, served: string, overrides: Record<string, unknown> = {}) =>
         judge(spec, {
           status: 200,
           error: null,
-          body: JSON.stringify({ region: served, status, maxLagSeconds: 4, peers: [] }),
+          body: JSON.stringify({ region: served, status, maxLagSeconds: 4, peers: [{ region: "peer" }], ...overrides }),
         });
       expect(health("ok", region)).toEqual({ outcome: "ok", error: null, values: { lag: 4 } });
+      expect(health("ok", region, { maxLagSeconds: 0 }).outcome).toBe("ok");
+      for (const peers of [[], null, undefined, {}, "peer"]) {
+        expect(health("ok", region, { peers }).outcome).toBe("fail");
+      }
+      for (const lag of [null, undefined, "4", {}, -1]) {
+        expect(health("ok", region, { maxLagSeconds: lag }).outcome).toBe("fail");
+      }
+      expect(
+        judge(spec, {
+          status: 200,
+          error: null,
+          body: `{"status":"ok","region":"${region}","peers":[{}],"maxLagSeconds":1e400}`,
+        }).outcome,
+      ).toBe("fail");
       expect(health("degraded", region).outcome).toBe("fail");
       expect(health("ok", region === "gru" ? "fra" : "gru").outcome).toBe("fail");
     }
