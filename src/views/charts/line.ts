@@ -1,6 +1,6 @@
 /* A server-rendered line chart: gridlines, axis labels, one line and one flat
    translucent area per series, and a focusable hover column per sample whose
-   tooltip is drawn in SVG, so it works without scripts. Each column also
+   native tooltip works without scripts. Each column also
    carries its tooltip as data-tip JSON for the chart client script, which
    swaps the SVG tooltip for a frosted HTML one, and refits the x coordinates
    to the chart's real width so text stays 11px and the plot 220px tall.
@@ -51,38 +51,10 @@ const MARKER_CHAR = 6;
 /** Hover targets rendered per chart; dense series share columns. */
 export const MAX_COLUMNS = 60;
 
-// Tooltip metrics in viewBox units: monospaced text is its character count
-// times a fixed advance.
-const TIP = { char: 6.8, padX: 10, padY: 6, line: 17, swatch: 12, gap: 16, offset: 10 };
-
 interface TipRow {
   name: string;
   value: string;
   series: string;
-}
-
-function tip(x: number, header: string, rows: readonly TipRow[]): Html {
-  const names = Math.max(0, ...rows.map((row) => row.name.length));
-  const values = Math.max(0, ...rows.map((row) => row.value.length));
-  const content = Math.max(header.length * TIP.char, TIP.swatch + (names + values) * TIP.char + TIP.gap);
-  const width = content + 2 * TIP.padX;
-  const lines = rows.length + (header ? 1 : 0);
-  let left = x + TIP.offset;
-  if (left + width > WIDTH - RIGHT) left = Math.max(0, x - TIP.offset - width);
-  const lineY = (line: number) => coordinate(TOP + TIP.padY + TIP.line * (line + 0.5));
-  const first = header ? 1 : 0;
-  return html`<g class="ts-chart-tip" aria-hidden="true">
-  <rect class="ts-chart-tip-box" x="${coordinate(left)}" y="${coordinate(TOP)}" width="${coordinate(width)}" height="${coordinate(2 * TIP.padY + lines * TIP.line)}" rx="6"></rect>
-  ${header ? html`<text class="ts-chart-tip-label" x="${coordinate(left + TIP.padX)}" y="${lineY(0)}" dy="0.35em">${header}</text>` : ""}
-  ${rows.map(
-    (
-      row,
-      index,
-    ) => html`<circle class="ts-chart-tip-swatch ${row.series}" cx="${coordinate(left + TIP.padX + 3)}" cy="${lineY(first + index)}" r="3"></circle>
-  <text class="ts-chart-tip-name" x="${coordinate(left + TIP.padX + TIP.swatch)}" y="${lineY(first + index)}" dy="0.35em">${row.name}</text>
-  <text class="ts-chart-tip-value" x="${coordinate(left + width - TIP.padX)}" y="${lineY(first + index)}" dy="0.35em" text-anchor="end">${row.value}</text>`,
-  )}
-</g>`;
 }
 
 /** Renders the chart, or nothing when there is no value to draw. */
@@ -160,11 +132,11 @@ export function lineChart(options: LineOptions, series: readonly Series[]): Html
           ];
     });
     const data = JSON.stringify({ head: header, rows: rows.map((row) => [row.name, row.value, row.series]) });
-    columns.push(html`<g class="ts-chart-column" tabindex="0" role="img" aria-label="${label}" data-tip="${data}">
+    columns.push(html`<g class="ts-chart-column" tabindex="0" role="img" data-tip="${data}">
   <rect class="ts-chart-hit" x="${coordinate(left)}" y="${TOP}" width="${coordinate(right - left)}" height="${plotHeight}"></rect>
   <line class="ts-chart-guide" x1="${coordinate(x)}" y1="${TOP}" x2="${coordinate(x)}" y2="${bottom}"></line>
   ${dots}
-  ${tip(x, header, rows)}
+  <title>${label}</title>
 </g>`);
   }
 

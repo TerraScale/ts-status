@@ -20,8 +20,11 @@ export interface Env {
   VERSION?: string;
   STATUS_DB: D1Database;
   COORDINATOR: DurableObjectNamespace<Coordinator>;
-  /** One object per vantage (src/probe/vantages.ts). */
+  /** Existing Europe/Asia Pacific objects (src/probe/vantages.ts). */
   VANTAGE: DurableObjectNamespace<VantagePoint>;
+  /** Private fetch handlers with explicit regional placement. */
+  VANTAGE_SFO: Fetcher;
+  VANTAGE_GRU: Fetcher;
   /** Encrypts admin cookies and signs CSRF tokens (a Worker secret). */
   ADMIN_SESSION_SECRET?: string;
   /** Limits admin sign-in attempts per client. */

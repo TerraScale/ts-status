@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { judge, parsePath, parseSpec, select, statusMatches, type CheckSpec } from "./assertions";
+import { holds, judge, parsePath, parseSpec, select, statusMatches, type CheckSpec } from "./assertions";
 
 const atlas = {
   regions: [
@@ -91,6 +91,15 @@ describe("judge", () => {
       error: null,
       values: {},
     });
+  });
+
+  it("requires finite numbers for numeric comparisons without coercing values", () => {
+    for (const op of ["lt", "gt"] as const) {
+      for (const value of [null, undefined, "4", true, {}, [], NaN, Infinity, -Infinity]) {
+        expect(holds({ path: "lag", op, value: 0 }, value)).toBe(false);
+        expect(holds({ path: "lag", op, value }, 0)).toBe(false);
+      }
+    }
   });
 
   it("covers every operator", () => {

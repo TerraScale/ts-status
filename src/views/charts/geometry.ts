@@ -38,12 +38,24 @@ export function smoothPath(points: readonly Point[]): string {
     const after = slopes[i] ?? 0;
     return before * after > 0 ? 2 / (1 / before + 1 / after) : 0;
   });
-  const curves = Array.from({ length: n - 1 }, (_, i) => {
+  const curves: string[] = [];
+  let straight: number | null = null;
+  for (let i = 0; i < n - 1; i++) {
     const [x0, y0] = at(i);
     const [x1, y1] = at(i + 1);
+    const slope = slopes[i] ?? 0;
+    if (Math.abs((tangents[i] ?? 0) - slope) < 1e-9 && Math.abs((tangents[i + 1] ?? 0) - slope) < 1e-9) {
+      if (straight !== null && Math.abs(straight - slope) < 1e-9) curves.pop();
+      curves.push(`L ${coordinate(x1)},${coordinate(y1)}`);
+      straight = slope;
+      continue;
+    }
+    straight = null;
     const dx = (x1 - x0) / 3;
-    return `C ${coordinate(x0 + dx)},${coordinate(y0 + (tangents[i] ?? 0) * dx)} ${coordinate(x1 - dx)},${coordinate(y1 - (tangents[i + 1] ?? 0) * dx)} ${coordinate(x1)},${coordinate(y1)}`;
-  });
+    curves.push(
+      `C ${coordinate(x0 + dx)},${coordinate(y0 + (tangents[i] ?? 0) * dx)} ${coordinate(x1 - dx)},${coordinate(y1 - (tangents[i + 1] ?? 0) * dx)} ${coordinate(x1)},${coordinate(y1)}`,
+    );
+  }
   return [move, ...curves].join(" ");
 }
 

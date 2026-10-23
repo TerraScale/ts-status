@@ -336,6 +336,19 @@
   border-radius: var(--ts-radius-sm);
 }
 
+.st-bars-static {
+  display: block;
+  width: 100%;
+}
+
+.st-bars-static path {
+  fill: var(--state);
+}
+
+.st-bars-static path[data-state="none"] {
+  fill: var(--ts-surface-3);
+}
+
 .st-bars-lg {
   height: 40px;
 }

@@ -41,7 +41,7 @@ import { historyPage, historyWindow } from "./views/history";
 import { homePage } from "./views/home";
 import { incidentPage } from "./views/incident";
 import { integrationsPage } from "./views/integrations";
-import { document, type Page } from "./views/layout";
+import { compactBarData, document, type Page } from "./views/layout";
 import { MAINTENANCE_DAYS, maintenancePage } from "./views/maintenance";
 import { notFoundPage } from "./views/not-found";
 import { pingPage } from "./views/ping";
@@ -290,7 +290,9 @@ const route = createRouter<Route>({
 });
 
 async function page(content: Page, context: RenderContext, status = 200): Promise<Response> {
-  const body = context.fragment ? content.body.value : document(content, new Date(context.now).getUTCFullYear()).value;
+  const body = await compactBarData(
+    context.fragment ? content.body.value : document(content, new Date(context.now).getUTCFullYear()).value,
+  );
   return new Response(body, {
     status,
     headers: {

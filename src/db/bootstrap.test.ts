@@ -88,6 +88,39 @@ describe("clean D1 bootstrap", () => {
     }
   });
 
+  it("upgrades old replication assertions without losing launch state, history or operator checks", () => {
+    const sqlite = new DatabaseSync(":memory:");
+    const endpoint = "01M4PVGGBHD58R8HYNDBTGFRGJ";
+    const old = '[{"path":"status","op":"eq","value":"ok"},{"path":"region","op":"eq","value":"gru"}]';
+    try {
+      sqlite.exec(schema);
+      sqlite
+        .prepare("UPDATE endpoints SET assertions = ?, live_since = '2026-10-11 00:00:00' WHERE id = ?")
+        .run(old, endpoint);
+      sqlite.exec(`
+        INSERT INTO probe_samples (endpoint_id, at, state, ok, total, results)
+          VALUES ('${endpoint}', '2026-10-11 00:00:00', 'operational', 4, 4, '[]');
+        UPDATE endpoints SET assertions = '[{"path":"operator","op":"eq","value":true}]'
+          WHERE id = '01M4PVGGBJ24A140MWGJV7MVKV';
+      `);
+      sqlite.exec(schema);
+      sqlite.exec(schema);
+      const row = sqlite.prepare("SELECT assertions, live_since FROM endpoints WHERE id = ?").get(endpoint)!;
+      expect(JSON.parse(String(row.assertions))).toEqual([
+        ...JSON.parse(old),
+        { path: "peers[0]", op: "exists" },
+        { path: "maxLagSeconds", op: "gt", value: -1 },
+      ]);
+      expect(row.live_since).toBe("2026-10-11 00:00:00");
+      expect(sqlite.prepare("SELECT count(*) AS n FROM probe_samples").get()?.n).toBe(1);
+      expect(
+        sqlite.prepare("SELECT assertions FROM endpoints WHERE id = '01M4PVGGBJ24A140MWGJV7MVKV'").get()?.assertions,
+      ).toBe('[{"path":"operator","op":"eq","value":true}]');
+    } finally {
+      sqlite.close();
+    }
+  });
+
   it("upgrades a store seeded before the dashboard probe, the by-key read route and single auth readiness", () => {
     const sqlite = new DatabaseSync(":memory:");
     const pinned = '[{"path":"status","op":"eq","value":"ready"},{"path":"region","op":"eq","value":"gru"}]';

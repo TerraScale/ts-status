@@ -6,7 +6,7 @@ import type { ProbeRequest, ProbeResponse } from "../probe/protocol";
 import { testD1, type TestD1 } from "../testing/d1";
 import { COOKIE, issue, SESSION_MS } from "./auth";
 import { ORGANIZATION, ORGANIZATION_URL } from "./oidc";
-import { vantageNamespace } from "../testing/vantages";
+import { vantageBindings } from "../testing/vantages";
 
 const SECRET = "s".repeat(43);
 const ORIGIN = "https://status.terrascale.tech";
@@ -37,7 +37,7 @@ async function setup(options: { allowed?: boolean } = {}) {
     ADMIN_LOGIN_LIMITER: {
       limit: async ({ key }: { key: string }) => (attempts.push(key), { success: options.allowed ?? true }),
     },
-    VANTAGE: vantageNamespace({
+    ...vantageBindings({
       sfo: vantage("sfo"),
       gru: vantage("gru"),
       fra: vantage("fra"),

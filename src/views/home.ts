@@ -2,7 +2,7 @@
    with bars over the chosen range, response times, the live region map,
    the 90-day platform history, and recently resolved incidents. */
 
-import regionMap from "../assets/region-map.svg?raw";
+import regionMap from "../assets/region-map.svg?url";
 import { median } from "../domain/consensus";
 import { byHour, RANGES } from "../domain/range";
 import { vantageLabel, type Coverage, type VantageCoverage, type VantageState } from "../domain/coverage";
@@ -223,9 +223,8 @@ function map(view: Overview) {
     <text x="3" y="1.1">${entry.code}</text>
   </g>`;
   });
-  const dots = regionMap.replace(/^<svg[^>]*>|<\/svg>\s*$/g, "");
   return html`<figure class="st-map-figure">
-  <svg class="st-map" viewBox="0 0 ${MAP_WIDTH} ${MAP_HEIGHT}" role="group" aria-label="${label}">${raw(dots)}${arcs}${vantages}${hubs}</svg>
+  <svg class="st-map" viewBox="0 0 ${MAP_WIDTH} ${MAP_HEIGHT}" role="group" aria-label="${label}"><image href="${regionMap}" width="${MAP_WIDTH}" height="${MAP_HEIGHT}" aria-hidden="true"></image>${arcs}${vantages}${hubs}</svg>
   <figcaption class="st-map-legend" aria-hidden="true">
     <span><span class="st-key st-key-hub"></span>Region</span>
     <span><span class="st-key st-key-vantage"></span>Vantage point</span>
@@ -405,7 +404,7 @@ export function homePage(view: Overview): Page {
       ? card(
           {
             id: "incidents",
-      eyebrow: "Active incidents",
+            eyebrow: "Active incidents",
             title: "Active incidents",
             description: "Updates are posted here as soon as we have them.",
           },
@@ -419,7 +418,7 @@ export function homePage(view: Overview): Page {
       ? card(
           {
             id: "maintenance",
-      eyebrow: "Maintenance",
+            eyebrow: "Maintenance",
             title: "Scheduled maintenance",
             description:
               "Components under maintenance show in violet; health checks open no incidents for them meanwhile.",
@@ -466,7 +465,7 @@ export function homePage(view: Overview): Page {
       ? card(
           {
             id: "resolved",
-      eyebrow: "History",
+            eyebrow: "History",
             title: "Past incidents",
             description: `Incidents and warnings resolved in the last ${RESOLVED_DAYS} days.`,
             actions: html`<a class="ts-link" href="/history">Full history</a>`,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Env } from "../env";
 import { deployments } from "./deployments";
-import { vantageNamespace } from "../testing/vantages";
+import { vantageBindings } from "../testing/vantages";
 
 describe("regional deployment observations", () => {
   it("checks every fixed service through both vantages and includes their own revisions", async () => {
@@ -31,7 +31,7 @@ describe("regional deployment observations", () => {
       },
     });
     const rows = await deployments(
-      { VANTAGE: vantageNamespace({ gru: vantage("GRU"), sfo: vantage("SFO") }) } as unknown as Env,
+      { ...vantageBindings({ gru: vantage("GRU"), sfo: vantage("SFO") }) } as unknown as Env,
       0,
     );
     expect(rows).toHaveLength(10);
@@ -50,7 +50,7 @@ describe("regional deployment observations", () => {
     const commit = "b".repeat(40);
     const rows = await deployments(
       {
-        VANTAGE: vantageNamespace({
+        ...vantageBindings({
           gru: {
             fetch: async () =>
               Response.json({
@@ -72,7 +72,7 @@ describe("regional deployment observations", () => {
   it("keeps failed vantages, old version formats and unhealthy responses unknown", async () => {
     const rows = await deployments(
       {
-        VANTAGE: vantageNamespace({
+        ...vantageBindings({
           gru: {
             fetch: async () => {
               throw new Error("unreachable");
@@ -116,7 +116,7 @@ describe("regional deployment observations", () => {
     const version = "a".repeat(40);
     const rows = await deployments(
       {
-        VANTAGE: vantageNamespace({
+        ...vantageBindings({
           gru: { fetch: async () => Response.json(body) },
           sfo: {
             fetch: async () =>
@@ -146,7 +146,7 @@ describe("regional deployment observations", () => {
   it("keeps non-JSON vantage responses unknown", async () => {
     const rows = await deployments(
       {
-        VANTAGE: vantageNamespace({
+        ...vantageBindings({
           gru: { fetch: async () => new Response("not JSON") },
           sfo: { fetch: async () => Response.json({ version: "a".repeat(40), results: [] }) },
         }),
