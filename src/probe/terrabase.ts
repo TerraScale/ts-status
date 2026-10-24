@@ -13,7 +13,9 @@ import {
   holdsDocument,
   isDocumentProbeConfig,
   isRegionCode,
+  forgetToken,
   readToken,
+  timed,
   type DocumentProbeConfig,
   type CanaryResult,
 } from "./canary";
@@ -138,10 +140,10 @@ export async function runTerraBase(
     "X-TerraScale-Region-Pin": config.region,
   };
   const init = (extra: RequestInit = {}): RequestInit => ({ ...extra, headers: { ...headers, ...extra.headers } });
+  const terrabase = timed(fetcher);
   // Every request answers 200 unless it says otherwise.
   const call = (path: string, extra?: RequestInit, statuses: readonly number[] = [200]) =>
-    canaryJson(config.origin + path, init(extra), fetcher, statuses);
-  const started = Date.now();
+    canaryJson(config.origin + path, init(extra), terrabase.fetch, statuses);
   try {
     if (!isTerraBaseConfig(probe, config)) throw new CanaryError("Invalid probe config");
     switch (probe) {
@@ -192,9 +194,10 @@ export async function runTerraBase(
         break;
       }
     }
-    return { ok: true, latencyMs: Date.now() - started, error: null };
+    return { ok: true, latencyMs: terrabase.slowest(), error: null };
   } catch (error) {
-    if (error instanceof CanaryError) return { ok: false, latencyMs: null, error: error.message };
-    throw error;
+    if (!(error instanceof CanaryError)) throw error;
+    if (probe === "documents") forgetToken(config as DocumentProbeConfig, fetcher);
+    return { ok: false, latencyMs: null, error: error.message };
   }
 }
