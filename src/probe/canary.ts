@@ -33,7 +33,7 @@ export interface CanaryConfig {
 
 export interface CanaryResult {
   ok: boolean;
-  /** Token exchange plus read time; null when the canary failed. */
+  /** The slowest TerraBase request; null when the canary failed. */
   latencyMs: number | null;
   error: string | null;
 }
@@ -254,12 +254,27 @@ export async function canaryJson(
   return body;
 }
 
+/** Exchanged tokens per fetcher, reused until a minute before they expire:
+    a token exchange takes seconds, and a canary judges TerraBase, not ts-auth. */
+const tokens = new WeakMap<typeof fetch, Map<string, { token: string; expires: number }>>();
+const TOKEN_MARGIN_MS = 60_000;
+
+/** Forget a config's token, so a failed round exchanges the key again. */
+export function forgetToken(config: Pick<CanaryConfig, "key">, fetcher: typeof fetch): void {
+  const cached = tokens.get(fetcher);
+  if (cached) for (const name of cached.keys()) if (name.endsWith(` ${config.key}`)) cached.delete(name);
+}
+
 /** Exchange only at ts-auth; the long-lived key is never sent to TerraBase. */
 export async function readToken(
   config: Pick<CanaryConfig, "issuer" | "project" | "key">,
   fetcher: typeof fetch,
   scope = "documents:read",
 ): Promise<string> {
+  const name = `${config.issuer} ${config.project} ${scope} ${config.key}`;
+  let cached = tokens.get(fetcher);
+  const hit = cached?.get(name);
+  if (hit && hit.expires > Date.now()) return hit.token;
   const body = (await canaryJson(
     `${config.issuer}/oauth/token`,
     {
@@ -286,7 +301,26 @@ export async function readToken(
     body.expires_in <= 0
   )
     throw new CanaryError("Invalid token response");
+  if (!cached) tokens.set(fetcher, (cached = new Map()));
+  cached.set(name, { token: body.access_token, expires: Date.now() + body.expires_in * 1000 - TOKEN_MARGIN_MS });
   return body.access_token;
+}
+
+/** A fetcher that keeps its slowest request: a canary's latency, so each
+    TerraBase request is judged like a single check, not the sum of its steps. */
+export function timed(fetcher: typeof fetch): { fetch: typeof fetch; slowest: () => number } {
+  let slowest = 0;
+  return {
+    fetch: async (input, init) => {
+      const started = Date.now();
+      try {
+        return await fetcher(input, init);
+      } finally {
+        slowest = Math.max(slowest, Date.now() - started);
+      }
+    },
+    slowest: () => slowest,
+  };
 }
 
 /** Read a pre-created fixture; the round marker remains in the coordinator's call signature. */
@@ -295,10 +329,10 @@ export async function runCanary(
   _marker: string,
   fetcher: typeof fetch = fetch,
 ): Promise<CanaryResult> {
-  const started = Date.now();
   try {
     if (!isCanaryConfig(config)) throw new CanaryError("Invalid probe config");
     const token = await readToken(config, fetcher);
+    const terrabase = timed(fetcher);
     const read = await canaryJson(
       config.origin + documentPath(config),
       {
@@ -310,14 +344,15 @@ export async function runCanary(
         },
         cache: "no-store",
       },
-      fetcher,
+      terrabase.fetch,
       [200],
     );
     if (!holdsDocument(read, config.document)) throw new CanaryError("Invalid response");
-    return { ok: true, latencyMs: Date.now() - started, error: null };
+    return { ok: true, latencyMs: terrabase.slowest(), error: null };
   } catch (error) {
-    if (error instanceof CanaryError) return { ok: false, latencyMs: null, error: error.message };
-    throw error;
+    if (!(error instanceof CanaryError)) throw error;
+    forgetToken(config, fetcher);
+    return { ok: false, latencyMs: null, error: error.message };
   }
 }
 

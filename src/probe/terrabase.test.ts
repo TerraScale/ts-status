@@ -108,6 +108,36 @@ describe("TerraBase probes", () => {
     }
   });
 
+  it("reuses the token across rounds, exchanges again after a failure, and times only TerraBase", async () => {
+    vi.useFakeTimers();
+    try {
+      const store = fake();
+      const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+        // ts-auth answers slowly; TerraBase in 100 ms per request.
+        await vi.advanceTimersByTimeAsync(String(input).endsWith("/oauth/token") ? 2_000 : 100);
+        return store(input, init);
+      });
+      const tokens = () => fetcher.mock.calls.filter(([url]) => String(url).endsWith("/oauth/token")).length;
+      expect(await runTerraBase("documents", canary, "round", fetcher)).toEqual({
+        ok: true,
+        latencyMs: 100,
+        error: null,
+      });
+      await runTerraBase("documents", canary, "round", fetcher);
+      expect(tokens()).toBe(1);
+      store.mockResolvedValueOnce(Response.json({ error: { code: "invalid_token" } }, { status: 401 }));
+      expect(await runTerraBase("documents", canary, "round", fetcher)).toMatchObject({ ok: false });
+      await runTerraBase("documents", canary, "round", fetcher);
+      expect(tokens()).toBe(2);
+      // A minute before the 900 s token expires, the next round exchanges again.
+      await vi.advanceTimersByTimeAsync(840_000);
+      await runTerraBase("documents", canary, "round", fetcher);
+      expect(tokens()).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps readiness anonymous and rejects a wrong region, unavailable or invalid response", async () => {
     for (const [body, status, ok] of [
       [{ status: "ready", version: "1.0", region: "gru" }, 200, true],
