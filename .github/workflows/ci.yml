@@ -57,6 +57,7 @@ jobs:
           npm ci
           npm run check
           npm test
+          python3 -m unittest discover -s scripts -p 'test_*.py'
           npm run build
       - name: Save main npm cache
         if: steps.changes.outputs.run == 'true' && github.ref == 'refs/heads/main' && steps.npm-cache.outputs.cache-hit != 'true'

@@ -484,6 +484,43 @@ describe("app", () => {
     expect(summary.components.some((entry) => entry.id === "01M4E7G1W82VKFPF5FJ9AVK1CT")).toBe(false);
   });
 
+  it("exposes invalid canary credentials in the page and APIs without claiming healthy operations", async () => {
+    const env = seededEnv();
+    env.STATUS_DB.sqlite.exec(`
+      INSERT INTO probe_samples (endpoint_id, at, state, ok, total, results) VALUES
+        ('01M4E7G1W82VKFPF5FJ9AVK1DB', '2026-09-26 10:14:30', 'operational', 2, 2, '[]'),
+        ('01M4E7G1W82VKFPF5FJ9AVK1D9', '2026-09-26 10:14:30', 'none', 0, 0,
+          '[{"v":"canary","ok":null,"ms":null,"e":"Canary credential invalid"}]');
+    `);
+    const data = (await (await app.fetch(request("/api/v1/status"), env, ctx)).json()) as {
+      monitoringIssues: { endpointId: string; componentId: string; note: string }[];
+      groups: { components: { id: string; status: string; note: string | null }[] }[];
+      regions: { clusters: { id: string; status: string; note: string | null; pingMs: number | null }[] }[];
+    };
+    expect(data.monitoringIssues).toEqual([
+      {
+        endpointId: "01M4E7G1W82VKFPF5FJ9AVK1D9",
+        componentId: "01M4E7G1W82VKFPF5FJ9AVK1CW",
+        note: "Canary credential invalid",
+      },
+    ]);
+    expect(
+      data.groups.flatMap((group) => group.components).find((entry) => entry.id === "01M4E7G1W82VKFPF5FJ9AVK1CW"),
+    ).toMatchObject({ status: "none", note: "Canary credential invalid" });
+    expect(
+      data.regions.flatMap((region) => region.clusters).find((entry) => entry.id === "01M4E7G1W82VKFPF5FJ9AVK1D9"),
+    ).toMatchObject({ status: "none", note: "Canary credential invalid", pingMs: null });
+    const page = await (await app.fetch(request("/?fragment=main"), env, ctx)).text();
+    expect(page).toContain("Canary credential invalid</h2>");
+    expect(page).toContain("Authenticated checks could not run for Data API");
+    const summary = (await (await app.fetch(request("/api/v1/summary.json"), env, ctx)).json()) as {
+      status: { description: string };
+      components: { id: string }[];
+    };
+    expect(summary.status.description).toContain("Canary credential invalid; affected checks are unmeasured");
+    expect(summary.components.some((entry) => entry.id === "01M4E7G1W82VKFPF5FJ9AVK1CW")).toBe(false);
+  });
+
   it("switches the bars' range, caching each range apart", async () => {
     const env = seededEnv();
     const day = (await (await app.fetch(request("/api/v1/status?range=24h"), env, ctx)).json()) as {

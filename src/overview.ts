@@ -10,6 +10,7 @@ import { byHour, RANGES, rangeStart, type RangeKey } from "./domain/range";
 import { median } from "./domain/consensus";
 import {
   aggregate,
+  CANARY_CREDENTIAL_INVALID,
   COMING_SOON,
   componentState,
   countsOf,
@@ -105,6 +106,8 @@ export interface Monitoring {
   delayed: boolean;
   /** Which vantages answered the latest round, and where they ran. */
   coverage: Coverage;
+  /** Unmeasured authenticated probes, independent of HTTP vantage coverage. */
+  issues: { endpointId: string; componentId: string; note: string }[];
 }
 
 /** A day of platform history, with the incidents open during it. */
@@ -158,6 +161,7 @@ const hostOf = (url: string): string => {
     measured yet: not configured when no secret names any, else pending, as
     is something with no clusters at all yet. */
 function sharedNote(notes: readonly (string | null)[]): string | null {
+  if (notes.includes(CANARY_CREDENTIAL_INVALID)) return CANARY_CREDENTIAL_INVALID;
   if (notes.some((note) => note === null)) return null;
   if (notes.length === 0) return PENDING_LAUNCH;
   return notes.every((note) => note === NOT_CONFIGURED) ? NOT_CONFIGURED : PENDING_LAUNCH;
@@ -251,13 +255,11 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
     const sample = latest.get(endpoint.id);
     return sample && endpointStatus(sample, now) !== "none" ? sample : undefined;
   };
-  // The latest round could not probe it: its secret does not name it.
-  const unconfigured = (endpoint: Endpoint): boolean => {
+  const monitoringNote = (endpoint: Endpoint): string | null => {
     const sample = latest.get(endpoint.id);
+    if (!sample || now - Date.parse(sample.at) > PROBE_STALE_MS) return null;
     return (
-      sample !== undefined &&
-      now - Date.parse(sample.at) <= PROBE_STALE_MS &&
-      sample.results.some((result) => result.e === NOT_CONFIGURED)
+      sample.results.find((result) => result.e === CANARY_CREDENTIAL_INVALID || result.e === NOT_CONFIGURED)?.e ?? null
     );
   };
   const components = new Map(snapshot.components.map((component) => [component.id, component]));
@@ -306,7 +308,7 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
       cluster: endpoint.cluster,
       provider: endpoint.provider,
       status: status(endpoint),
-      note: unconfigured(endpoint) ? NOT_CONFIGURED : pending(endpoint) ? PENDING_LAUNCH : null,
+      note: monitoringNote(endpoint) ?? (pending(endpoint) ? PENDING_LAUNCH : null),
       pingMs: pending(endpoint) ? null : (fresh(endpoint)?.latencyMs ?? null),
       meanLatency: meanLatency(total),
       uptime: uptimeOf(list),
@@ -324,11 +326,18 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
   const componentList = snapshot.components.map((component): ComponentOverview => {
     const endpoints = component.lifecycle === "planned" ? [] : (endpointsOf.get(component.id) ?? []);
     const list = withIncidents(bars(counter, endpoints, range, now), component.id);
+    const own = endpoints.flatMap((endpoint) => clusters.get(endpoint.id) ?? []);
+    const measuredState = aggregate(endpoints.map(status));
+    const credentialInvalid = own.some((cluster) => cluster.note === CANARY_CREDENTIAL_INVALID);
     const state =
       component.lifecycle === "planned"
         ? "none"
-        : componentState(aggregate(endpoints.map(status)), component.id, snapshot.incidents, now);
-    const own = endpoints.flatMap((endpoint) => clusters.get(endpoint.id) ?? []);
+        : componentState(
+            measuredState === "operational" && credentialInvalid ? "none" : measuredState,
+            component.id,
+            snapshot.incidents,
+            now,
+          );
     return {
       ...component,
       status: state,
@@ -396,6 +405,13 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
       lastRoundAt,
       delayed: measured.length > 0 && (lastRoundAt === null || now - lastRoundAt > PROBE_STALE_MS),
       coverage: coverage({ vantages: VANTAGES, seen: snapshot.vantages, lastRoundAt, now }),
+      issues: measured
+        .filter((endpoint) => monitoringNote(endpoint) === CANARY_CREDENTIAL_INVALID)
+        .map((endpoint) => ({
+          endpointId: endpoint.id,
+          componentId: endpoint.componentId,
+          note: CANARY_CREDENTIAL_INVALID,
+        })),
     },
     groups: snapshot.groups
       .map((group) => ({ ...group, components: componentList.filter((component) => component.groupId === group.id) }))

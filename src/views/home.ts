@@ -8,6 +8,7 @@ import { byHour, RANGES } from "../domain/range";
 import { vantageLabel, type Coverage, type VantageCoverage, type VantageState } from "../domain/coverage";
 import {
   aggregate,
+  CANARY_CREDENTIAL_INVALID,
   COMING_SOON,
   HEADLINES,
   probeUptime,
@@ -378,6 +379,15 @@ export function homePage(view: Overview): Page {
     <ul class="ts-alert-body">${coverage.vantages
       .filter((entry) => entry.state !== "verified")
       .map((entry) => html`<li>${entry.name} (requested ${entry.requested}): ${vantageDetail(entry)}</li>`)}</ul>
+  </article>`
+  }
+
+  ${
+    view.monitoring.issues.length === 0
+      ? ""
+      : html`<article class="ts-alert" data-state="degraded" role="status">
+    <h2 class="ts-alert-title">${CANARY_CREDENTIAL_INVALID}</h2>
+    <p class="ts-alert-body">Authenticated checks could not run for ${[...new Set(view.monitoring.issues.map((issue) => names.get(issue.componentId) ?? issue.componentId))].join(", ")}. Their health is unmeasured; passing HTTP health checks do not verify these operations. Monitoring credentials need reprovisioning.</p>
   </article>`
   }
 

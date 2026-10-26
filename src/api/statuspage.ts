@@ -4,7 +4,14 @@
    Statuspage has no such state. */
 
 import type { Component, Incident, IncidentUpdate, Status, TimelineState } from "../domain/status";
-import { aggregate, HEADLINES, maintenancePhase, PENDING_LAUNCH, updatesByIncident } from "../domain/status";
+import {
+  aggregate,
+  CANARY_CREDENTIAL_INVALID,
+  HEADLINES,
+  maintenancePhase,
+  PENDING_LAUNCH,
+  updatesByIncident,
+} from "../domain/status";
 import type { Overview } from "../overview";
 
 const PAGE_ID = "01M4E7GK59RY4WPKPBBKFEDF48";
@@ -48,9 +55,13 @@ function page(feed: Feed) {
 
 function status(feed: Feed) {
   const headline = HEADLINES[feed.view.status];
+  const notes = [
+    ...(feed.view.monitoring.delayed ? ["monitoring delayed, states may be stale"] : []),
+    ...(feed.view.monitoring.issues.length ? [`${CANARY_CREDENTIAL_INVALID}; affected checks are unmeasured`] : []),
+  ];
   return {
     indicator: INDICATOR[feed.view.status],
-    description: feed.view.monitoring.delayed ? `${headline}; monitoring delayed, states may be stale` : headline,
+    description: [headline, ...notes].join("; "),
   };
 }
 
@@ -59,7 +70,10 @@ function components(feed: Feed) {
   let position = 1;
   for (const group of feed.view.groups) {
     const members = group.components.filter(
-      (component) => component.lifecycle === "active" && component.note !== PENDING_LAUNCH,
+      (component) =>
+        component.lifecycle === "active" &&
+        component.note !== PENDING_LAUNCH &&
+        component.note !== CANARY_CREDENTIAL_INVALID,
     );
     if (members.length === 0) continue;
     list.push({

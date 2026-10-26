@@ -108,6 +108,25 @@ describe("TerraBase probes", () => {
     }
   });
 
+  it("leaves documents unmeasured on grant 401, but judges API and anonymous readiness 401", async () => {
+    const rejected = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ error: "invalid_client" }, { status: 401 }));
+    expect(await runTerraBase("documents", canary, "round", rejected)).toEqual({
+      ok: null,
+      latencyMs: null,
+      error: "Canary credential invalid",
+    });
+    expect(rejected).toHaveBeenCalledTimes(1);
+    const api = fake({ PUT: Response.json({ error: { code: "invalid_token" } }, { status: 401 }) });
+    expect(await runTerraBase("documents", canary, "round", api)).toMatchObject({
+      ok: false,
+      error: "HTTP 401 invalid_token",
+    });
+    const ready = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(null, { status: 401 }));
+    expect(await runTerraBase("health", canary, "round", ready)).toMatchObject({ ok: false, error: "HTTP 401" });
+  });
+
   it("reuses the token across rounds, exchanges again after a failure, and times only TerraBase", async () => {
     vi.useFakeTimers();
     try {

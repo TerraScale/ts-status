@@ -1,11 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CheckSpec } from "../domain/assertions";
 import type { Env } from "../env";
 import { loadSnapshot } from "../db/reads";
 import { overview, snapshotWindow } from "../overview";
 import { testD1 } from "../testing/d1";
 import type { ProbeRequest, ProbeResponse } from "./protocol";
-import { evaluate, roundOf, runRound, targets, type RoundEndpoint } from "./round";
+import { evaluate, roundOf, runRound, targets, type RoundEndpoint, type RoundState } from "./round";
+import { rollupStatements } from "./rollup";
 import { vantageBindings } from "../testing/vantages";
 
 const plain: CheckSpec = { expectStatus: "2xx", keyword: null, assertions: [], extract: {}, indirect: false };
@@ -312,6 +313,102 @@ describe("runRound", () => {
 });
 
 describe("automatic incidents", () => {
+  it.each([null, "2026-09-26 09:00:00"])(
+    "never opens or recovers an outage on grant 401 with healthy HTTP siblings (live since %s)",
+    async (liveSince) => {
+      const db = testD1();
+      const componentId = "01M4E7G1W82VKFPF5FJ9AVK1CW";
+      const endpointId = "01M4E7G1W82VKFPF5FJ9AVK1D9";
+      const incidentId = "00000000000000000000000019";
+      db.sqlite.prepare("UPDATE components SET lifecycle = 'planned' WHERE id != ?").run(componentId);
+      db.sqlite.exec("UPDATE endpoints SET live_since = '2026-09-26 09:00:00'");
+      db.sqlite.prepare("UPDATE endpoints SET live_since = ? WHERE id = ?").run(liveSince, endpointId);
+      let httpFailure = false;
+      const env = {
+        STATUS_DB: db,
+        DATA_API_CANARY: JSON.stringify({
+          [endpointId]: {
+            origin: "https://api.example.test",
+            issuer: "https://auth.example.test/terrascale",
+            region: "gru",
+            project: componentId,
+            database: "canary",
+            collection: "canary",
+            document: endpointId,
+            key: `${componentId}_${"a".repeat(52)}`,
+          },
+        }),
+        ...vantageBindings(Object.fromEntries(["sfo", "gru"].map((code) => [code, vantage(code, () => httpFailure)]))),
+      } as unknown as Env;
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockImplementation(async () => Response.json({ error: "invalid_client" }, { status: 401 }));
+      vi.stubGlobal("fetch", fetcher);
+      try {
+        let state: RoundState = { streaks: {}, colos: {}, versions: {}, trackers: {} };
+        const start = Date.parse("2026-09-26T10:00:00Z");
+        for (let round = 0; round < 3; round++) state = await runRound(env, start + round * 30_000, state);
+        expect(db.sqlite.prepare("SELECT count(*) AS n FROM incidents").get()).toEqual({ n: 0 });
+        const page = overview(await loadSnapshot(env, snapshotWindow(start + 60_000, "24h")), start + 60_000, "24h");
+        expect(
+          page.groups.flatMap((group) => group.components).find((entry) => entry.id === componentId),
+        ).toMatchObject({
+          status: "none",
+          note: "Canary credential invalid",
+        });
+        expect(page.monitoring.issues).toEqual([{ endpointId, componentId, note: "Canary credential invalid" }]);
+        db.sqlite
+          .prepare(`INSERT INTO incidents (id, title, status, impact, source, auto_key)
+        VALUES (?, 'Data API is down', 'monitoring', 'critical', 'auto', ?)`)
+          .run(incidentId, componentId);
+        state.trackers[componentId] = {
+          state: "major_outage",
+          since: start,
+          incidentId,
+          impact: "critical",
+          healthySince: start,
+        };
+        for (let round = 3; round < 25; round++) state = await runRound(env, start + round * 30_000, state);
+        expect(db.sqlite.prepare("SELECT status, resolved_at FROM incidents").all()).toEqual([
+          { status: "monitoring", resolved_at: null },
+        ]);
+        expect(db.sqlite.prepare("SELECT count(*) AS n FROM incident_updates").get()).toEqual({ n: 0 });
+        expect(
+          db.sqlite
+            .prepare("SELECT DISTINCT state, ok, total, latency_ms FROM probe_samples WHERE endpoint_id = ?")
+            .all(endpointId),
+        ).toEqual([{ state: "none", ok: 0, total: 0, latency_ms: null }]);
+        expect(db.sqlite.prepare("SELECT live_since FROM endpoints WHERE id = ?").get(endpointId)?.live_since).toBe(
+          liveSince,
+        );
+        await db.batch(rollupStatements(db, [endpointId], start + 12 * 60_000));
+        expect(
+          db.sqlite.prepare("SELECT count(*) AS n FROM probe_hours WHERE endpoint_id = ?").get(endpointId),
+        ).toEqual({ n: 0 });
+        expect(fetcher).toHaveBeenCalledTimes(25);
+        httpFailure = true;
+        state = await runRound(env, start + 25 * 30_000, state);
+        state = await runRound(env, start + 26 * 30_000, state);
+        expect(db.sqlite.prepare("SELECT status, impact FROM incidents").get()).toEqual({
+          status: "investigating",
+          impact: "critical",
+        });
+        expect(state.trackers[componentId]?.healthySince).toBeNull();
+        const failed = overview(
+          await loadSnapshot(env, snapshotWindow(start + 26 * 30_000, "24h")),
+          start + 26 * 30_000,
+          "24h",
+        );
+        expect(
+          failed.groups.flatMap((group) => group.components).find((entry) => entry.id === componentId),
+        ).toMatchObject({ status: "major_outage", note: null });
+        expect(failed.monitoring.issues).toHaveLength(1);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
   const run = async (failing: (url: string, round: number) => boolean, rounds = 20) => {
     const db = testD1();
     let round = 0;
