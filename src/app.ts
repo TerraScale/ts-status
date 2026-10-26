@@ -357,7 +357,7 @@ export default {
         Response.json(
           { version: env.VERSION ?? "unknown", colo: request.cf?.colo ?? null },
           {
-            headers: { "cache-control": "no-store" },
+            headers: { "cache-control": "no-store", "x-deployment-sample": "20261026-1" },
           },
         ),
         false,
