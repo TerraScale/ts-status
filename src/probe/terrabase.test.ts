@@ -148,8 +148,8 @@ describe("TerraBase probes", () => {
       expect(await runTerraBase("documents", canary, "round", fetcher)).toMatchObject({ ok: false });
       await runTerraBase("documents", canary, "round", fetcher);
       expect(tokens()).toBe(2);
-      // A minute before the 900 s token expires, the next round exchanges again.
-      await vi.advanceTimersByTimeAsync(840_000);
+      // Within a round's use (20 s) of the 900 s token's expiry, the next round exchanges again.
+      await vi.advanceTimersByTimeAsync(880_000);
       await runTerraBase("documents", canary, "round", fetcher);
       expect(tokens()).toBe(3);
     } finally {

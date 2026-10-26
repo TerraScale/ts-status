@@ -268,10 +268,13 @@ export async function canaryJson(
   return body;
 }
 
-/** Exchanged tokens per fetcher, reused until a minute before they expire:
-    a token exchange takes seconds, and a canary judges TerraBase, not ts-auth. */
+/** Exchanged tokens per fetcher, reused while they outlast a round's use:
+    a token exchange takes seconds, and a canary judges TerraBase, not ts-auth.
+    A document round sends at most four timed requests with one token, so a
+    token needs that long left. ts-auth issues one-minute tokens: a larger
+    margin made every round exchange the key inside its own timeout. */
 const tokens = new WeakMap<typeof fetch, Map<string, { token: string; expires: number }>>();
-const TOKEN_MARGIN_MS = 60_000;
+const TOKEN_MARGIN_MS = 4 * CANARY_TIMEOUT_MS;
 
 /** Forget a config's token, so a failed round exchanges the key again. */
 export function forgetToken(config: Pick<CanaryConfig, "key">, fetcher: typeof fetch): void {
