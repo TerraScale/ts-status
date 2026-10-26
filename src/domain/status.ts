@@ -109,6 +109,9 @@ export const stateAttr = (state: TimelineState): string =>
     component whose every endpoint it found so (see src/probe/terrabase.ts). */
 export const NOT_CONFIGURED = "Not configured";
 
+/** The monitor cannot authenticate; this is no evidence of service health. */
+export const CANARY_CREDENTIAL_INVALID = "Canary credential invalid";
+
 /** The note of an endpoint that has never passed a round, and of a component
     whose every endpoint has not: not live yet, so not an outage. */
 export const PENDING_LAUNCH = "Pending launch";

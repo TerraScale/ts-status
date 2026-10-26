@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { holdsDocument, isCanaryConfig, parseCanaries, runCanary } from "./canary";
+import { canarySample, holdsDocument, isCanaryConfig, parseCanaries, runCanary } from "./canary";
+import { CANARY_CREDENTIAL_INVALID } from "../domain/status";
 
 const canary = {
   origin: "https://api.example.test",
@@ -114,7 +115,6 @@ describe("read-only Data API probe", () => {
     });
     expect(invalid).not.toHaveBeenCalled();
     for (const response of [
-      Response.json({ error: "invalid_client", error_description: canary.key }, { status: 401 }),
       ...[{ access_token: canary.key }, { token_type: "Basic" }, { expires_in: 0 }, { expires_in: 1.5 }].map((patch) =>
         Response.json({ ...grant, ...patch }),
       ),
@@ -125,5 +125,36 @@ describe("read-only Data API probe", () => {
     }
     const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new Error(canary.key));
     expect(await runCanary(canary, "round", fetcher)).toEqual({ ok: false, latencyMs: null, error: "Unreachable" });
+  });
+
+  it("records rejected grant credentials as unmeasured, retries and keeps genuine failures judged", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ error: "invalid_client", error_description: canary.key }, { status: 401 }))
+      .mockResolvedValueOnce(Response.json(grant))
+      .mockResolvedValueOnce(Response.json(document));
+    const result = await runCanary(canary, "round", fetcher);
+    expect(result).toEqual({ ok: null, latencyMs: null, error: CANARY_CREDENTIAL_INVALID });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(canarySample("endpoint", result, 2)).toMatchObject({
+      streak: 2,
+      sample: {
+        state: "none",
+        ok: 0,
+        total: 0,
+        latencyMs: null,
+        results: [{ v: "canary", ok: null, ms: null, e: CANARY_CREDENTIAL_INVALID }],
+      },
+    });
+    expect(await runCanary(canary, "retry", fetcher)).toMatchObject({ ok: true });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    for (const status of [403, 429, 500, 503]) {
+      const rejected = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json({ error: "invalid_client" }, { status }));
+      const failed = await runCanary(canary, "round", rejected);
+      expect(failed).toMatchObject({ ok: false, error: `HTTP ${status}` });
+      expect(canarySample("endpoint", failed, 1).sample).toMatchObject({ state: "major_outage", total: 1 });
+    }
   });
 });

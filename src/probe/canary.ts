@@ -5,7 +5,7 @@ import { isId } from "../ids";
 import { logEvent } from "../log";
 
 import { settle } from "../domain/consensus";
-import { SLOW_MS, type TimelineState } from "../domain/status";
+import { CANARY_CREDENTIAL_INVALID, SLOW_MS, type TimelineState } from "../domain/status";
 import { MAX_BODY_BYTES, USER_AGENT } from "./check";
 import type { Sample } from "./round";
 
@@ -32,7 +32,8 @@ export interface CanaryConfig {
 }
 
 export interface CanaryResult {
-  ok: boolean;
+  /** Null when monitoring could not authenticate, so no service check ran. */
+  ok: boolean | null;
   /** The slowest TerraBase request; null when the canary failed. */
   latencyMs: number | null;
   error: string | null;
@@ -123,7 +124,20 @@ export function parseCanaries(secret: string | undefined): Record<string, Canary
   );
 }
 
-export class CanaryError extends Error {}
+export class CanaryError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+  }
+}
+
+export class CanaryCredentialError extends CanaryError {
+  constructor() {
+    super(CANARY_CREDENTIAL_INVALID);
+  }
+}
 
 /** The body as text, failing beyond MAX_BODY_BYTES: a canary response is small. */
 async function readBounded(response: Response): Promise<string> {
@@ -228,7 +242,7 @@ export async function canaryText(
       } catch {
         // Not JSON: the status alone names it.
       }
-      throw new CanaryError(`HTTP ${response.status}${code}`);
+      throw new CanaryError(`HTTP ${response.status}${code}`, response.status);
     }
     return text;
   } finally {
@@ -291,7 +305,12 @@ export async function readToken(
     },
     fetcher,
     [200],
-  )) as { access_token?: unknown; token_type?: unknown; expires_in?: unknown };
+  ).catch((error: unknown) => {
+    // Only the grant rejection identifies the monitor's credential. A 401
+    // from TerraBase after a successful grant remains a service failure.
+    if (error instanceof CanaryError && error.status === 401) throw new CanaryCredentialError();
+    throw error;
+  })) as { access_token?: unknown; token_type?: unknown; expires_in?: unknown };
   if (
     typeof body.access_token !== "string" ||
     !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(body.access_token) ||
@@ -352,7 +371,7 @@ export async function runCanary(
   } catch (error) {
     if (!(error instanceof CanaryError)) throw error;
     forgetToken(config, fetcher);
-    return { ok: false, latencyMs: null, error: error.message };
+    return { ok: error instanceof CanaryCredentialError ? null : false, latencyMs: null, error: error.message };
   }
 }
 
@@ -364,7 +383,8 @@ export function canarySample(
   streak: number,
 ): { sample: Sample; streak: number } {
   let round: TimelineState;
-  if (!result.ok) round = "major_outage";
+  if (result.ok === null) round = "none";
+  else if (!result.ok) round = "major_outage";
   else if ((result.latencyMs ?? 0) > SLOW_MS) round = "degraded";
   else round = "operational";
   const settled = settle(round, streak);
@@ -373,9 +393,11 @@ export function canarySample(
       endpointId,
       state: settled.state,
       ok: result.ok ? 1 : 0,
-      total: 1,
+      total: result.ok === null ? 0 : 1,
       latencyMs: result.latencyMs,
-      results: [{ v: CANARY_VANTAGE, ok: result.ok ? 1 : 0, ms: result.latencyMs, e: result.error }],
+      results: [
+        { v: CANARY_VANTAGE, ok: result.ok === null ? null : result.ok ? 1 : 0, ms: result.latencyMs, e: result.error },
+      ],
       values: null,
     },
     streak: settled.streak,

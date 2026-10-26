@@ -11,7 +11,7 @@ import { sqlTime } from "../db/reads";
 import { judge, needsBody, parseSpec, type CheckSpec } from "../domain/assertions";
 import { adopt, step, type Action, type Observation, type Tracker } from "../domain/auto-incident";
 import { consensus, settle, type VantageResult } from "../domain/consensus";
-import { aggregate, type IncidentImpact, type TimelineState } from "../domain/status";
+import { aggregate, CANARY_CREDENTIAL_INVALID, type IncidentImpact, type TimelineState } from "../domain/status";
 import type { Env } from "../env";
 import { logEvent } from "../log";
 import { canarySample, parseCanaries, runCanary, type CanaryResult } from "./canary";
@@ -220,11 +220,16 @@ export function observe(
         own.flatMap((sample) => sample.results.flatMap((result) => (result.ok === 0 && result.e ? [result.e] : []))),
       ),
     ];
+    const state = aggregate(own.map((sample) => sample.state as TimelineState));
+    const credentialInvalid = own.some((sample) =>
+      sample.results.some((result) => result.e === CANARY_CREDENTIAL_INVALID),
+    );
     return [
       {
         componentId: component.id,
         name: component.name,
-        state: aggregate(own.map((sample) => sample.state as TimelineState)),
+        // Healthy HTTP siblings cannot prove recovery while the canary is unmeasured.
+        state: state === "operational" && credentialInvalid ? "none" : state,
         detail: `${failing} of ${total} checks failing${errors.length > 0 ? ` (${errors.slice(0, 3).join(", ")})` : ""}`,
         suppressed: maintenance.includes(null) || maintenance.includes(component.id),
       },
@@ -394,7 +399,15 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
       open.map((incident) => ({ ...incident, createdAt: Date.parse(incident.createdAt) })),
     ),
     observe(
-      endpoints.filter((endpoint) => !pending.has(endpoint.id)),
+      endpoints.filter(
+        (endpoint) =>
+          !pending.has(endpoint.id) ||
+          evaluated.samples.some(
+            (sample) =>
+              sample.endpointId === endpoint.id &&
+              sample.results.some((result) => result.e === CANARY_CREDENTIAL_INVALID),
+          ),
+      ),
       evaluated.samples,
       (componentsResult?.results ?? []) as { id: string; name: string }[],
       ((maintenanceResult?.results ?? []) as { componentId: string | null }[]).map((row) => row.componentId),
