@@ -82,6 +82,27 @@ describe("read-only Data API probe", () => {
     expect(JSON.stringify(fetcher.mock.calls[1])).not.toContain(canary.key);
   });
 
+  it("reuses a one-minute ts-auth token for the next round", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const minute = { ...grant, expires_in: 59 };
+      const fetcher = vi.fn<typeof fetch>(async (url) =>
+        String(url).endsWith("/oauth/token") ? Response.json(minute) : Response.json(document),
+      );
+      const exchanges = () => fetcher.mock.calls.filter(([url]) => String(url).endsWith("/oauth/token")).length;
+      vi.setSystemTime(0);
+      expect(await runCanary(canary, "round", fetcher)).toMatchObject({ ok: true });
+      vi.setSystemTime(30_000);
+      expect(await runCanary(canary, "round", fetcher)).toMatchObject({ ok: true });
+      expect(exchanges()).toBe(1);
+      vi.setSystemTime(60_000);
+      expect(await runCanary(canary, "round", fetcher)).toMatchObject({ ok: true });
+      expect(exchanges()).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("fails closed on invalid documents, JSON, auth failures and redirects without leaking responses", async () => {
     for (const patch of [
       { id: "bad" },
