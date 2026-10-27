@@ -10,3 +10,5 @@
   Cache-Control: public, max-age=604800, stale-while-revalidate=86400
 /icon.svg
   Cache-Control: public, max-age=86400
+/robots.txt
+  Cache-Control: public, max-age=86400
