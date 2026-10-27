@@ -26,6 +26,14 @@ export const ARRIVAL_SLOW_MS = 30_000;
 /** A message not arrived after this is lost. */
 export const ARRIVAL_LOST_MS = 2 * 60_000;
 
+/** After sending, the inbox is read this often, for up to QUICK_WAIT_MS, so
+    a prompt arrival is timed on our clock to this resolution. Later rounds
+    look again every 30 seconds. */
+const POLL_MS = 1_500;
+const QUICK_WAIT_MS = 15_000;
+
+const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 /** What the probe remembers between rounds. */
 export interface EmailProbeState {
   /** The probe's own inbox; its password never leaves the coordinator. */
@@ -44,7 +52,6 @@ class InboxError extends CanaryError {}
 interface Message {
   id: string;
   subject?: string;
-  createdAt?: string;
 }
 
 const members = <T>(body: unknown): T[] =>
@@ -119,6 +126,7 @@ export async function runEmailProbe(
   email: EmailSender,
   now: number,
   fetcher: typeof fetch = fetch,
+  sleep: (ms: number) => Promise<void> = pause,
 ): Promise<{ state: EmailProbeState; fault: string | null }> {
   const next: EmailProbeState = { ...state };
   try {
@@ -127,25 +135,28 @@ export async function runEmailProbe(
     const { inbox, token } = await openInbox(next, fetcher);
     next.inbox = inbox;
     const auth = { headers: { authorization: `Bearer ${token}` } };
-    if (next.pending) {
-      const { marker, sentAt } = next.pending;
+    // Arrival is timed on our own clock: the inbox's timestamps are neither
+    // precise nor in step with it.
+    const arrived = async (): Promise<boolean> => {
+      const { marker, sentAt } = next.pending!;
       const found = members<Message>(await inboxCall("/messages", auth, fetcher)).find((message) =>
         message.subject?.includes(marker),
       );
-      if (found) {
-        const arrived = Date.parse(found.createdAt ?? "");
-        next.last = { ok: true, ms: Math.max(0, (Number.isFinite(arrived) ? arrived : now) - sentAt), error: null };
-        delete next.pending;
-        await inboxCall(`/messages/${found.id}`, { ...auth, method: "DELETE" }, fetcher, [204]).catch(() => {});
-      } else if (now - sentAt >= ARRIVAL_LOST_MS) {
-        next.last = { ok: false, ms: null, error: "Not delivered in 2 minutes" };
-        delete next.pending;
-      }
+      if (!found) return false;
+      next.last = { ok: true, ms: Date.now() - sentAt, error: null };
+      delete next.pending;
+      await inboxCall(`/messages/${found.id}`, { ...auth, method: "DELETE" }, fetcher, [204]).catch(() => {});
+      return true;
+    };
+    if (next.pending && !(await arrived()) && Date.now() - next.pending.sentAt >= ARRIVAL_LOST_MS) {
+      next.last = { ok: false, ms: null, error: "Not delivered in 2 minutes" };
+      delete next.pending;
     }
     if (!next.pending && due) {
       const marker = newId();
       next.sentAt = now;
       try {
+        const sentAt = Date.now();
         await email.send({
           from: SENDER,
           to: inbox.address,
@@ -154,11 +165,15 @@ export async function runEmailProbe(
           html: `<p>Delivery probe ${marker} from status.terrascale.tech.</p>`,
           headers: { "X-TerraScale-Probe": "email-delivery" },
         });
-        next.pending = { marker, sentAt: now };
+        next.pending = { marker, sentAt };
       } catch (error) {
         // The silent failure this probe exists for: the provider refused or lost the send.
         logEvent("error", "email probe send failed", { component: "email", error });
         next.last = { ok: false, ms: null, error: "Send failed" };
+      }
+      while (next.pending && Date.now() - next.pending.sentAt < QUICK_WAIT_MS) {
+        await sleep(POLL_MS);
+        if (await arrived()) break;
       }
     }
     return { state: next, fault: null };
