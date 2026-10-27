@@ -432,7 +432,10 @@ export default {
     const key = new Request(cacheKey(url, query, fragment));
     const cache = caches.default;
     let response = await cache.match(key);
-    if (!response) {
+    // An edge hit carries the zone's hour-long browser cache TTL instead of
+    // ours, so browsers would keep showing a page an incident has outdated.
+    if (response) response = secure(response, true);
+    else {
       response = await render(
         match.value,
         env,

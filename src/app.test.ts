@@ -369,6 +369,17 @@ describe("app", () => {
     expect(env.STATUS_DB.batches).toBe(1);
   });
 
+  it("gives browsers its own short cache lifetime on edge hits, not the zone's", async () => {
+    const env = seededEnv();
+    await app.fetch(request("/"), env, ctx);
+    // The edge returns a hit with the zone's browser cache TTL.
+    const hit = new Response("cached page", { headers: { "cache-control": "public, max-age=3600" } });
+    vi.spyOn(caches.default, "match").mockResolvedValueOnce(hit);
+    const response = await app.fetch(request("/"), env, ctx);
+    expect(await response.text()).toBe("cached page");
+    expect(response.headers.get("cache-control")).toBe("public, max-age=10");
+  });
+
   it.each(["/", "/admin/login", "/subscribe"])(
     "returns a controlled 503 on bootstrap failure for %s and retries",
     async (path) => {
