@@ -11,7 +11,7 @@ import { sqlTime } from "../db/reads";
 import { judge, needsBody, parseSpec, type CheckSpec } from "../domain/assertions";
 import { adopt, step, type Action, type Observation, type Tracker } from "../domain/auto-incident";
 import { consensus, settle, type VantageResult } from "../domain/consensus";
-import { aggregate, CANARY_CREDENTIAL_INVALID, type IncidentImpact, type TimelineState } from "../domain/status";
+import { aggregate, isMonitorFault, type IncidentImpact, type TimelineState } from "../domain/status";
 import type { Env } from "../env";
 import { logEvent } from "../log";
 import { canarySample, parseCanaries, runCanary, type CanaryResult } from "./canary";
@@ -221,15 +221,13 @@ export function observe(
       ),
     ];
     const state = aggregate(own.map((sample) => sample.state as TimelineState));
-    const credentialInvalid = own.some((sample) =>
-      sample.results.some((result) => result.e === CANARY_CREDENTIAL_INVALID),
-    );
+    const monitorFault = own.some((sample) => sample.results.some((result) => isMonitorFault(result.e)));
     return [
       {
         componentId: component.id,
         name: component.name,
         // Healthy HTTP siblings cannot prove recovery while the canary is unmeasured.
-        state: state === "operational" && credentialInvalid ? "none" : state,
+        state: state === "operational" && monitorFault ? "none" : state,
         detail: `${failing} of ${total} checks failing${errors.length > 0 ? ` (${errors.slice(0, 3).join(", ")})` : ""}`,
         suppressed: maintenance.includes(null) || maintenance.includes(component.id),
       },
@@ -403,9 +401,7 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
         (endpoint) =>
           !pending.has(endpoint.id) ||
           evaluated.samples.some(
-            (sample) =>
-              sample.endpointId === endpoint.id &&
-              sample.results.some((result) => result.e === CANARY_CREDENTIAL_INVALID),
+            (sample) => sample.endpointId === endpoint.id && sample.results.some((result) => isMonitorFault(result.e)),
           ),
       ),
       evaluated.samples,

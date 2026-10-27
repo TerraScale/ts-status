@@ -159,7 +159,11 @@ describe("read-only Data API probe", () => {
       expect(fetcher).toHaveBeenCalledTimes(1);
     }
     const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new Error(canary.key));
-    expect(await runCanary(canary, "round", fetcher)).toEqual({ ok: false, latencyMs: null, error: "Unreachable" });
+    expect(await runCanary(canary, "round", fetcher)).toEqual({
+      ok: false,
+      latencyMs: null,
+      error: "Token exchange: Unreachable",
+    });
   });
 
   it("records rejected grant credentials as unmeasured, retries and keeps genuine failures judged", async () => {
@@ -188,7 +192,7 @@ describe("read-only Data API probe", () => {
         .fn<typeof fetch>()
         .mockResolvedValueOnce(Response.json({ error: "invalid_client" }, { status }));
       const failed = await runCanary(canary, "round", rejected);
-      expect(failed).toMatchObject({ ok: false, error: `HTTP ${status}` });
+      expect(failed).toMatchObject({ ok: false, error: `Token exchange: HTTP ${status} invalid_client` });
       expect(canarySample("endpoint", failed, 1).sample).toMatchObject({ state: "major_outage", total: 1 });
     }
   });

@@ -8,7 +8,7 @@ import { NOT_CONFIGURED } from "../domain/status";
 import {
   CANARY_VANTAGE,
   CanaryError,
-  CanaryCredentialError,
+  CanaryMonitorError,
   canaryJson,
   collectionPath,
   holdsDocument,
@@ -199,6 +199,6 @@ export async function runTerraBase(
   } catch (error) {
     if (!(error instanceof CanaryError)) throw error;
     if (probe === "documents") forgetToken(config as DocumentProbeConfig, fetcher);
-    return { ok: error instanceof CanaryCredentialError ? null : false, latencyMs: null, error: error.message };
+    return { ok: error instanceof CanaryMonitorError ? null : false, latencyMs: null, error: error.message };
   }
 }

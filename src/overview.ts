@@ -10,7 +10,6 @@ import { byHour, RANGES, rangeStart, type RangeKey } from "./domain/range";
 import { median } from "./domain/consensus";
 import {
   aggregate,
-  CANARY_CREDENTIAL_INVALID,
   COMING_SOON,
   componentState,
   countsOf,
@@ -18,6 +17,7 @@ import {
   incidentWindows,
   isActive,
   isClosed,
+  isMonitorFault,
   maintenancePhase,
   meanLatency,
   NOT_CONFIGURED,
@@ -161,7 +161,8 @@ const hostOf = (url: string): string => {
     measured yet: not configured when no secret names any, else pending, as
     is something with no clusters at all yet. */
 function sharedNote(notes: readonly (string | null)[]): string | null {
-  if (notes.includes(CANARY_CREDENTIAL_INVALID)) return CANARY_CREDENTIAL_INVALID;
+  const fault = notes.find(isMonitorFault);
+  if (fault) return fault;
   if (notes.some((note) => note === null)) return null;
   if (notes.length === 0) return PENDING_LAUNCH;
   return notes.every((note) => note === NOT_CONFIGURED) ? NOT_CONFIGURED : PENDING_LAUNCH;
@@ -258,9 +259,7 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
   const monitoringNote = (endpoint: Endpoint): string | null => {
     const sample = latest.get(endpoint.id);
     if (!sample || now - Date.parse(sample.at) > PROBE_STALE_MS) return null;
-    return (
-      sample.results.find((result) => result.e === CANARY_CREDENTIAL_INVALID || result.e === NOT_CONFIGURED)?.e ?? null
-    );
+    return sample.results.find((result) => isMonitorFault(result.e) || result.e === NOT_CONFIGURED)?.e ?? null;
   };
   const components = new Map(snapshot.components.map((component) => [component.id, component]));
   // Not live yet: its failures are expected, so it shows no state at all.
@@ -328,12 +327,12 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
     const list = withIncidents(bars(counter, endpoints, range, now), component.id);
     const own = endpoints.flatMap((endpoint) => clusters.get(endpoint.id) ?? []);
     const measuredState = aggregate(endpoints.map(status));
-    const credentialInvalid = own.some((cluster) => cluster.note === CANARY_CREDENTIAL_INVALID);
+    const monitorFault = own.some((cluster) => isMonitorFault(cluster.note));
     const state =
       component.lifecycle === "planned"
         ? "none"
         : componentState(
-            measuredState === "operational" && credentialInvalid ? "none" : measuredState,
+            measuredState === "operational" && monitorFault ? "none" : measuredState,
             component.id,
             snapshot.incidents,
             now,
@@ -405,13 +404,10 @@ export function overview(snapshot: Snapshot, now: number, range: RangeKey): Over
       lastRoundAt,
       delayed: measured.length > 0 && (lastRoundAt === null || now - lastRoundAt > PROBE_STALE_MS),
       coverage: coverage({ vantages: VANTAGES, seen: snapshot.vantages, lastRoundAt, now }),
-      issues: measured
-        .filter((endpoint) => monitoringNote(endpoint) === CANARY_CREDENTIAL_INVALID)
-        .map((endpoint) => ({
-          endpointId: endpoint.id,
-          componentId: endpoint.componentId,
-          note: CANARY_CREDENTIAL_INVALID,
-        })),
+      issues: measured.flatMap((endpoint) => {
+        const note = monitoringNote(endpoint);
+        return isMonitorFault(note) ? [{ endpointId: endpoint.id, componentId: endpoint.componentId, note }] : [];
+      }),
     },
     groups: snapshot.groups
       .map((group) => ({ ...group, components: componentList.filter((component) => component.groupId === group.id) }))

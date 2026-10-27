@@ -9,6 +9,7 @@ import { vantageLabel, type Coverage, type VantageCoverage, type VantageState } 
 import {
   aggregate,
   CANARY_CREDENTIAL_INVALID,
+  CANARY_QUOTA_EXHAUSTED,
   COMING_SOON,
   HEADLINES,
   probeUptime,
@@ -58,6 +59,12 @@ import type { Page } from "./layout";
 import { maintenanceItems } from "./maintenance";
 
 const REGION_ORDER: Record<string, number> = { gru: 0, fra: 1, sjc: 2 };
+
+/** What brings each monitor fault's checks back. */
+const MONITOR_REMEDY: Record<string, string> = {
+  [CANARY_CREDENTIAL_INVALID]: "Monitoring credentials need reprovisioning.",
+  [CANARY_QUOTA_EXHAUSTED]: "The monitoring account has used its monthly operation allowance.",
+};
 
 const LEGEND: TimelineState[] = [...STATES, "none"];
 
@@ -382,14 +389,12 @@ export function homePage(view: Overview): Page {
   </article>`
   }
 
-  ${
-    view.monitoring.issues.length === 0
-      ? ""
-      : html`<article class="ts-alert" data-state="degraded" role="status">
-    <h2 class="ts-alert-title">${CANARY_CREDENTIAL_INVALID}</h2>
-    <p class="ts-alert-body">Authenticated checks could not run for ${[...new Set(view.monitoring.issues.map((issue) => names.get(issue.componentId) ?? issue.componentId))].join(", ")}. Their health is unmeasured; passing HTTP health checks do not verify these operations. Monitoring credentials need reprovisioning.</p>
-  </article>`
-  }
+  ${[...new Set(view.monitoring.issues.map((issue) => issue.note))].map(
+    (note) => html`<article class="ts-alert" data-state="degraded" role="status">
+    <h2 class="ts-alert-title">${note}</h2>
+    <p class="ts-alert-body">Authenticated checks could not run for ${[...new Set(view.monitoring.issues.filter((issue) => issue.note === note).map((issue) => names.get(issue.componentId) ?? issue.componentId))].join(", ")}. Their health is unmeasured; passing HTTP health checks do not verify these operations. ${MONITOR_REMEDY[note] ?? ""}</p>
+  </article>`,
+  )}
 
   ${view.expiring.map(
     (certificate) => html`<article class="ts-alert" data-state="degraded" role="status">

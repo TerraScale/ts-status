@@ -108,6 +108,23 @@ describe("TerraBase probes", () => {
     }
   });
 
+  it("leaves documents unmeasured when the monitor's plan allowance refuses the write", async () => {
+    const fetcher = fake({
+      PUT: Response.json({ error: { code: "operation_allowance", message: "upgrade" } }, { status: 429 }),
+    });
+    expect(await runTerraBase("documents", canary, "round", fetcher)).toEqual({
+      ok: null,
+      latencyMs: null,
+      error: "Canary quota exhausted",
+    });
+    expect(fetcher.mock.calls.at(-1)![1]?.method).toBe("DELETE");
+    const busy = fake({ PUT: Response.json({ error: { code: "tenant_busy" } }, { status: 429 }) });
+    expect(await runTerraBase("documents", canary, "round", busy)).toMatchObject({
+      ok: false,
+      error: "HTTP 429 tenant_busy",
+    });
+  });
+
   it("leaves documents unmeasured on grant 401, but judges API and anonymous readiness 401", async () => {
     const rejected = vi
       .fn<typeof fetch>()
