@@ -104,6 +104,17 @@ class Setup:
                 return json.loads(content) if response.headers.get_content_type() == 'application/json' else content
         raise RuntimeError('Redirect limit exceeded')
 
+    def discover(self):
+        self.stage = 'public region discovery'
+        regions = self.call(API + '/v1/regions')['regions']
+        if not regions or len(set(regions)) != len(regions) or not all(re.fullmatch('[a-z]{3}', r) for r in regions):
+            raise RuntimeError('Invalid discovery')
+        for region in regions:
+            ready = self.call(API + '/readyz', region=region)
+            if ready['region'] != region or ready['status'] != 'ready':
+                raise RuntimeError('Readiness mismatch')
+        return regions
+
     def admin_grant(self):
         """A ts-cli device grant the internal organization's admin approves in a browser."""
         self.stage = 'internal organization admin device grant'
