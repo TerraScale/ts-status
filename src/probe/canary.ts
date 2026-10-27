@@ -275,6 +275,8 @@ export async function canaryJson(
     margin made every round exchange the key inside its own timeout. */
 const tokens = new WeakMap<typeof fetch, Map<string, { token: string; expires: number }>>();
 const TOKEN_MARGIN_MS = 4 * CANARY_TIMEOUT_MS;
+/** Exchanges in flight, shared by concurrent probes of the same key and scope. */
+const exchanges = new WeakMap<typeof fetch, Map<string, Promise<string>>>();
 
 /** Forget a config's token, so a failed round exchanges the key again. */
 export function forgetToken(config: Pick<CanaryConfig, "key">, fetcher: typeof fetch): void {
@@ -289,9 +291,27 @@ export async function readToken(
   scope = "documents:read",
 ): Promise<string> {
   const name = `${config.issuer} ${config.project} ${scope} ${config.key}`;
-  let cached = tokens.get(fetcher);
-  const hit = cached?.get(name);
+  const hit = tokens.get(fetcher)?.get(name);
   if (hit && hit.expires > Date.now()) return hit.token;
+  // Every region's probe misses in the same round; ts-auth serialises one key's
+  // exchanges, so a shared exchange keeps the later probes inside their timeout.
+  let pending = exchanges.get(fetcher);
+  if (!pending) exchanges.set(fetcher, (pending = new Map()));
+  let exchange = pending.get(name);
+  if (!exchange) {
+    const shared = pending;
+    exchange = exchangeToken(config, fetcher, scope, name).finally(() => shared.delete(name));
+    pending.set(name, exchange);
+  }
+  return exchange;
+}
+
+async function exchangeToken(
+  config: Pick<CanaryConfig, "issuer" | "project" | "key">,
+  fetcher: typeof fetch,
+  scope: string,
+  name: string,
+): Promise<string> {
   const body = (await canaryJson(
     `${config.issuer}/oauth/token`,
     {
@@ -323,6 +343,7 @@ export async function readToken(
     body.expires_in <= 0
   )
     throw new CanaryError("Invalid token response");
+  let cached = tokens.get(fetcher);
   if (!cached) tokens.set(fetcher, (cached = new Map()));
   cached.set(name, { token: body.access_token, expires: Date.now() + body.expires_in * 1000 - TOKEN_MARGIN_MS });
   return body.access_token;
