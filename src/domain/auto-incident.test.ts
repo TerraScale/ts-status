@@ -153,6 +153,32 @@ describe("step", () => {
     ]);
   });
 
+  it("closes an incident the monitor itself cannot measure for five minutes", () => {
+    const quota = { ...seen("none"), monitorFault: "Canary quota exhausted" };
+    const { actions, trackers } = run([
+      ...Array.from({ length: 3 }, () => seen("major_outage")),
+      ...Array.from({ length: 11 }, () => quota),
+    ]);
+    expect(actions.map((action) => [action.at / 1000, action.type])).toEqual([
+      [60, "open"],
+      [390, "resolve"],
+    ]);
+    expect(actions[1]).toMatchObject({ body: expect.stringContaining("(Canary quota exhausted)") });
+    expect(trackers).toEqual({});
+  });
+
+  it("restarts the unmeasured five minutes once the monitor measures again", () => {
+    const quota = { ...seen("none"), monitorFault: "Canary quota exhausted" };
+    const { actions, trackers } = run([
+      ...Array.from({ length: 3 }, () => seen("major_outage")),
+      ...Array.from({ length: 9 }, () => quota),
+      seen("major_outage"),
+      ...Array.from({ length: 9 }, () => quota),
+    ]);
+    expect(actions.map((action) => action.type)).toEqual(["open"]);
+    expect(trackers["01M4E7G1W82VKFPF5FJ9AVK1CV"]).toMatchObject({ unmeasuredSince: 13 * 30_000 });
+  });
+
   it("keeps its memory while nothing is measured", () => {
     const { trackers } = run([seen("major_outage"), seen("none")]);
     expect(trackers["01M4E7G1W82VKFPF5FJ9AVK1CV"]?.since).toBe(0);
