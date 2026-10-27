@@ -82,6 +82,20 @@ describe("read-only Data API probe", () => {
     expect(JSON.stringify(fetcher.mock.calls[1])).not.toContain(canary.key);
   });
 
+  it("shares one exchange between concurrent probes of the same key", async () => {
+    let grants = 0;
+    const fetcher = vi.fn<typeof fetch>(async (url) => {
+      if (!String(url).endsWith("/oauth/token")) return Response.json(document);
+      grants++;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return Response.json(grant);
+    });
+    const results = await Promise.all([1, 2, 3].map(() => runCanary(canary, "round", fetcher)));
+    expect(results.every((result) => result.ok)).toBe(true);
+    expect(grants).toBe(1);
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+
   it("reuses a one-minute ts-auth token for the next round", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
