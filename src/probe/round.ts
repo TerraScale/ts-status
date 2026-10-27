@@ -14,7 +14,7 @@ import { consensus, settle, type VantageResult } from "../domain/consensus";
 import { aggregate, isMonitorFault, type IncidentImpact, type TimelineState } from "../domain/status";
 import type { Env } from "../env";
 import { logEvent } from "../log";
-import { canarySample, parseCanaries, runCanary, type CanaryResult } from "./canary";
+import { canarySample, isTokenRoute, parseCanaries, runCanary, runTokenProbe, type CanaryResult } from "./canary";
 import type { ProbeResponse, Target } from "./protocol";
 import {
   isConfigured,
@@ -328,6 +328,11 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
             if (!isConfigured(row.probe, config)) return null;
             if (!isTerraBaseConfig(row.probe, config)) return failed("Invalid probe config");
             return await runTerraBase(row.probe, config, marker);
+          }
+          // The token probe exchanges the Data API canary's key: no credential of its own.
+          if (isTokenRoute(row.url)) {
+            const config = Object.values(canaries)[0];
+            return config ? await runTokenProbe(config) : null;
           }
           const config = canaries[row.id];
           return config ? await runCanary(config, marker) : null;

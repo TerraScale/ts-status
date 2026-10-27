@@ -441,7 +441,7 @@ describe("app", () => {
   it("shows probes the secret does not name as not configured, and unlaunched endpoints as pending, not down", async () => {
     const env = seededEnv();
     env.STATUS_DB.sqlite.exec(`
-      UPDATE endpoints SET live_since = NULL WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1D6', '01M4E7G1W82VKFPF5FJ9AVK1D7', '01M4PVGGBHD58R8HYNDBTGFRGJ', '01M4PVGGBJ24A140MWGJV7MVKV', '01M4PVGGBJA6S4F64HDQVD2MXM');
+      UPDATE endpoints SET live_since = NULL WHERE id IN ('01M4E7G1W82VKFPF5FJ9AVK1D6', '01M4E7G1W82VKFPF5FJ9AVK1D7', '01M5ZSKXT0H98ZM78BWKCMY8Y2', '01M4PVGGBHD58R8HYNDBTGFRGJ', '01M4PVGGBJ24A140MWGJV7MVKV', '01M4PVGGBJA6S4F64HDQVD2MXM');
       INSERT INTO probe_samples (endpoint_id, at, state, ok, total, latency_ms, results) VALUES
         ('01M4E7G1W82VKFPF5FJ9AVK1DF', '2026-09-26 10:14:30', 'none', 0, 0, NULL,
           '[{"v":"canary","ok":null,"ms":null,"e":"Not configured"}]'),

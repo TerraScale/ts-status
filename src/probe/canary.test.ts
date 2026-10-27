@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { canarySample, holdsDocument, isCanaryConfig, parseCanaries, runCanary } from "./canary";
+import { canarySample, holdsDocument, isCanaryConfig, parseCanaries, runCanary, runTokenProbe } from "./canary";
 import { CANARY_CREDENTIAL_INVALID } from "../domain/status";
 
 const canary = {
@@ -195,5 +195,36 @@ describe("read-only Data API probe", () => {
       expect(failed).toMatchObject({ ok: false, error: `Token exchange: HTTP ${status} invalid_client` });
       expect(canarySample("endpoint", failed, 1).sample).toMatchObject({ state: "major_outage", total: 1 });
     }
+  });
+});
+
+describe("Authentication token probe", () => {
+  it("exchanges the canary key afresh every round and times the exchange", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json(grant));
+    expect(await runTokenProbe(canary, fetcher)).toMatchObject({ ok: true, error: null });
+    expect(await runTokenProbe(canary, fetcher)).toMatchObject({ ok: true });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[0]![0]).toBe(`${canary.issuer}/oauth/token`);
+  });
+
+  it("fails on refusals and timeouts, and leaves a rejected credential unmeasured", async () => {
+    const busy = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ error: "temporarily_unavailable" }, { status: 503 }));
+    expect(await runTokenProbe(canary, busy)).toEqual({
+      ok: false,
+      latencyMs: null,
+      error: "HTTP 503 temporarily_unavailable",
+    });
+    const rejected = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ error: "invalid_client" }, { status: 401 }));
+    expect(await runTokenProbe(canary, rejected)).toEqual({
+      ok: null,
+      latencyMs: null,
+      error: CANARY_CREDENTIAL_INVALID,
+    });
+    const down = vi.fn<typeof fetch>().mockRejectedValue(new Error("reset"));
+    expect(await runTokenProbe(canary, down)).toMatchObject({ ok: false, error: "Unreachable" });
   });
 });
