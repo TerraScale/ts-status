@@ -523,7 +523,7 @@ describe("app", () => {
     ).toMatchObject({ status: "none", note: "Canary credential invalid", pingMs: null });
     const page = await (await app.fetch(request("/?fragment=main"), env, ctx)).text();
     expect(page).toContain("Canary credential invalid</h2>");
-    expect(page).toContain("Authenticated checks could not run for Data API");
+    expect(page).toContain("Monitoring checks could not run for Data API");
     const summary = (await (await app.fetch(request("/api/v1/summary.json"), env, ctx)).json()) as {
       status: { description: string };
       components: { id: string }[];

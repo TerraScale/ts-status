@@ -10,6 +10,7 @@ import {
   aggregate,
   CANARY_CREDENTIAL_INVALID,
   CANARY_QUOTA_EXHAUSTED,
+  EMAIL_INBOX_UNAVAILABLE,
   COMING_SOON,
   HEADLINES,
   probeUptime,
@@ -64,6 +65,7 @@ const REGION_ORDER: Record<string, number> = { gru: 0, fra: 1, sjc: 2 };
 const MONITOR_REMEDY: Record<string, string> = {
   [CANARY_CREDENTIAL_INVALID]: "Monitoring credentials need reprovisioning.",
   [CANARY_QUOTA_EXHAUSTED]: "The monitoring account has used its monthly operation allowance.",
+  [EMAIL_INBOX_UNAVAILABLE]: "The disposable inbox the delivery probe reads is unavailable.",
 };
 
 const LEGEND: TimelineState[] = [...STATES, "none"];
@@ -392,7 +394,7 @@ export function homePage(view: Overview): Page {
   ${[...new Set(view.monitoring.issues.map((issue) => issue.note))].map(
     (note) => html`<article class="ts-alert" data-state="degraded" role="status">
     <h2 class="ts-alert-title">${note}</h2>
-    <p class="ts-alert-body">Authenticated checks could not run for ${[...new Set(view.monitoring.issues.filter((issue) => issue.note === note).map((issue) => names.get(issue.componentId) ?? issue.componentId))].join(", ")}. Their health is unmeasured; passing HTTP health checks do not verify these operations. ${MONITOR_REMEDY[note] ?? ""}</p>
+    <p class="ts-alert-body">Monitoring checks could not run for ${[...new Set(view.monitoring.issues.filter((issue) => issue.note === note).map((issue) => names.get(issue.componentId) ?? issue.componentId))].join(", ")}. Their health is unmeasured; passing HTTP health checks do not verify these operations. ${MONITOR_REMEDY[note] ?? ""}</p>
   </article>`,
   )}
 

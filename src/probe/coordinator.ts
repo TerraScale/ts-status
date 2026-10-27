@@ -36,6 +36,7 @@ export class Coordinator extends DurableObject<Env> {
         colos: state.colos ?? {},
         versions: state.versions ?? {},
         trackers: state.trackers ?? {},
+        ...(state.email ? { email: state.email } : {}),
       });
       await this.ctx.storage.put<State>("state", { round: at, ...result });
     } catch (error) {
