@@ -5,7 +5,7 @@ import { loadSnapshot } from "../db/reads";
 import { overview, snapshotWindow } from "../overview";
 import { testD1 } from "../testing/d1";
 import type { ProbeRequest, ProbeResponse } from "./protocol";
-import { evaluate, roundOf, runRound, targets, type RoundEndpoint, type RoundState } from "./round";
+import { evaluate, observe, roundOf, runRound, targets, type RoundEndpoint, type RoundState } from "./round";
 import { rollupStatements } from "./rollup";
 import { vantageBindings } from "../testing/vantages";
 
@@ -316,7 +316,7 @@ describe("runRound", () => {
 
 describe("automatic incidents", () => {
   it.each([null, "2026-09-26 09:00:00"])(
-    "never opens or recovers an outage on grant 401 with healthy HTTP siblings (live since %s)",
+    "never opens or recovers an outage on grant 401 with healthy HTTP siblings, and closes it unconfirmed (live since %s)",
     async (liveSince) => {
       const db = testD1();
       const componentId = "01M4E7G1W82VKFPF5FJ9AVK1CW";
@@ -371,10 +371,13 @@ describe("automatic incidents", () => {
           healthySince: start,
         };
         for (let round = 3; round < 25; round++) state = await runRound(env, start + round * 30_000, state);
+        // Five unmeasured minutes close it as unconfirmed, never as recovered.
         expect(db.sqlite.prepare("SELECT status, resolved_at FROM incidents").all()).toEqual([
-          { status: "monitoring", resolved_at: null },
+          { status: "resolved", resolved_at: "2026-09-26 10:06:30" },
         ]);
-        expect(db.sqlite.prepare("SELECT count(*) AS n FROM incident_updates").get()).toEqual({ n: 0 });
+        expect(db.sqlite.prepare("SELECT body FROM incident_updates").all()).toEqual([
+          { body: expect.stringContaining("(Canary credential invalid), so this outage is not confirmed") },
+        ]);
         expect(
           db.sqlite
             .prepare("SELECT DISTINCT state, ok, total, latency_ms FROM probe_samples WHERE endpoint_id = ?")
@@ -391,14 +394,14 @@ describe("automatic incidents", () => {
         httpFailure = true;
         state = await runRound(env, start + 25 * 30_000, state);
         state = await runRound(env, start + 26 * 30_000, state);
-        expect(db.sqlite.prepare("SELECT status, impact FROM incidents").get()).toEqual({
-          status: "investigating",
-          impact: "critical",
-        });
+        state = await runRound(env, start + 27 * 30_000, state);
+        expect(db.sqlite.prepare("SELECT status, impact FROM incidents WHERE id != ?").all(incidentId)).toEqual([
+          { status: "investigating", impact: "critical" },
+        ]);
         expect(state.trackers[componentId]?.healthySince).toBeNull();
         const failed = overview(
-          await loadSnapshot(env, snapshotWindow(start + 26 * 30_000, "24h")),
-          start + 26 * 30_000,
+          await loadSnapshot(env, snapshotWindow(start + 27 * 30_000, "24h")),
+          start + 27 * 30_000,
           "24h",
         );
         expect(
@@ -520,5 +523,24 @@ describe("automatic incidents", () => {
         .prepare("SELECT DISTINCT live_since FROM endpoints WHERE url LIKE 'https://auth.%' AND kind = 'http'")
         .all(),
     ).toEqual([{ live_since: "2026-09-26 10:04:00" }]);
+  });
+});
+
+describe("observe", () => {
+  it("names the monitor fault of a component nothing could measure", () => {
+    const docs = [{ ...endpoints[2]!, componentId: "docs" }];
+    const quota = { v: "canary", ok: null, ms: null, e: "Canary quota exhausted" } as const;
+    const sample = {
+      endpointId: "web",
+      state: "none",
+      ok: 0,
+      total: 0,
+      latencyMs: null,
+      results: [quota],
+      values: null,
+    };
+    expect(observe(docs, [sample], [{ id: "docs", name: "Document API" }], [])).toEqual([
+      expect.objectContaining({ state: "none", monitorFault: "Canary quota exhausted" }),
+    ]);
   });
 });

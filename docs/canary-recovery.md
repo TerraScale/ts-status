@@ -24,7 +24,9 @@ the allowance was spent, TerraBase refused every canary write with
 every region. The internal organization's internal billing plan publishes a
 paid tier to TerraBase, so no paid capacity is bought. A spent allowance now
 shows as "Canary quota exhausted" (unmeasured), never as an outage
-(`src/probe/canary.ts`).
+(`src/probe/canary.ts`). An automatic incident whose component the monitor
+cannot measure for five minutes closes as unconfirmed
+(`src/domain/auto-incident.ts`).
 
 The command discovers serving regions from the public TerraBase `/v1/regions`
 contract and uses the advertised global API with the supported regional pin.

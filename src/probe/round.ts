@@ -221,13 +221,16 @@ export function observe(
       ),
     ];
     const state = aggregate(own.map((sample) => sample.state as TimelineState));
-    const monitorFault = own.some((sample) => sample.results.some((result) => isMonitorFault(result.e)));
+    const monitorFault =
+      own.flatMap((sample) => sample.results.flatMap((result) => (isMonitorFault(result.e) ? [result.e] : [])))[0] ??
+      null;
     return [
       {
         componentId: component.id,
         name: component.name,
         // Healthy HTTP siblings cannot prove recovery while the canary is unmeasured.
         state: state === "operational" && monitorFault ? "none" : state,
+        monitorFault,
         detail: `${failing} of ${total} checks failing${errors.length > 0 ? ` (${errors.slice(0, 3).join(", ")})` : ""}`,
         suppressed: maintenance.includes(null) || maintenance.includes(component.id),
       },
