@@ -5,7 +5,7 @@ import { isId } from "../ids";
 import { logEvent } from "../log";
 
 import { settle } from "../domain/consensus";
-import { CANARY_CREDENTIAL_INVALID, SLOW_MS, type TimelineState } from "../domain/status";
+import { CANARY_CREDENTIAL_INVALID, CANARY_QUOTA_EXHAUSTED, SLOW_MS, type TimelineState } from "../domain/status";
 import { MAX_BODY_BYTES, USER_AGENT } from "./check";
 import type { Sample } from "./round";
 
@@ -133,9 +133,20 @@ export class CanaryError extends Error {
   }
 }
 
-export class CanaryCredentialError extends CanaryError {
+/** The monitor itself could not run the check: no evidence either way. */
+export class CanaryMonitorError extends CanaryError {}
+
+export class CanaryCredentialError extends CanaryMonitorError {
   constructor() {
     super(CANARY_CREDENTIAL_INVALID);
+  }
+}
+
+/** TerraBase refuses the monitor's writes once its Free-plan monthly
+    allowance is spent; reads and deletes still run. */
+export class CanaryQuotaError extends CanaryMonitorError {
+  constructor() {
+    super(CANARY_QUOTA_EXHAUSTED, 429);
   }
 }
 
@@ -202,6 +213,16 @@ const ERROR_CODES = new Set([
   "stored_corruption",
   "commit_uncertain",
   "dependencies_unavailable",
+  "tenant_busy",
+  "tenant_memory",
+  "operation_allowance",
+  // ts-auth's OAuth errors.
+  "invalid_client",
+  "invalid_grant",
+  "invalid_scope",
+  "unauthorized_client",
+  "temporarily_unavailable",
+  "server_error",
 ]);
 
 /** One canary request: the body of a 2xx response (or of one of
@@ -235,13 +256,16 @@ export async function canaryText(
     if (!response.ok || (statuses !== undefined && !statuses.includes(response.status))) {
       let code = "";
       try {
-        const body = JSON.parse(text) as { error?: { code?: unknown } } | null;
+        const body = JSON.parse(text) as { error?: unknown } | null;
+        // TerraBase nests its code; ts-auth's OAuth errors are a bare string.
+        const named = typeof body?.error === "string" ? body.error : (body?.error as { code?: unknown } | null)?.code;
         // Only a documented code is kept: an echoed key must never reach a
         // public sample or incident.
-        if (typeof body?.error?.code === "string" && ERROR_CODES.has(body.error.code)) code = ` ${body.error.code}`;
+        if (typeof named === "string" && ERROR_CODES.has(named)) code = ` ${named}`;
       } catch {
         // Not JSON: the status alone names it.
       }
+      if (response.status === 429 && code === " operation_allowance") throw new CanaryQuotaError();
       throw new CanaryError(`HTTP ${response.status}${code}`, response.status);
     }
     return text;
@@ -332,6 +356,8 @@ async function exchangeToken(
     // Only the grant rejection identifies the monitor's credential. A 401
     // from TerraBase after a successful grant remains a service failure.
     if (error instanceof CanaryError && error.status === 401) throw new CanaryCredentialError();
+    // Named, so a slow or refusing ts-auth is not read as a TerraBase failure.
+    if (error instanceof CanaryError) throw new CanaryError(`Token exchange: ${error.message}`, error.status);
     throw error;
   })) as { access_token?: unknown; token_type?: unknown; expires_in?: unknown };
   if (
@@ -342,7 +368,7 @@ async function exchangeToken(
     !Number.isSafeInteger(body.expires_in) ||
     body.expires_in <= 0
   )
-    throw new CanaryError("Invalid token response");
+    throw new CanaryError("Token exchange: invalid response");
   let cached = tokens.get(fetcher);
   if (!cached) tokens.set(fetcher, (cached = new Map()));
   cached.set(name, { token: body.access_token, expires: Date.now() + body.expires_in * 1000 - TOKEN_MARGIN_MS });
@@ -395,7 +421,7 @@ export async function runCanary(
   } catch (error) {
     if (!(error instanceof CanaryError)) throw error;
     forgetToken(config, fetcher);
-    return { ok: error instanceof CanaryCredentialError ? null : false, latencyMs: null, error: error.message };
+    return { ok: error instanceof CanaryMonitorError ? null : false, latencyMs: null, error: error.message };
   }
 }
 

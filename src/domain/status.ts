@@ -112,6 +112,16 @@ export const NOT_CONFIGURED = "Not configured";
 /** The monitor cannot authenticate; this is no evidence of service health. */
 export const CANARY_CREDENTIAL_INVALID = "Canary credential invalid";
 
+/** The monitor's own Free-plan operation allowance is spent, so TerraBase
+    refuses its writes: no evidence of service health either. */
+export const CANARY_QUOTA_EXHAUSTED = "Canary quota exhausted";
+
+/** Notes of authenticated checks the monitor itself could not run. */
+const MONITOR_FAULTS: ReadonlySet<string> = new Set([CANARY_CREDENTIAL_INVALID, CANARY_QUOTA_EXHAUSTED]);
+
+export const isMonitorFault = (note: string | null | undefined): note is string =>
+  typeof note === "string" && MONITOR_FAULTS.has(note);
+
 /** The note of an endpoint that has never passed a round, and of a component
     whose every endpoint has not: not live yet, so not an outage. */
 export const PENDING_LAUNCH = "Pending launch";

@@ -1,19 +1,11 @@
 #!/usr/bin/env python3
-"""Recover customer canaries; mailbox password is read only from stdin."""
-import datetime as dt
-import email
-import email.header
-import email.utils
+"""Provision the status canaries in the internal organization, approved by its admin."""
 import fcntl
-import html.parser
-import http.cookiejar
-import imaplib
 import json
 import os
 from pathlib import Path
 import re
 import secrets
-import ssl
 import subprocess
 import sys
 import time
@@ -22,26 +14,15 @@ import urllib.parse
 import urllib.request
 
 AUTH = 'https://auth.terrascale.tech'
-DASH = 'https://dash.terrascale.tech'
 API = 'https://api.terrascale.tech'
-ADDRESS = 'mariogk+status-canary@terrascale.tech'
-MAILBOX = 'mariogk@terrascale.tech'  # IMAP only; never an application identity.
+# TerraScale's own organization: its internal plan keeps the monitor's writes off the Free allowance.
+ORGANIZATION = 'terrascale'
+PROJECT = 'ts-status'
+CLI_CLIENT = '00000000000000000000000007'  # ts-auth's registered public ts-cli client.
 STATE = Path.home() / '.local/state/ts-status/canaries.json'
 STATUS = 'https://status.terrascale.tech'
 DOCUMENT = '00000000000000000000000007'
 SCOPES = ['documents:read', 'documents:write']
-
-
-class Inputs(html.parser.HTMLParser):
-    def __init__(self, page):
-        super().__init__()
-        self.values = {}
-        self.feed(page.decode())
-
-    def handle_starttag(self, tag, attributes):
-        a = dict(attributes)
-        if tag == 'input' and a.get('name'):
-            self.values[a['name']] = a.get('value', '')
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -65,16 +46,10 @@ class Setup:
         if STATE.exists() and (STATE.is_symlink() or STATE.stat().st_mode & 0o777 != 0o600 or STATE.stat().st_uid != os.getuid()):
             raise RuntimeError('Private state must be owned by this user with mode 0600')
         self.state = json.loads(STATE.read_text()) if STATE.exists() else {}
-        self.jar = http.cookiejar.CookieJar()
-        for c in self.state.get('cookies', []):
-            self.jar.set_cookie(http.cookiejar.Cookie(**c))
-        self.http = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar), NoRedirect)
+        self.http = urllib.request.build_opener(NoRedirect)
 
     def save(self):
-        fields = ('version', 'name', 'value', 'port', 'port_specified', 'domain', 'domain_specified',
-                  'domain_initial_dot', 'path', 'path_specified', 'secure', 'expires', 'discard',
-                  'comment', 'comment_url', 'rfc2109')
-        self.state['cookies'] = [dict({k: getattr(c, k) for k in fields}, rest=c._rest) for c in self.jar]
+        self.state.pop('cookies', None)
         temporary = STATE.with_suffix('.tmp')
         fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
         with os.fdopen(fd, 'w') as stream:
@@ -94,11 +69,11 @@ class Setup:
             body = (urllib.parse.urlencode(data, doseq=True) if form else json.dumps(data)).encode()
             h['Origin'] = urllib.parse.urlsplit(url).scheme + '://' + urllib.parse.urlsplit(url).netloc
         original = urllib.parse.urlsplit(url).netloc
-        authenticated = token is not None or any(k.lower() in ('authorization', 'cookie') for k in h)
+        authenticated = token is not None or any(k.lower() == 'authorization' for k in h)
         for _ in range(12):
             parsed = urllib.parse.urlsplit(url)
             if parsed.scheme != 'https' or parsed.username or parsed.password or parsed.netloc not in {
-                    urllib.parse.urlsplit(x).netloc for x in (AUTH, DASH, API, STATUS)}:
+                    urllib.parse.urlsplit(x).netloc for x in (AUTH, API, STATUS)}:
                 raise RuntimeError('Unadvertised or insecure redirect refused')
             if authenticated and parsed.netloc != original:
                 raise RuntimeError('Authenticated cross-origin redirect refused')
@@ -129,87 +104,6 @@ class Setup:
                 return json.loads(content) if response.headers.get_content_type() == 'application/json' else content
         raise RuntimeError('Redirect limit exceeded')
 
-    def form(self, path, fields, statuses=(200,), page='/'):
-        csrf = Inputs(self.call(DASH + page)).values['_csrf']
-        return self.call(DASH + path, 'POST', dict(fields, _csrf=csrf), form=True, statuses=statuses,
-                         headers={'Accept': 'application/json'})
-
-    def login(self, mailbox_password):
-        self.stage = 'dedicated customer sign-in'
-        identity = self.call(DASH + '/api/v1/auth/me', statuses=(200, 401))
-        if identity is None:
-            fields = Inputs(self.call(DASH + '/login')).values
-            if 'next' not in fields:
-                identity = self.call(DASH + '/api/v1/auth/me', statuses=(200, 401))
-                if identity is None:
-                    raise RuntimeError('Dashboard login did not establish a session')
-                self.remember(identity)
-                return
-            signed_in = None
-            if self.state.get('password'):
-                signed_in = self.call(AUTH + '/ui/terrascale/sign-in/password', 'POST',
-                    dict(email=ADDRESS, password=self.state['password'], next=fields['next']),
-                    form=True, statuses=(200, 302, 303, 401))
-            if signed_in is None:
-                pending = self.state.get('pending_signup')
-                if pending is None:
-                    # Session and password rejection can mean a wiped identity. One
-                    # signup per previous user ID; ambiguous starts are never replayed.
-                    previous = self.state.get('user_id', 'initial')
-                    if self.state.get('signup_from') == previous:
-                        raise RuntimeError('Signup already attempted for this identity; coordinate recovery')
-                    self.state.update(password=secrets.token_urlsafe(36), signup_from=previous)
-                    self.save()
-                    started = dt.datetime.now(dt.timezone.utc)
-                    page = self.call(AUTH + '/ui/terrascale/sign-up', 'POST',
-                        dict(email=ADDRESS, password=self.state['password'], next=fields['next']), form=True)
-                    pending = dict(pending_token=Inputs(page).values['pending_token'],
-                                   next=fields['next'], started=started.isoformat())
-                    self.state['pending_signup'] = pending
-                    self.save()  # Persist the answer before mailbox polling can be interrupted.
-                if pending.get('verification_sent'):
-                    raise RuntimeError('Verification was dispatched; password recovery failed; do not replay code')
-                code = pending.get('code') or self.mail_code(mailbox_password, dt.datetime.fromisoformat(pending['started']))
-                pending.update(code=code, verification_sent=True)
-                self.save()  # An uncertain verification must not replay a one-time code.
-                self.call(AUTH + '/ui/terrascale/sign-up/verify', 'POST',
-                    dict(email=ADDRESS, code=code, pending_token=pending['pending_token'], next=pending['next']),
-                    form=True, statuses=(200, 302, 303))
-            self.save()
-            self.call(DASH + '/login')  # Dashboard owns client registration, PKCE and callback.
-            identity = self.call(DASH + '/api/v1/auth/me')
-        self.remember(identity)
-
-    def remember(self, identity):
-        if identity['email'] != ADDRESS:
-            raise RuntimeError('Unexpected application identity')
-        if self.state.get('user_id') != identity['userId']:
-            self.state.pop('cli_grant', None)
-        self.state.update(user_id=identity['userId'])
-        self.state.pop('pending_signup', None)
-        self.save()
-
-    def mail_code(self, password, started):
-        with imaplib.IMAP4_SSL('mailserver.purelymail.com', ssl_context=ssl.create_default_context(), timeout=20) as box:
-            box.login(MAILBOX, password)
-            box.select('INBOX', readonly=True)
-            for attempt in range(6):
-                _, ids = box.search(None, 'TO', '"' + ADDRESS + '"')
-                for item in reversed(ids[0].split()[-10:]):
-                    _, fetched = box.fetch(item, '(BODY.PEEK[HEADER.FIELDS (SUBJECT DATE TO)])')
-                    for entry in fetched:
-                        if not isinstance(entry, tuple):
-                            continue
-                        message = email.message_from_bytes(entry[1])
-                        subject = str(email.header.make_header(email.header.decode_header(message.get('Subject', ''))))
-                        sent = email.utils.parsedate_to_datetime(message['Date'])
-                        match = re.search(r'(?<!\d)(\d{6})(?!\d)', subject)
-                        if match and ADDRESS in message.get('To', '') and -5 <= (sent - started).total_seconds() <= 180:
-                            return match[1]
-                if attempt < 5:
-                    time.sleep(5)
-        raise RuntimeError('Fresh dedicated signup code not delivered; do not request another')
-
     def discover(self):
         self.stage = 'public region discovery'
         regions = self.call(API + '/v1/regions')['regions']
@@ -221,24 +115,74 @@ class Setup:
                 raise RuntimeError('Readiness mismatch')
         return regions
 
-    def provision(self, regions):
-        self.stage = 'customer workspace setup'
-        identity = self.call(DASH + '/api/v1/auth/me')
-        if not identity['onboardingCompleted']:
-            for step, values in [('account-information', {'displayName': 'Status Canary'}),
-                                 ('payment-method', {'bypass': '1'}),
-                                 ('project', {'name': 'status-canary', 'region': regions[0]})]:
-                page = Inputs(self.call(DASH + '/onboarding')).values
-                if page.get('step') == step:
-                    self.form('/onboarding/step', dict(values, step=step), (303,), '/onboarding')
-        identity = self.call(DASH + '/api/v1/auth/me')
-        project = identity['projectId']
-        self.state.update(project=project, organization=identity['organizationId'])
-        self.save()
-        token = self.customer_token(identity)
-        grant = self.state['cli_grant']
+    def admin_grant(self):
+        """A ts-cli device grant the internal organization's admin approves in a browser."""
+        self.stage = 'internal organization admin device grant'
         issuer = AUTH + '/terrascale'
-        self.stage = 'replicated customer canary database'
+        grant = self.state.get('cli_grant', {})
+        if grant.get('expires_at', 0) > time.time() + 60 and self.call(
+                issuer + '/oauth/userinfo', token=grant['access_token'], statuses=(200, 401)) is not None:
+            return grant
+        device = self.call(issuer + '/oauth/device', 'POST', {'client_id': CLI_CLIENT, 'scope': 'openid email'}, form=True)
+        # The user code is single-use and useless without the browser approval; the device code stays private.
+        print(json.dumps({'approve': device.get('verification_uri_complete') or device['verification_uri'],
+                          'user_code': device['user_code'], 'expires_in': device['expires_in']}), flush=True)
+        interval = max(5, int(device.get('interval', 5)))
+        deadline = time.time() + device['expires_in']
+        while time.time() < deadline:
+            time.sleep(interval)
+            answer = self.call(issuer + '/oauth/token', 'POST',
+                               {'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
+                                'client_id': CLI_CLIENT, 'device_code': device['device_code']},
+                               form=True, statuses=(200, 400))
+            if 'access_token' in answer:
+                answer['expires_at'] = time.time() + answer['expires_in']
+                self.state['cli_grant'] = answer
+                self.save()
+                return answer
+            if answer.get('error') == 'slow_down':
+                interval += 5
+            elif answer.get('error') != 'authorization_pending':
+                raise RuntimeError('Device approval ended: ' + str(answer.get('error'))[:40])
+        raise RuntimeError('Device approval expired')
+
+    def internal_project(self, grant):
+        """The internal organization's ts-status project, which the caller administers."""
+        self.stage = 'internal organization discovery'
+        def listing(url):
+            items, after = [], None
+            while True:
+                page = self.call(url + ('?after=' + urllib.parse.quote(after) if after else ''), token=grant['access_token'])
+                items.extend(page['items'])
+                after = page['next']
+                if not after:
+                    return items
+        organizations = [o for o in listing(AUTH + '/v1/terrascale/organizations')
+                         if o['name'] == ORGANIZATION and o['role'] in ('owner', 'admin')]
+        if len(organizations) != 1:
+            raise RuntimeError('The approving account must administer exactly one internal organization')
+        organization = organizations[0]['id']
+        projects = [p for p in listing(AUTH + '/v1/terrascale/organizations/' + organization + '/projects')
+                    if p['name'] == PROJECT]
+        if len(projects) != 1:
+            raise RuntimeError('The internal organization lacks its ts-status project')
+        return organization, projects[0]['id']
+
+    def project_token(self, grant, organization, project):
+        return self.call(AUTH + '/terrascale/oauth/token', 'POST',
+                {'grant_type': 'urn:ietf:params:oauth:grant-type:token-exchange', 'client_id': CLI_CLIENT,
+                 'subject_token': grant['access_token'], 'subject_token_type': 'urn:ietf:params:oauth:token-type:access_token',
+                 'organization': organization, 'project': project,
+                 'scope': 'databases:read databases:write documents:read documents:write'}, form=True)['access_token']
+
+    def provision(self, regions):
+        grant = self.admin_grant()
+        organization, project = self.internal_project(grant)
+        self.state.update(project=project, organization=organization)
+        self.save()
+        token = self.project_token(grant, organization, project)
+        issuer = AUTH + '/terrascale'
+        self.stage = 'replicated canary database'
         base = API + '/v1/projects/' + project + '/databases'
         name = 'status-canary'
         existing = []
@@ -264,13 +208,13 @@ class Setup:
         self.save()
         self.call(base + '/' + name + '/collections', 'POST', {'name': 'canary'},
                   token=token, region=regions[0], statuses=(201, 409))
-        root = AUTH + '/v1/terrascale/organizations/' + identity['organizationId'] + '/projects/' + project + '/api-keys'
+        root = AUTH + '/v1/terrascale/organizations/' + organization + '/projects/' + project + '/api-keys'
         metadata = self.call(root, token=grant['access_token'])['items']
         saved = self.state.get('canary')
         if not saved or saved['project'] != project or not any(
                 k['id'] == saved['key'][:26] and k['database'] == name and k['project_id'] == project
                 and sorted(k['scopes']) == SCOPES for k in metadata):
-            self.stage = 'database-scoped customer credential'
+            self.stage = 'database-scoped canary credential'
             issued = self.call(root, 'POST', {'name': 'status-canary', 'database': name, 'scopes': SCOPES},
                                token=grant['access_token'], statuses=(201,))
             key = issued['api_key']
@@ -284,39 +228,6 @@ class Setup:
         for config in configurations.values():
             self.verify(config)
         return configurations
-
-    def customer_token(self, identity):
-        self.stage = 'public customer device grant'
-        issuer = AUTH + '/terrascale'
-        client = '00000000000000000000000007'  # ts-auth's registered public ts-cli client.
-        grant = self.state.get('cli_grant', {})
-        valid = grant.get('expires_at', 0) > time.time() + 60
-        if valid:
-            user = self.call(issuer + '/oauth/userinfo', token=grant['access_token'], statuses=(200, 401))
-            valid = user is not None and user['sub'] == identity['userId']
-        if not valid:
-            page = Inputs(self.call(AUTH + '/ui/terrascale/device')).values
-            if 'next' in page:
-                self.call(AUTH + '/ui/terrascale/sign-in/password', 'POST',
-                          dict(email=ADDRESS, password=self.state['password'], next=page['next']),
-                          form=True, statuses=(200, 302, 303))
-            device = self.call(issuer + '/oauth/device', 'POST',
-                               {'client_id': client, 'scope': 'openid email'}, form=True)
-            self.call(AUTH + '/ui/terrascale/device', 'POST',
-                      {'user_code': device['user_code'], 'decision': 'approve'}, form=True)
-            grant = self.call(issuer + '/oauth/token', 'POST',
-                      {'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
-                       'client_id': client, 'device_code': device['device_code']}, form=True)
-            grant['expires_at'] = time.time() + grant['expires_in']
-            self.state['cli_grant'] = grant
-            self.save()
-        if self.call(issuer + '/oauth/userinfo', token=grant['access_token'])['sub'] != identity['userId']:
-            raise RuntimeError('Customer grant identity mismatch')
-        return self.call(issuer + '/oauth/token', 'POST',
-                {'grant_type': 'urn:ietf:params:oauth:grant-type:token-exchange', 'client_id': client,
-                 'subject_token': grant['access_token'], 'subject_token_type': 'urn:ietf:params:oauth:token-type:access_token',
-                 'organization': identity['organizationId'], 'project': identity['projectId'],
-                 'scope': 'databases:read databases:write documents:read documents:write'}, form=True)['access_token']
 
     def verify(self, config):
         self.stage = config['region'] + ' pinned CRUD'
@@ -383,16 +294,12 @@ def main():
     setup = None
     try:
         setup = Setup()
-        password = sys.stdin.readline().rstrip('\r\n')
-        if not password:
-            raise RuntimeError('Mailbox password required on stdin')
         setup.stage = 'Cloudflare permission preflight'
         if not json.loads(private(['cf', 'auth', 'whoami']))['authenticated']:
             raise RuntimeError('Cloudflare unauthenticated')
         private(['cf', 'workers', 'secrets', 'list', '--worker', 'ts-status'])
         regions = setup.discover()
-        print('PLAN: reuse dedicated identity and all-regions canary database; verify pinned CRUD; bulk update only two ts-status secrets.', flush=True)
-        setup.login(password)
+        print('PLAN: admin-approved device grant; all-regions canary database in the internal ts-status project; verify pinned CRUD; bulk update only two ts-status secrets.', flush=True)
         configurations = setup.provision(regions)
         setup.stage = 'Worker secret installation'
         payload = json.dumps(secret_payload(configurations, setup.call(STATUS + '/api/v1/regions'))).encode()
@@ -402,12 +309,12 @@ def main():
                           'database_id': setup.state['database_id']}))
         return 0
     except Exception as error:
-        # Exception repr, HTTP bodies, subprocess stderr and cookies may contain secrets.
+        # Exception repr, HTTP bodies and subprocess stderr may contain secrets.
         print(json.dumps({'failed_stage': setup.stage if setup else 'private state', 'error_type': type(error).__name__,
                           'last_http_status': getattr(setup, 'last_status', None),
                           'operation': getattr(setup, 'last_operation', None),
                           'error_code': getattr(setup, 'last_error_code', None),
-                          'recovery': 'Retain private state; rerun after resolving the cause. Never delete the canary identity.'}), file=sys.stderr)
+                          'recovery': 'Retain private state; rerun after resolving the cause.'}), file=sys.stderr)
         return 1
 
 

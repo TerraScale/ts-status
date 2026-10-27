@@ -6,8 +6,8 @@
 import type { Component, Incident, IncidentUpdate, Status, TimelineState } from "../domain/status";
 import {
   aggregate,
-  CANARY_CREDENTIAL_INVALID,
   HEADLINES,
+  isMonitorFault,
   maintenancePhase,
   PENDING_LAUNCH,
   updatesByIncident,
@@ -57,7 +57,7 @@ function status(feed: Feed) {
   const headline = HEADLINES[feed.view.status];
   const notes = [
     ...(feed.view.monitoring.delayed ? ["monitoring delayed, states may be stale"] : []),
-    ...(feed.view.monitoring.issues.length ? [`${CANARY_CREDENTIAL_INVALID}; affected checks are unmeasured`] : []),
+    ...new Set(feed.view.monitoring.issues.map((issue) => `${issue.note}; affected checks are unmeasured`)),
   ];
   return {
     indicator: INDICATOR[feed.view.status],
@@ -71,9 +71,7 @@ function components(feed: Feed) {
   for (const group of feed.view.groups) {
     const members = group.components.filter(
       (component) =>
-        component.lifecycle === "active" &&
-        component.note !== PENDING_LAUNCH &&
-        component.note !== CANARY_CREDENTIAL_INVALID,
+        component.lifecycle === "active" && component.note !== PENDING_LAUNCH && !isMonitorFault(component.note),
     );
     if (members.length === 0) continue;
     list.push({
