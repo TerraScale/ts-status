@@ -375,6 +375,43 @@ async function exchangeToken(
   return body.access_token;
 }
 
+/** The issuer's token route, the URL of the Authentication token probe. */
+export const isTokenRoute = (url: string): boolean => url.endsWith("/oauth/token");
+
+/** A fresh client-credentials exchange, uncached: how long ts-auth takes to
+    issue the token a customer's server asks for. */
+export async function runTokenProbe(config: CanaryConfig, fetcher: typeof fetch = fetch): Promise<CanaryResult> {
+  const started = Date.now();
+  try {
+    const body = (await canaryJson(
+      `${config.issuer}/oauth/token`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": USER_AGENT },
+        body: new URLSearchParams({
+          grant_type: "client_credentials",
+          client_id: config.key.slice(0, 26),
+          client_secret: config.key,
+          project: config.project,
+          scope: "documents:read",
+        }).toString(),
+        cache: "no-store",
+      },
+      fetcher,
+      [200],
+    ).catch((error: unknown) => {
+      if (error instanceof CanaryError && error.status === 401) throw new CanaryCredentialError();
+      throw error;
+    })) as { access_token?: unknown; token_type?: unknown };
+    if (typeof body.access_token !== "string" || body.token_type !== "Bearer")
+      throw new CanaryError("Invalid response");
+    return { ok: true, latencyMs: Date.now() - started, error: null };
+  } catch (error) {
+    if (!(error instanceof CanaryError)) throw error;
+    return { ok: error instanceof CanaryMonitorError ? null : false, latencyMs: null, error: error.message };
+  }
+}
+
 /** A fetcher that keeps its slowest request: a canary's latency, so each
     TerraBase request is judged like a single check, not the sum of its steps. */
 export function timed(fetcher: typeof fetch): { fetch: typeof fetch; slowest: () => number } {
