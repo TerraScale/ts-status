@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CheckSpec } from "../domain/assertions";
 import type { Env } from "../env";
 import { loadSnapshot } from "../db/reads";
@@ -8,6 +8,17 @@ import type { ProbeRequest, ProbeResponse } from "./protocol";
 import { evaluate, observe, roundOf, runRound, targets, type RoundEndpoint, type RoundState } from "./round";
 import { rollupStatements } from "./rollup";
 import { vantageBindings } from "../testing/vantages";
+
+// Rounds never reach the network: the email probe's inbox is unreachable
+// here unless a test supplies its own fetch.
+beforeEach(() => {
+  vi.stubGlobal("fetch", async () => {
+    throw new TypeError("offline");
+  });
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 const plain: CheckSpec = { expectStatus: "2xx", keyword: null, assertions: [], extract: {}, indirect: false };
 const atlas = (code: string): CheckSpec => ({
@@ -240,6 +251,7 @@ describe("runRound", () => {
       { endpoint_id: "01M4PVGGBJA6S4F64HDQVD2MXM", state: "none", ok: 0, total: 0 },
       { endpoint_id: "01M5K15M315JB1H3FYW3VS1S55", state: "operational", ok: 3, total: 3 },
       { endpoint_id: "01M5ZSKXT0H98ZM78BWKCMY8Y2", state: "none", ok: 0, total: 0 },
+      { endpoint_id: "01M5ZT3RJ5W2CY6B2PXNQ8E4KD", state: "none", ok: 0, total: 0 },
     ]);
     // Every endpoint that passed launched with its first round; the website, canaries and unmatched regions wait.
     expect(
@@ -254,6 +266,7 @@ describe("runRound", () => {
       { id: "01M4E7G1W82VKFPF5FJ9AVK1E1", live_since: null },
       { id: "01M4PVGGBJA6S4F64HDQVD2MXM", live_since: null },
       { id: "01M5ZSKXT0H98ZM78BWKCMY8Y2", live_since: null },
+      { id: "01M5ZT3RJ5W2CY6B2PXNQ8E4KD", live_since: null },
     ]);
     expect(db.sqlite.prepare("SELECT DISTINCT live_since FROM endpoints WHERE live_since IS NOT NULL").all()).toEqual([
       { live_since: "2026-09-26 10:00:30" },

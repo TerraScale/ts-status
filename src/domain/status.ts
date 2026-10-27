@@ -116,8 +116,15 @@ export const CANARY_CREDENTIAL_INVALID = "Canary credential invalid";
     refuses its writes: no evidence of service health either. */
 export const CANARY_QUOTA_EXHAUSTED = "Canary quota exhausted";
 
-/** Notes of authenticated checks the monitor itself could not run. */
-const MONITOR_FAULTS: ReadonlySet<string> = new Set([CANARY_CREDENTIAL_INVALID, CANARY_QUOTA_EXHAUSTED]);
+/** The email probe's disposable inbox API failed: no evidence about our email. */
+export const EMAIL_INBOX_UNAVAILABLE = "Probe inbox unavailable";
+
+/** Notes of checks the monitor itself could not run. */
+const MONITOR_FAULTS: ReadonlySet<string> = new Set([
+  CANARY_CREDENTIAL_INVALID,
+  CANARY_QUOTA_EXHAUSTED,
+  EMAIL_INBOX_UNAVAILABLE,
+]);
 
 export const isMonitorFault = (note: string | null | undefined): note is string =>
   typeof note === "string" && MONITOR_FAULTS.has(note);

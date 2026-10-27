@@ -90,7 +90,7 @@ export interface Delivery {
 }
 
 /** Sender of every subscription message; the domain is onboarded for Email Sending. */
-const SENDER = { email: "noreply@terrascale.tech", name: "TerraScale Status" };
+export const SENDER = { email: "noreply@terrascale.tech", name: "TerraScale Status" };
 
 /** The links a subscriber's messages carry. */
 export async function links(env: Env & { SUBSCRIPTION_SECRET: string }, subscriberId: string) {

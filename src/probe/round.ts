@@ -14,6 +14,7 @@ import { consensus, settle, type VantageResult } from "../domain/consensus";
 import { aggregate, isMonitorFault, type IncidentImpact, type TimelineState } from "../domain/status";
 import type { Env } from "../env";
 import { logEvent } from "../log";
+import { emailSample, INBOX_API, runEmailProbe, type EmailProbeState } from "./email";
 import { canarySample, isTokenRoute, parseCanaries, runCanary, runTokenProbe, type CanaryResult } from "./canary";
 import type { ProbeResponse, Target } from "./protocol";
 import {
@@ -269,6 +270,8 @@ export interface RoundState {
   colos: Record<string, string | null>;
   /** The last version seen per endpoint. */
   versions: Record<string, string>;
+  /** The email delivery probe's inbox and message on its way. */
+  email?: EmailProbeState;
   /** Automatic incident trackers per component. */
   trackers: Record<string, Tracker>;
 }
@@ -313,13 +316,14 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
   // a malformed TerraBase entry fails.
   const canaries = parseCanaries(env.DATA_API_CANARY);
   const terrabase = parseTerraBase(env.TERRABASE_PROBES);
-  const canaryRows = rows.filter((row) => row.kind === "canary");
-  const endpoints = [...probed, ...canaryRows.map(toEndpoint)];
+  const emailRow = rows.find((row) => row.kind === "canary" && row.url === INBOX_API);
+  const canaryRows = rows.filter((row) => row.kind === "canary" && row !== emailRow);
+  const endpoints = [...probed, ...canaryRows.map(toEndpoint), ...(emailRow ? [toEndpoint(emailRow)] : [])];
 
   const list = targets(probed);
   // Fresh per attempt: a replayed round must not pass on an earlier write.
   const marker = `ts-status canary ${new Date(at).toISOString()} ${newId()}`;
-  const [responses, canaryResults] = await Promise.all([
+  const [responses, canaryResults, emailResult] = await Promise.all([
     probed.length === 0 ? [] : Promise.all(VANTAGES.map((vantage) => ask(env, vantage, list))),
     Promise.all(
       canaryRows.map(async (row): Promise<CanaryResult | null> => {
@@ -345,6 +349,12 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
         }
       }),
     ),
+    emailRow
+      ? runEmailProbe(previous.email ?? {}, env.EMAIL, at).catch((error: unknown) => {
+          logEvent("error", "email probe failed", { component: "round", error });
+          return null;
+        })
+      : null,
   ]);
   const evaluated = evaluate(probed, responses, previous.streaks);
   canaryRows.forEach((row, index) => {
@@ -358,6 +368,17 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
     evaluated.samples.push(sample);
     if (streak > 0) evaluated.streaks[row.id] = streak;
   });
+  if (emailRow && emailResult) {
+    const { sample, streak } = emailSample(
+      emailRow.id,
+      emailResult.state,
+      emailResult.fault,
+      at,
+      previous.streaks[emailRow.id] ?? 0,
+    );
+    evaluated.samples.push(sample);
+    if (streak > 0) evaluated.streaks[emailRow.id] = streak;
+  }
 
   const statements = evaluated.samples.map((sample) =>
     env.STATUS_DB.prepare(INSERT_SAMPLE).bind(
@@ -423,5 +444,11 @@ export async function runRound(env: Env, at: number, previous: RoundState): Prom
     },
   );
   if (stepped.actions.length > 0) await env.STATUS_DB.batch(actionStatements(env.STATUS_DB, stepped.actions, time));
-  return { streaks: evaluated.streaks, colos: seen, versions, trackers: stepped.trackers };
+  return {
+    streaks: evaluated.streaks,
+    colos: seen,
+    versions,
+    trackers: stepped.trackers,
+    ...(emailResult ? { email: emailResult.state } : previous.email ? { email: previous.email } : {}),
+  };
 }
