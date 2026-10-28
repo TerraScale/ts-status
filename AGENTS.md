@@ -54,6 +54,15 @@ The Cloudflare CLI `cf` (npm package `cf`, v1.0.0-beta.10, installed through the
 - If the user requests a preview url to check the work that is current made you need to start the dev env and send the user a tailscale dns to access it and test if it works before sending to the user if it doesnt work fix it
 - Do not use worktrees
 - When running a dev server it must always be accesible via the tailscale net and it must have hmr turned for really fast development
+- **Start from latest main.** Base every change on the most recent `main`: before starting, `git fetch origin` and branch from `origin/main`, never from a stale local `main`, another feature branch or an old worktree. Before every push, `git fetch origin && git rebase origin/main` again; right before merging, rebase once more and merge only when CI is green on that exact head.
+
+### PR previews (required for every visible change)
+
+- Every PR that changes anything a user sees (pages, components, styles, layout, copy, emails, generated pages, maps, charts) MUST embed previews in the PR body. A visible change without previews is not ready to merge.
+- Before and after screenshots of each changed page and state, desktop (1440 px wide) and mobile (390 px wide). Add a short video or GIF for interactions (toggles, menus, flows, animations).
+- Capture from the real running build of the exact PR head (dev server, preview deploy or live preview), never mockups. Use synthetic or demo accounts; no secrets, tokens or real customer data on screen.
+- Upload: commit the images to this repo's orphan branch `pr-assets` under `<pr-number>/` (first time: `git switch --orphan pr-assets`); never put them on the PR branch or `main`, never merge `pr-assets`. Embed each as `![<page> <state> after, desktop](https://raw.githubusercontent.com/TerraScale/ts-status/pr-assets/<pr-number>/<file>.png)` and check that every URL returns 200 before posting.
+- When a later push changes the visuals, replace the previews. PRs with no visible change say "No visual change" in the body.
 
 ## Zero configuration (user decision 2026-10-09, do not revert)
 
@@ -61,6 +70,6 @@ The Cloudflare CLI `cf` (npm package `cf`, v1.0.0-beta.10, installed through the
 - Every region always serves. OCI workloads start serving as soon as ts-orch reports them ready, with no per-region enable step.
 - Production secrets come from OCI Vault via instance principal, never copied by hand. ts-status uses Worker secrets and Cloudflare Workers Builds uses its own deployment token.
 - Values have one correct setting in code. Expose no tuning knobs. Fakes, demo stores and skip-auth belong only in test code and test binaries.
-- CI rejects new switch-style configuration; ts-reviewer requests changes. Only unavoidable third-party names may have a narrow allowance with a one-line reason.
+- CI rejects new switch-style configuration. Only unavoidable third-party names may have a narrow allowance with a one-line reason.
 
 Discover every public regional service automatically; probe and Cloudflare credentials come from secrets, never copied by hand.
