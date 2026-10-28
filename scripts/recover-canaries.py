@@ -129,21 +129,27 @@ class Setup:
                           'user_code': device['user_code'], 'expires_in': device['expires_in']}), flush=True)
         interval = max(5, int(device.get('interval', 5)))
         deadline = time.time() + device['expires_in']
+        backoff = 0
         while time.time() < deadline:
-            time.sleep(interval)
+            time.sleep(interval + backoff)
             answer = self.call(issuer + '/oauth/token', 'POST',
                                {'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
                                 'client_id': CLI_CLIENT, 'device_code': device['device_code']},
-                               form=True, statuses=(200, 400))
+                               form=True, statuses=(200, 400, 503))
+            if not isinstance(answer, dict):
+                raise RuntimeError('Device approval ended: unexpected token response')
             if 'access_token' in answer:
                 answer['expires_at'] = time.time() + answer['expires_in']
                 self.state['cli_grant'] = answer
                 self.save()
                 return answer
-            if answer.get('error') == 'slow_down':
+            error = answer.get('error')
+            # A brief ts-auth outage must not void a code the admin may already have approved.
+            backoff = min(backoff + 5, 25) if error == 'temporarily_unavailable' else 0
+            if error == 'slow_down':
                 interval += 5
-            elif answer.get('error') != 'authorization_pending':
-                raise RuntimeError('Device approval ended: ' + str(answer.get('error'))[:40])
+            elif error not in ('authorization_pending', 'temporarily_unavailable'):
+                raise RuntimeError('Device approval ended: ' + str(error)[:40])
         raise RuntimeError('Device approval expired')
 
     def internal_project(self, grant):
