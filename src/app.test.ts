@@ -26,7 +26,7 @@ function seededEnv(): Env & { STATUS_DB: TestD1 } {
     INSERT INTO incident_updates (id, incident_id, status, body, created_at) VALUES
       ('00000000000000000000000010', '00000000000000000000000003', 'resolved', 'Recovered.', '2026-08-02 10:20:00');
     INSERT INTO incidents (id, kind, title, status, impact, scheduled_start, scheduled_end, created_at, updated_at) VALUES
-      ('00000000000000000000000006', 'maintenance', 'Forgejo upgrade', 'scheduled', 'none',
+      ('00000000000000000000000006', 'maintenance', 'Database upgrade', 'scheduled', 'none',
        '2026-09-26 10:00:00', '2026-09-26 11:00:00', '2026-09-20 10:00:00', '2026-09-20 10:00:00'),
       ('00000000000000000000000007', 'maintenance', 'OCI migration', 'scheduled', 'none',
        '2026-09-28 10:00:00', '2026-09-28 11:00:00', '2026-09-20 10:00:00', '2026-09-20 10:00:00');
@@ -185,7 +185,7 @@ describe("app", () => {
     // Email is down but under maintenance, so only the warning degrades the headline.
     expect(body).toContain("Some systems are degraded");
     expect(body).toContain("Scheduled maintenance");
-    expect(body).toContain("Forgejo upgrade");
+    expect(body).toContain("Database upgrade");
     expect(body).toContain("Warning: Slow &lt;queries&gt;");
     expect(body).toContain("Platform");
     expect(body).toContain("TerraBase");
@@ -566,7 +566,7 @@ describe("app", () => {
     expect(body).toContain("August 2026");
     expect(body).toContain("Auto-detected");
     expect(body).toContain("20m");
-    expect(body).not.toContain("Forgejo upgrade");
+    expect(body).not.toContain("Database upgrade");
     expect(body).not.toMatch(/<main[^>]*data-live/);
   });
 
@@ -594,7 +594,7 @@ describe("app", () => {
   it("lists maintenance in progress and upcoming", async () => {
     const body = await (await app.fetch(request("/maintenance"), seededEnv(), ctx)).text();
     expect(body).toContain("In progress");
-    expect(body.indexOf("Forgejo upgrade")).toBeLessThan(body.indexOf("OCI migration"));
+    expect(body.indexOf("Database upgrade")).toBeLessThan(body.indexOf("OCI migration"));
     expect(body).toContain('data-prefix="Starts"');
   });
 
@@ -659,7 +659,7 @@ describe("app", () => {
     // Both were last updated in the same second; the id breaks the tie.
     expect(summary.scheduled_maintenances.map((entry) => [entry.name, entry.status])).toEqual([
       ["OCI migration", "scheduled"],
-      ["Forgejo upgrade", "in_progress"],
+      ["Database upgrade", "in_progress"],
     ]);
     const upcoming = (await (
       await app.fetch(request("/api/v1/scheduled-maintenances/upcoming.json"), env, ctx)
