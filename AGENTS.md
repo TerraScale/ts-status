@@ -61,6 +61,6 @@ The Cloudflare CLI `cf` (npm package `cf`, v1.0.0-beta.10, installed through the
 - Every region always serves. OCI workloads start serving as soon as ts-orch reports them ready, with no per-region enable step.
 - Production secrets come from OCI Vault via instance principal, never copied by hand. ts-status uses Worker secrets and Cloudflare Workers Builds uses its own deployment token.
 - Values have one correct setting in code. Expose no tuning knobs. Fakes, demo stores and skip-auth belong only in test code and test binaries.
-- CI rejects new switch-style configuration; ts-reviewer requests changes. Only unavoidable third-party names may have a narrow allowance with a one-line reason.
+- CI rejects new switch-style configuration. Only unavoidable third-party names may have a narrow allowance with a one-line reason.
 
 Discover every public regional service automatically; probe and Cloudflare credentials come from secrets, never copied by hand.
