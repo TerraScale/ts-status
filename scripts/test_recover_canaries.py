@@ -67,6 +67,30 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(r.STATE.stat().st_mode & 0o777, 0o600)
             r.os.close(setup.lock)
 
+    def test_device_poll_backs_off_while_auth_is_temporarily_unavailable(self):
+        setup = object.__new__(r.Setup)
+        setup.state = {}
+        setup.save = Mock()
+        busy = dict(error='temporarily_unavailable')
+        setup.call = Mock(side_effect=[
+            dict(verification_uri='u', user_code='c', device_code='d', expires_in=600, interval=5),
+            busy, busy, dict(error='authorization_pending'), busy,
+            dict(access_token='private-grant', expires_in=900)])
+        with patch.object(r.time, 'sleep') as sleep, redirect_stdout(io.StringIO()):
+            self.assertEqual(setup.admin_grant()['access_token'], 'private-grant')
+        self.assertEqual([c.args[0] for c in sleep.call_args_list], [5, 10, 15, 5, 10])
+        self.assertIn(503, setup.call.call_args_list[1].kwargs['statuses'])
+
+    def test_device_poll_aborts_on_other_unavailable_responses(self):
+        for answer in [dict(error='upstream_unavailable'), b'<html>bad gateway</html>']:
+            setup = object.__new__(r.Setup)
+            setup.state = {}
+            setup.call = Mock(side_effect=[
+                dict(verification_uri='u', user_code='c', device_code='d', expires_in=600), answer])
+            with patch.object(r.time, 'sleep'), redirect_stdout(io.StringIO()), self.assertRaises(RuntimeError):
+                setup.admin_grant()
+            self.assertEqual(setup.call.call_count, 2)
+
     def test_denied_device_grant_fails_without_retrying(self):
         setup = object.__new__(r.Setup)
         setup.state = {}

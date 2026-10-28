@@ -13,7 +13,9 @@ It prints one line, `{"approve": <url>, "user_code": <code>, "expires_in": <s>}`
 and waits. An owner or admin of the internal `terrascale` organization opens
 the URL on `https://auth.terrascale.tech` and approves the code. The grant is a
 public ts-cli device grant (no confidential client secret). It is kept only in
-the private state file.
+the private state file. While it waits, a `503 temporarily_unavailable` from
+ts-auth backs off and keeps polling until the code expires; any other
+unexpected token reply stops the run.
 
 DECISION (2026-10-27, Q-CANARYPLAN): the canaries live in the internal
 `terrascale` organization's `ts-status` project. The Free plan's 50,000 monthly
