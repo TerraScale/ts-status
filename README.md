@@ -182,4 +182,4 @@ Cloudflare Workers Builds deploys every push to main with `npm run deploy`: it b
 
 Worker secrets: `SUBSCRIPTION_SECRET`, `ADMIN_SESSION_SECRET`, and the probe secrets `TERRABASE_PROBES` and `DATA_API_CANARY`. Set them through the `cf` CLI using protected stdin; never print them.
 
-Probe keys belong to a dedicated probe account and are scoped to its status project and database, never customer data, with only `documents:read` and `documents:write`. Precreate the database, the `canary` collection and the Data API fixture through that account; the Data API canary never mutates the fixture, and the Document API probe deletes every document it writes.
+Probe keys belong to the internal `terrascale` organization's `ts-status` project and are narrowed to its `status-canary` database by ULID, never customer data, with only `documents:read` and `documents:write`. `scripts/recover-canaries.py` creates the database, the `canary` collection, the Data API fixture and the key ([docs/canary-recovery.md](docs/canary-recovery.md)); the Data API canary never mutates the fixture, and the Document API probe deletes every document it writes.
