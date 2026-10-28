@@ -10,9 +10,11 @@ that cache. Cached observations keep their original timestamps; clients receive
 produce unknown observations for that region while preserving the other region.
 
 Cloudflare Workers Builds, connected to the GitHub repo, deploys every push to
-main with the deploy command `npm run deploy`. There is no GitHub Actions
-workflow: run `npm run lint`, `npm run check` and `npm test` before merging.
-Non-production branch builds are off.
+main with the deploy command `npm run deploy`. GitHub Actions
+(`.github/workflows/ci.yml`, GitHub-hosted runners) is the merge gate for pull
+requests and merge groups: its `test` job runs the dependency audit, `npm run
+check`, `npm test`, the Python tests and `npm run build`. It must pass on the
+exact head being merged. Non-production branch builds are off.
 
 `npm run deploy` builds, bootstraps D1 from schema.sql, then deploys the one status Worker,
 `ts-status`. Its four vantages (sfo, gru, fra, nrt) are Durable Objects inside
