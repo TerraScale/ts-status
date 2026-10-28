@@ -33,8 +33,10 @@ contract and uses the advertised global API with the supported regional pin.
 Every region must name itself in `/readyz` and `X-TerraBase-Region`, including on
 all document requests. One logical `status-canary` database uses the producer's
 all-regions placement: each pin proves that region's local data path against its
-replicated copy. Its key is restricted to that database and
-`documents:read documents:write`. Fresh documents prove
+replicated copy. Its key is narrowed to that database by its ULID (ts-auth
+refuses a key narrowed by name, since a rename can move a name) and to
+`documents:read documents:write`; probe requests still address the database by
+name, which TerraBase resolves to the same ULID. Fresh documents prove
 write/read/query/delete/read-after-delete; the retained fixture supports Data
 API reads. Live status `/api/v1/regions` supplies Document API endpoint IDs and
 the Data API's `canary` cluster ID. Negative HTTP checks are excluded. Missing
@@ -42,8 +44,9 @@ regional Document API catalog entries stop installation and require the status
 catalog owner; this command does not mutate D1 or invent endpoint IDs or origins.
 
 Private state is kept at `~/.local/state/ts-status/canaries.json` (0600), outside
-Git, under an exclusive lock. A valid grant and scoped key are reused on a
-rerun, so a rerun needs no approval while the grant lasts. After a wipe, rerun
+Git, under an exclusive lock. A valid grant and a key narrowed by the database's ULID
+are reused on a rerun, so a rerun needs no approval while the grant lasts; a
+key narrowed by name is replaced. After a wipe, rerun
 once customer auth and regional readiness recover; the script rediscovers the
 organization, project, database and key metadata before installing replacement
 credentials.

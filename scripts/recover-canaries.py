@@ -212,13 +212,14 @@ class Setup:
         metadata = self.call(root, token=grant['access_token'])['items']
         saved = self.state.get('canary')
         if not saved or saved['project'] != project or not any(
-                k['id'] == saved['key'][:26] and k['database'] == name and k['project_id'] == project
+                k['id'] == saved['key'][:26] and k['database'] == database['id'] and k['project_id'] == project
                 and sorted(k['scopes']) == SCOPES for k in metadata):
             self.stage = 'database-scoped canary credential'
-            issued = self.call(root, 'POST', {'name': 'status-canary', 'database': name, 'scopes': SCOPES},
+            # ts-auth narrows keys by database ULID only: a name can move to another database.
+            issued = self.call(root, 'POST', {'name': 'status-canary', 'database': database['id'], 'scopes': SCOPES},
                                token=grant['access_token'], statuses=(201,))
             key = issued['api_key']
-            if key['project_id'] != project or key['database'] != name or sorted(key['scopes']) != SCOPES:
+            if key['project_id'] != project or key['database'] != database['id'] or sorted(key['scopes']) != SCOPES:
                 raise RuntimeError('Credential restrictions mismatch')
             saved = dict(origin=API, issuer=issuer, project=project, database=name,
                          collection='canary', document=DOCUMENT, key=issued['key'])

@@ -88,6 +88,36 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             setup.internal_project({'access_token': 'grant'})
 
+    def test_canary_key_is_narrowed_by_database_id_and_replaces_a_name_narrowed_key(self):
+        database = '0' * 25 + 'D'
+        project = '0' * 25 + 'B'
+        posted = []
+        def call(url, method='GET', data=None, **kwargs):
+            if url.endswith('/databases'):
+                return dict(items=[dict(id=database, name='status-canary')], next=None)
+            if url.endswith('/collections'):
+                return {}
+            if url.endswith('/api-keys') and method == 'GET':
+                return dict(items=[dict(id=ID, database='status-canary', project_id=project, scopes=r.SCOPES)])
+            if url.endswith('/api-keys'):
+                posted.append(data)
+                return dict(key=ID + '_' + 'b' * 52, api_key=dict(project_id=project, database=database, scopes=r.SCOPES))
+            raise AssertionError(url)
+        with tempfile.TemporaryDirectory() as directory, patch.object(r, 'STATE', Path(directory) / 'state.json'):
+            setup = r.Setup()
+            setup.state['canary'] = dict(CONFIG, project=project)
+            setup.call = call
+            setup.admin_grant = Mock(return_value={'access_token': 'grant'})
+            setup.internal_project = Mock(return_value=(ID, project))
+            setup.project_token = Mock(return_value='token')
+            setup.verify = Mock()
+            configurations = setup.provision(['gru', 'sjc'])
+            r.os.close(setup.lock)
+        self.assertEqual(posted, [{'name': 'status-canary', 'database': database, 'scopes': r.SCOPES}])
+        self.assertEqual(configurations['sjc']['database'], 'status-canary')
+        self.assertEqual(configurations['sjc']['key'][:26], ID)
+        self.assertEqual(setup.verify.call_count, 2)
+
     def test_worker_secret_payload_is_stdin_only_and_subprocess_output_is_captured(self):
         args = ['cf', 'workers', 'secrets', 'bulk', '--worker', 'ts-status', '--file', '/dev/stdin']
         payload = json.dumps({'key': CONFIG['key']}).encode()
