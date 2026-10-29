@@ -1,9 +1,10 @@
 name: CI
 
-# Cloudflare Workers Builds deploys main; GitHub validates before merge.
+# Every main push runs tests; existing external Cloudflare publication is unchanged.
 "on":
   pull_request:
-  merge_group:
+  push:
+    branches: [main]
   schedule:
     # Recheck main and refresh its shared npm cache once a week.
     - cron: '47 1 * * 6'
@@ -13,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event_name == 'merge_group' && github.run_id || github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -25,19 +26,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Select changed area
-        id: changes
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
-        run: |
-          if [[ -z "$BASE_SHA" ]] || ! git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- . \
-            ':(exclude)**.md' ':(exclude)docs/**' ':(exclude)skills/**' \
-            ':(exclude)LICENSE' ':(exclude).github/workflows/codeql.yml' ':(exclude).github/dependabot.yml'; then
-            echo 'run=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'run=false' >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: .node-version
@@ -52,7 +40,6 @@ jobs:
       - name: Audit dependencies on every change
         run: npm run audit:dependencies -- --package-lock-only
       - name: Check, test and build
-        if: steps.changes.outputs.run == 'true'
         run: |
           npm ci
           npm run check
